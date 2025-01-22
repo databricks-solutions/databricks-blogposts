@@ -1,0 +1,3397 @@
+{
+  "datasets": [
+    {
+      "name": "cb97a7f0",
+      "displayName": "job_to_catalog",
+      "query": "with most_recent_jobs as (\n  SELECT\n    *,\n    ROW_NUMBER() OVER(\n      PARTITION BY workspace_id,\n      job_id\n      ORDER BY\n        change_time DESC\n    ) as rn\n  FROM\n    system.lakeflow.jobs QUALIFY rn = 1\n),\nbilling_jobs_w_org_team as (\n  SELECT\n    workspace_id,\n    job_id,\n    ifnull(\n      {catalog}.{schema}.job_type_from_sku(sku_name),\n      'UNKNOWN'\n    ) as job_type_from_sku,\n    max(name),\n    ifnull(max(team_name), 'unknown') as team_name\n  FROM\n    (\n      SELECT\n        coalesce(t1.workspace_id, t2.workspace_id) as workspace_id,\n        coalesce(t1.usage_metadata.job_id, t2.job_id) as job_id,\n        t2.name,\n        t1.sku_name,\n        {catalog}.{schema}.team_name_from_tags(t1.custom_tags, t2.tags) as team_name\n      FROM\n        system.billing.usage t1 FULL\n        OUTER JOIN most_recent_jobs t2 ON t1.workspace_id = t2.workspace_id\n        AND t1.usage_metadata.job_id = t2.job_id\n    )\n  group by\n    all\n),\nlineage_catalog as (\n  SELECT\n    workspace_id,\n    entity_id as job_id,\n    source_table_catalog,\n    target_table_catalog,\n    array(source_table_catalog, target_table_catalog) as referred_catalogs\n  FROM\n    system.access.table_lineage\n  WHERE\n    entity_type = \"JOB\"\n),\ncatalogs_added as (\n  select\n    workspace_id,\n    job_id,\n    name,\n    job_type_from_sku,\n    team_name,\n    array_distinct(\n      filter(\n        flatten(collect_set(referred_catalogs)),\n        x -> x IS NOT NULL\n      )\n    ) as referred_catalog\n  from\n    most_recent_jobs\n    LEFT JOIN billing_jobs_w_org_team using (workspace_id, job_id)\n    LEFT JOIN lineage_catalog t3 USING (workspace_id, job_id)\n  group by\n    all\n),\nfinal_data as (\n  select\n    workspace_id,\n    job_id,\n    name,\n    job_type_from_sku,\n    team_name,\n    explode(referred_catalog) as catalog\n  from\n    catalogs_added\n)\nselect\n  t1.*,\n  'JOB' as entity_type,\n  job_id as entity_id,\n  t2.workspace_name\nfrom\n  final_data t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id);"
+    },
+    {
+      "name": "225577d4",
+      "displayName": "all_lineage",
+      "query": "select\n  t1.*,\n  t2.workspace_name,\n  case\n    when source_type = 'STREAMING_TABLE' then 'STRM_TB'\n    else source_type\n  end as source_type_short,\n  case\n    when target_type = 'STREAMING_TABLE' then 'STRM_TB'\n    else target_type\n  end as target_type_short\nfrom\n  system.access.table_lineage t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id);"
+    },
+    {
+      "name": "21f428fa",
+      "displayName": "unused_datasets",
+      "query": "WITH read_tables AS (\n  SELECT\n    DISTINCT source_table_full_name AS used_dataset\n  FROM\n    system.access.table_lineage\n  WHERE\n    source_table_full_name IS NOT NULL\n),\njob_tables AS (\n  SELECT\n    workspace_id,\n    entity_type,\n    entity_id,\n    jt.created_by,\n    target_table_full_name AS dataset,\n    CASE\n      WHEN rt.used_dataset IS NOT NULL THEN 'used_datasets'\n      WHEN at.table_name IS NULL THEN 'unused_deleted'\n      ELSE 'unused_undeleted'\n    END AS dataset_status\n  FROM\n    system.access.table_lineage jt\n    LEFT JOIN read_tables rt ON jt.target_table_full_name = rt.used_dataset\n    LEFT JOIN system.information_schema.tables at ON jt.target_table_full_name = concat(\n      at.table_catalog,\n      '.',\n      at.table_schema,\n      '.',\n      at.table_name\n    )\n  WHERE\n    jt.target_table_full_name IS NOT NULL\n),\ndataset_array AS (\n  SELECT\n    workspace_id,\n    entity_type,\n    entity_id,\n    ARRAY_DISTINCT(COLLECT_LIST(created_by)) AS created_by,\n    ARRAY_DISTINCT(\n      COLLECT_LIST(\n        CASE\n          WHEN dataset_status = 'used_datasets' THEN dataset\n        END\n      )\n    ) AS used_datasets,\n    ARRAY_DISTINCT(\n      COLLECT_LIST(\n        CASE\n          WHEN dataset_status IN ('unused_deleted', 'unused_undeleted') THEN dataset\n        END\n      )\n    ) AS unused_datasets,\n    ARRAY_DISTINCT(\n      COLLECT_LIST(\n        CASE\n          WHEN dataset_status = 'unused_deleted' THEN dataset\n        END\n      )\n    ) AS deleted_unused_datasets,\n    ARRAY_DISTINCT(\n      COLLECT_LIST(\n        CASE\n          WHEN dataset_status = 'unused_undeleted' THEN dataset\n        END\n      )\n    ) AS undeleted_unused_datasets\n  FROM\n    job_tables jt\n  GROUP BY\n    all\n),\nfinal_data AS (\n  SELECT\n    *,\n    size(unused_datasets) as no_of_unused_datasets,\n    size(undeleted_unused_datasets) as no_of_undeleted_unused_datasets\n  from\n    dataset_array\n  where\n    entity_type is not null\n)\nselect\n  t1.*,\n  t2.workspace_name\nfrom\n  final_data t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id)\nwhere\n  no_of_unused_datasets > 0\norder by\n  no_of_undeleted_unused_datasets desc;"
+    },
+    {
+      "name": "f2627780",
+      "displayName": "catalog_usage",
+      "query": "with lineage_catalog as (\n  SELECT\n    workspace_id,\n    entity_type,\n    entity_id,\n    source_table_catalog,\n    target_table_catalog,\n    array(source_table_catalog, target_table_catalog) as referred_catalogs\n  FROM\n    system.access.table_lineage\n  WHERE event_date > CURRENT_DATE() - INTERVAL 30 DAY\n),\ncatalogs_added as (\n  select\n    workspace_id,\n    entity_type,\n    entity_id,\n    array_distinct(\n      filter(\n        flatten(collect_set(referred_catalogs)),\n        x -> x IS NOT NULL\n      )\n    ) as referred_catalog\n  from\n    lineage_catalog\n  group by\n    all\n),\nfinal_data as (\n  select\n    workspace_id,\n    entity_type,\n    entity_id,\n    explode(referred_catalog) as catalog\n  from\n    catalogs_added\n)\nselect\n  t1.*,\n  t2.workspace_name\nfrom\n  final_data t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id);"
+    },
+    {
+      "name": "7ea50289",
+      "displayName": "table_access_by_date",
+      "query": "SELECT\n  t1.workspace_id,\n  t2.workspace_name,\n  created_by,\n  entity_type,\n  source_type,\n  event_date,\n  COUNT(distinct event_time) as day_access_count\nFROM\n  system.access.table_lineage t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id)\nWHERE\n  source_table_full_name = :table_full_name_val\nGROUP BY\n  ALL;",
+      "parameters": [
+        {
+          "displayName": "table_full_name_val",
+          "keyword": "table_full_name_val",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "system.access.table_lineage"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6cec40be",
+      "displayName": "column_usage",
+      "query": "SELECT\n  t1.workspace_id,\n  t2.workspace_name,\n  source_column_name,\n  count(*) as references,\n  max(event_date) as last_used\nFROM\n  system.access.column_lineage t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id)\nWHERE\n  source_table_full_name = :table_full_name_val\ngroup by\n  all\nORDER BY\n  references DESC;",
+      "parameters": [
+        {
+          "displayName": "table_full_name_val",
+          "keyword": "table_full_name_val",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "system.access.table_lineage"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2d9ae9f7",
+      "displayName": "table_accesses_by_person_and_type",
+      "query": "SELECT\n  t1.workspace_id,\n  t2.workspace_name,\n  created_by,\n  entity_type,\n  source_type,\n  COUNT(distinct event_time) as access_count,\n  MIN(event_date) as first_access_date,\n  MAX(event_date) as last_access_date\nFROM\n  system.access.table_lineage t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id)\nWHERE\n  source_table_full_name = :table_full_name_val\nGROUP BY\n  ALL;",
+      "parameters": [
+        {
+          "displayName": "table_full_name_val",
+          "keyword": "table_full_name_val",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "system.access.table_lineage"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "203baf12",
+      "displayName": "related_objects",
+      "query": "with downstream AS (\n  select\n    distinct target_table_catalog as table_catalog,\n    target_table_schema as table_schema,\n    target_table_name as table_name,\n    'downstream' as direction,\n    CASE\n      WHEN tbl.table_catalog is null then 'no'\n      else 'yes'\n    end as current\n  from\n    system.access.table_lineage tl\n    left join system.information_schema.tables tbl on tl.target_table_full_name = concat(\n      tbl.table_catalog,\n      '.',\n      tbl.table_schema,\n      '.',\n      tbl.table_name\n    )\n  where\n    source_table_full_name = :table_full_name_val\n    AND target_table_full_name is not null\n  order by\n    current desc,\n    table_catalog,\n    table_schema,\n    table_name\n),\nupstream AS (\n  select\n    distinct source_table_catalog as table_catalog,\n    source_table_schema as table_schema,\n    source_table_name as table_name,\n    'upstream' as direction,\n    CASE\n      WHEN tbl.table_catalog is null then 'no'\n      else 'yes'\n    end as current\n  from\n    system.access.table_lineage tl\n    left join system.information_schema.tables tbl on tl.source_table_full_name = concat(\n      tbl.table_catalog,\n      '.',\n      tbl.table_schema,\n      '.',\n      tbl.table_name\n    )\n  where\n    target_table_full_name = :table_full_name_val\n    AND source_table_full_name is not null\n  order by\n    current desc,\n    table_catalog,\n    table_schema,\n    table_name\n)\nselect\n  *\nfrom\n  upstream\nUNION ALL\nselect\n  *\nfrom\n  downstream;",
+      "parameters": [
+        {
+          "displayName": "table_full_name_val",
+          "keyword": "table_full_name_val",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "system.access.table_lineage"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "75ca685c",
+      "displayName": "access_pattern",
+      "query": "select\n  t1.workspace_id,\n  t2.workspace_name,\n  entity_type,\n  case\n    when source_table_catalog is not null\n    or target_table_catalog is not null then 'table_access'\n    when source_path is not null\n    or target_path is not null then 'path_access'\n    else 'no_access'\n  end as access_pattern\nfrom\n  system.access.table_lineage t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id);"
+    },
+    {
+      "name": "375f7dc3",
+      "displayName": "active_users",
+      "query": "select\n  t1.*,\n  t2.workspace_name\nfrom\n  system.access.table_lineage t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id)\nwhere created_by is not null;"
+    }
+  ],
+  "pages": [
+    {
+      "name": "3c10256d",
+      "displayName": "New Page",
+      "layout": [
+        {
+          "widget": {
+            "name": "cf70eb64",
+            "queries": [
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9641cd821c35aebf1116bd47b0a0_entity_type",
+                "query": {
+                  "datasetName": "cb97a7f0",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef964edec81677bd8746d740f5b13a_entity_type",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9668a4a21fe298b008c11c09a9b1_entity_type",
+                "query": {
+                  "datasetName": "21f428fa",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef966900411304bb9b34954857c678_entity_type",
+                "query": {
+                  "datasetName": "f2627780",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9671ebe71c36af48cd923be5455c_entity_type",
+                "query": {
+                  "datasetName": "7ea50289",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96732dd713c6968496c69726fa84_entity_type",
+                "query": {
+                  "datasetName": "2d9ae9f7",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96dc2ca6170d819aa228d9194ba5_entity_type",
+                "query": {
+                  "datasetName": "75ca685c",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96deda9b120bb5571a20597ce336_entity_type",
+                "query": {
+                  "datasetName": "375f7dc3",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "entity_type",
+                    "displayName": "entity_type",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9641cd821c35aebf1116bd47b0a0_entity_type"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "displayName": "entity_type",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef964edec81677bd8746d740f5b13a_entity_type"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "displayName": "entity_type",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9668a4a21fe298b008c11c09a9b1_entity_type"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "displayName": "entity_type",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef966900411304bb9b34954857c678_entity_type"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "displayName": "entity_type",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9671ebe71c36af48cd923be5455c_entity_type"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "displayName": "entity_type",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96732dd713c6968496c69726fa84_entity_type"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "displayName": "entity_type",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96dc2ca6170d819aa228d9194ba5_entity_type"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "displayName": "entity_type",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96deda9b120bb5571a20597ce336_entity_type"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Entity Type"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 9,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "9e95503d",
+            "queries": [
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9641cd821c35aebf1116bd47b0a0_workspace_name",
+                "query": {
+                  "datasetName": "cb97a7f0",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef964edec81677bd8746d740f5b13a_workspace_name",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9668a4a21fe298b008c11c09a9b1_workspace_name",
+                "query": {
+                  "datasetName": "21f428fa",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef966900411304bb9b34954857c678_workspace_name",
+                "query": {
+                  "datasetName": "f2627780",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9671ebe71c36af48cd923be5455c_workspace_name",
+                "query": {
+                  "datasetName": "7ea50289",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9672b38113c08909bcc8578b79c4_workspace_name",
+                "query": {
+                  "datasetName": "6cec40be",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96732dd713c6968496c69726fa84_workspace_name",
+                "query": {
+                  "datasetName": "2d9ae9f7",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96dc2ca6170d819aa228d9194ba5_workspace_name",
+                "query": {
+                  "datasetName": "75ca685c",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96deda9b120bb5571a20597ce336_workspace_name",
+                "query": {
+                  "datasetName": "375f7dc3",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9641cd821c35aebf1116bd47b0a0_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef964edec81677bd8746d740f5b13a_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9668a4a21fe298b008c11c09a9b1_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef966900411304bb9b34954857c678_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9671ebe71c36af48cd923be5455c_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9672b38113c08909bcc8578b79c4_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96732dd713c6968496c69726fa84_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96dc2ca6170d819aa228d9194ba5_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96deda9b120bb5571a20597ce336_workspace_name"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Workspace Name"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "da4cfd60",
+            "queries": [
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9641cd821c35aebf1116bd47b0a0_entity_id",
+                "query": {
+                  "datasetName": "cb97a7f0",
+                  "fields": [
+                    {
+                      "name": "entity_id",
+                      "expression": "`entity_id`"
+                    },
+                    {
+                      "name": "entity_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef964edec81677bd8746d740f5b13a_entity_id",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "entity_id",
+                      "expression": "`entity_id`"
+                    },
+                    {
+                      "name": "entity_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9668a4a21fe298b008c11c09a9b1_entity_id",
+                "query": {
+                  "datasetName": "21f428fa",
+                  "fields": [
+                    {
+                      "name": "entity_id",
+                      "expression": "`entity_id`"
+                    },
+                    {
+                      "name": "entity_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef966900411304bb9b34954857c678_entity_id",
+                "query": {
+                  "datasetName": "f2627780",
+                  "fields": [
+                    {
+                      "name": "entity_id",
+                      "expression": "`entity_id`"
+                    },
+                    {
+                      "name": "entity_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96deda9b120bb5571a20597ce336_entity_id",
+                "query": {
+                  "datasetName": "375f7dc3",
+                  "fields": [
+                    {
+                      "name": "entity_id",
+                      "expression": "`entity_id`"
+                    },
+                    {
+                      "name": "entity_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "entity_id",
+                    "displayName": "entity_id",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9641cd821c35aebf1116bd47b0a0_entity_id"
+                  },
+                  {
+                    "fieldName": "entity_id",
+                    "displayName": "entity_id",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef964edec81677bd8746d740f5b13a_entity_id"
+                  },
+                  {
+                    "fieldName": "entity_id",
+                    "displayName": "entity_id",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9668a4a21fe298b008c11c09a9b1_entity_id"
+                  },
+                  {
+                    "fieldName": "entity_id",
+                    "displayName": "entity_id",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef966900411304bb9b34954857c678_entity_id"
+                  },
+                  {
+                    "fieldName": "entity_id",
+                    "displayName": "entity_id",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96deda9b120bb5571a20597ce336_entity_id"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Entity Id"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 10,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "e8fc41c4",
+            "textbox_spec": "### Lineage Data and Usage Insights Dashboard\n----\nThis dashboard provides a comprehensive view of data lineage, usage patterns, and entity interactions across workspaces, allowing teams to analyze access patterns, catalog utilization, and specific table interactions in depth. It includes three key sections, each focused on a different aspect of lineage data analysis. Users can apply global filters to customize the analysis across all sections for specific timeframes, entities, or workspaces.\n\n#### Dashboard Filters\n\n- **Date Range**: Selects a specific date range to focus the analysis on recent or historical lineage events, helping users track trends or usage changes over time (applies only on charts showing trend over time).\n\n- **Workspace Name**: Filters the data by workspace, providing a focused view of lineage and access patterns within a specific workspace environment.\n\n- **Entity ID and Entity Type**: Filters by specific entity types (e.g., dashboard, job, notebook) and entity IDs (e.g., job IDs, query IDs). Note that `Entity Type = null` means no Databricks entity is involved in the event. For example, it could be the result of a JDBC query or from a user clicking into the Sample Data tab in the Databricks UI.*\n\n#### Dashboard Sections\n\n1. **Lineage Insights and Access Patterns**: Visualizations and tables display access patterns across entities, including access type (table or path), source-to-target relationships, user activity, and entity usage changes. This section provides a high-level view of data flows and user interactions.\n\n2. **Catalog Usage Analysis**: Focuses on catalog access patterns across entities and teams, especially for jobs, and includes a filter to select specific catalogs for refined insights into catalog popularity and usage trends.\n\n3. **Table-Specific Access and Lineage Analysis**: Allows users to drill down into access and lineage details for a specific table. Users can view entity-type-based access timelines, column access frequencies, user interactions, and lineage connections (upstream and downstream tables).\n\nThis dashboard offers a centralized view of lineage and usage data, enabling teams to make data-driven decisions on data governance, catalog utilization, and table-specific access optimization.\n\n\n#### System Tables Used\n- system.access.table_lineage\n- system.access.column_lineage\n- system.information_schema.tables\n- system.billing.usage\n- system.lakeflow.jobs"
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "3c028997",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cb97a7f0",
+                  "fields": [
+                    {
+                      "name": "catalog",
+                      "expression": "`catalog`"
+                    },
+                    {
+                      "name": "team_name",
+                      "expression": "`team_name`"
+                    },
+                    {
+                      "name": "count(job_id)",
+                      "expression": "COUNT(`job_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "team_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "team_name"
+                },
+                "y": {
+                  "fieldName": "count(job_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count of job_id"
+                },
+                "color": {
+                  "fieldName": "catalog",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "catalog"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Catalog usage per team wrt jobs",
+                "showDescription": true,
+                "description": "Number of jobs (y-axis) using a catalog per team (x-axis)"
+              },
+              "mark": {
+                "layout": "percent-stack"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 46,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "9901e3fd",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "source_type_short",
+                      "expression": "`source_type_short`"
+                    },
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "heatmap",
+              "encodings": {
+                "x": {
+                  "fieldName": "source_type_short",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "source_type"
+                },
+                "y": {
+                  "fieldName": "entity_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "entity_type"
+                },
+                "color": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "scheme",
+                      "scheme": "greenblue"
+                    }
+                  },
+                  "displayName": "Count of Records"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Entity Type to Source Type mapping",
+                "description": "Shows how entities (y-axis) are reading from different input types (x-axis) colored by event count"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 26,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "ca1be9da",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "target_type_short",
+                      "expression": "`target_type_short`"
+                    },
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "heatmap",
+              "encodings": {
+                "x": {
+                  "fieldName": "target_type_short",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "target_type"
+                },
+                "y": {
+                  "fieldName": "entity_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "entity_type"
+                },
+                "color": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "scheme",
+                      "scheme": "greenblue"
+                    }
+                  },
+                  "displayName": "Count of Records"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Entity Type to Target Type mapping",
+                "description": "Shows how entities (y-axis) are writing to different output types (x-axis) colored by event count"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 26,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "c0fa8555",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "source_type_short",
+                      "expression": "`source_type_short`"
+                    },
+                    {
+                      "name": "target_type_short",
+                      "expression": "`target_type_short`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "heatmap",
+              "encodings": {
+                "x": {
+                  "fieldName": "source_type_short",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "source_type"
+                },
+                "y": {
+                  "fieldName": "target_type_short",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "target_type"
+                },
+                "color": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "scheme",
+                      "scheme": "orangered"
+                    }
+                  },
+                  "displayName": "Count of Records"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Source to Target Distribution",
+                "description": "Shows the input type (x-axis) and output type (y-axis) of events by count. Eg. a job reading from a table and writing to a view.\n- null source type means that the event has not input, just an output, and vice versa for null target type."
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 16,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "a44f3158",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_id",
+                      "expression": "`entity_id`"
+                    },
+                    {
+                      "name": "entity_run_id",
+                      "expression": "`entity_run_id`"
+                    },
+                    {
+                      "name": "source_table_full_name",
+                      "expression": "`source_table_full_name`"
+                    },
+                    {
+                      "name": "source_path",
+                      "expression": "`source_path`"
+                    },
+                    {
+                      "name": "source_type",
+                      "expression": "`source_type`"
+                    },
+                    {
+                      "name": "target_table_full_name",
+                      "expression": "`target_table_full_name`"
+                    },
+                    {
+                      "name": "target_path",
+                      "expression": "`target_path`"
+                    },
+                    {
+                      "name": "target_type",
+                      "expression": "`target_type`"
+                    },
+                    {
+                      "name": "created_by",
+                      "expression": "`created_by`"
+                    },
+                    {
+                      "name": "event_date",
+                      "expression": "`event_date`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "workspace_name",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 3,
+                    "title": "workspace_name",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "workspace_name"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 4,
+                    "title": "entity_type",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "entity_type"
+                  },
+                  {
+                    "fieldName": "entity_id",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 5,
+                    "title": "entity_id",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "entity_id"
+                  },
+                  {
+                    "fieldName": "entity_run_id",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 6,
+                    "title": "entity_run_id",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "entity_run_id"
+                  },
+                  {
+                    "fieldName": "source_table_full_name",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 7,
+                    "title": "source_table_full_name",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "source_table_full_name"
+                  },
+                  {
+                    "fieldName": "source_path",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 11,
+                    "title": "source_path",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "source_path"
+                  },
+                  {
+                    "fieldName": "source_type",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 12,
+                    "title": "source_type",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "source_type"
+                  },
+                  {
+                    "fieldName": "target_table_full_name",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 13,
+                    "title": "target_table_full_name",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "target_table_full_name"
+                  },
+                  {
+                    "fieldName": "target_path",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 17,
+                    "title": "target_path",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "target_path"
+                  },
+                  {
+                    "fieldName": "target_type",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 18,
+                    "title": "target_type",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "target_type"
+                  },
+                  {
+                    "fieldName": "created_by",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 19,
+                    "title": "created_by",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "created_by"
+                  },
+                  {
+                    "fieldName": "event_date",
+                    "dateTimeFormat": "YYYY-MM-DD",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "date",
+                    "displayAs": "datetime",
+                    "visible": true,
+                    "order": 21,
+                    "title": "event_date",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "event_date"
+                  }
+                ]
+              },
+              "invisibleColumns": [
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "account_id",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 0,
+                  "title": "account_id",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "metastore_id",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 1,
+                  "title": "metastore_id",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "workspace_id",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 2,
+                  "title": "workspace_id",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "source_table_catalog",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 8,
+                  "title": "source_table_catalog",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "source_table_schema",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 9,
+                  "title": "source_table_schema",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "source_table_name",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 10,
+                  "title": "source_table_name",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "target_table_catalog",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 14,
+                  "title": "target_table_catalog",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "target_table_schema",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 15,
+                  "title": "target_table_schema",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "target_table_name",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 16,
+                  "title": "target_table_name",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "dateTimeFormat": "YYYY-MM-DD HH:mm:ss.SSS",
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "event_time",
+                  "type": "datetime",
+                  "displayAs": "datetime",
+                  "order": 20,
+                  "title": "event_time",
+                  "allowSearch": false,
+                  "alignContent": "right",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "source_type_short",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 22,
+                  "title": "source_type_short",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "target_type_short",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 23,
+                  "title": "target_type_short",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                }
+              ],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Lineage Data",
+                "description": "Tablular level details of all lineage data"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 30,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "c173f18d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "375f7dc3",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "created_by",
+                      "expression": "`created_by`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count of Records"
+                },
+                "color": {
+                  "fieldName": "created_by",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "user"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Active Users",
+                "description": "Most active users by count of events"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 16,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "0e8a6afe",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "daily(event_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `event_date`)"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(event_date)",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "event_date"
+                },
+                "y": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count of Records"
+                },
+                "color": {
+                  "fieldName": "entity_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "entity_type"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Entity usage with time",
+                "description": "Count of events (y-axis) over time (x-axis) grouped by entity type. Null entity type* is explained above."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "6517c1ff",
+            "textbox_spec": "### Catalog Usage Analysis Section\n----\nThis section focuses on catalog usage across different entities and teams, specifically for jobs, providing insights into catalog popularity and usage patterns. Users can apply a **Catalog Filter** to select specific catalogs of interest, refining the analysis to focus on relevant data sources and enhancing the precision of catalog-based insights. Key components include:\n\n1. **Most Used Catalogs**: Displays the most frequently accessed catalogs, giving an overview of catalog popularity and highlighting key data sources.\n\n2. **Catalog Usage per Entity**: Breaks down catalog usage across different entities, showing which catalogs are accessed by various entity types, such as jobs, queries, or dashboards, helping identify catalog relevance across different functionalities.\n\n3. **Catalog Usage per Team (Jobs Only)**: Visualizes catalog access patterns across teams for job-related activities, helping identify team-specific catalog usage trends and supporting cross-team data alignment.\n\nThis section enables teams to understand catalog usage, optimize data source access patterns, and ensure catalog alignment with organizational needs.\n"
+          },
+          "position": {
+            "x": 0,
+            "y": 36,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "a203c3d6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "21f428fa",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "entity_id",
+                      "expression": "`entity_id`"
+                    },
+                    {
+                      "name": "created_by",
+                      "expression": "`created_by`"
+                    },
+                    {
+                      "name": "unused_datasets",
+                      "expression": "`unused_datasets`"
+                    },
+                    {
+                      "name": "used_datasets",
+                      "expression": "`used_datasets`"
+                    },
+                    {
+                      "name": "undeleted_unused_datasets",
+                      "expression": "`undeleted_unused_datasets`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "workspace_name",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 1,
+                    "title": "workspace_name",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "workspace_name"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 2,
+                    "title": "entity_type",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "entity_type"
+                  },
+                  {
+                    "fieldName": "entity_id",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 3,
+                    "title": "entity_id",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "entity_id"
+                  },
+                  {
+                    "fieldName": "created_by",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "complex",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 4,
+                    "title": "created_by",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "created_by"
+                  },
+                  {
+                    "fieldName": "unused_datasets",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "complex",
+                    "displayAs": "json",
+                    "visible": true,
+                    "order": 5,
+                    "title": "unused_datasets",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "unused_datasets"
+                  },
+                  {
+                    "fieldName": "used_datasets",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "complex",
+                    "displayAs": "json",
+                    "visible": true,
+                    "order": 6,
+                    "title": "used_datasets",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "used_datasets"
+                  },
+                  {
+                    "fieldName": "undeleted_unused_datasets",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "complex",
+                    "displayAs": "json",
+                    "visible": true,
+                    "order": 8,
+                    "title": "undeleted_unused_datasets",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "undeleted_unused_datasets"
+                  }
+                ]
+              },
+              "invisibleColumns": [
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "workspace_id",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 0,
+                  "title": "workspace_id",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "deleted_unused_datasets",
+                  "type": "complex",
+                  "displayAs": "json",
+                  "order": 7,
+                  "title": "deleted_unused_datasets",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "numberFormat": "0",
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "no_of_undeleted_unused_datasets",
+                  "type": "integer",
+                  "displayAs": "number",
+                  "order": 9,
+                  "title": "no_of_undeleted_unused_datasets",
+                  "allowSearch": false,
+                  "alignContent": "right",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "numberFormat": "0",
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "no_of_unused_datasets",
+                  "type": "integer",
+                  "displayAs": "number",
+                  "order": 10,
+                  "title": "no_of_unused_datasets",
+                  "allowSearch": false,
+                  "alignContent": "right",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                }
+              ],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Unused Datasets",
+                "description": "These datasets are created but not getting consumed anywhere; also checks if the datasets have been deleted or still exists."
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 30,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "e60401f6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f2627780",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "catalog",
+                      "expression": "`catalog`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count of Records"
+                },
+                "color": {
+                  "fieldName": "catalog",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "catalog"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Most used catalogs",
+                "description": "Most used catalogs by count of events"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 40,
+            "width": 1,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "d8aadf69",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f2627780",
+                  "fields": [
+                    {
+                      "name": "catalog",
+                      "expression": "`catalog`"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count of Records"
+                },
+                "y": {
+                  "fieldName": "entity_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "entity_type"
+                },
+                "color": {
+                  "fieldName": "catalog",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "catalog"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Catalog usage per entity",
+                "description": "Count of events (x-axis) per entity (y-axis) grouped by catalog. Null entity type* is explained above."
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 41,
+            "width": 5,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "61e58454",
+            "textbox_spec": "### Table-Specific Access and Lineage Analysis Section\n----\nThis section provides a detailed analysis of access patterns for a specific table, as well as its lineage connections, allowing users to investigate table usage, column-level access, and related entities. A **Table Name Filter** allows users to input one table name, focusing the analysis on that table alone. Key components include:\n\n1. **Table Access Over Time by Entity Type**: A timeline of accesses to the specified table, segmented by entity type (e.g., job, dashboard, query). This chart helps identify how different entities interact with the table over time, supporting trend analysis and access patterns.\n\n2. **Column Access Frequency and Last Access Date**: A table listing each column in the specified table, showing the number of times each column was accessed and the most recent access date. This detailed view assists in understanding which columns are most utilized and may indicate columns of high relevance.\n\n3. **Table Access by User and Entity Type**: A table displaying access counts by user and entity type, providing insights into individual user interactions with the specified table and the specific entities used.\n\n4. **Upstream and Downstream Tables**: A list of all upstream and downstream tables connected to the specified table, helping users understand data lineage and dependencies, which can be crucial for data impact assessments and change management.\n\nThis section provides a focused view of a table\u2019s access patterns, lineage, and user interactions, equipping teams with granular insights to manage data access, optimize usage, and maintain robust data governance practices.\n"
+          },
+          "position": {
+            "x": 0,
+            "y": 52,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "bf032a19",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "7ea50289",
+                  "fields": [
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "daily(event_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `event_date`)"
+                    },
+                    {
+                      "name": "sum(day_access_count)",
+                      "expression": "SUM(`day_access_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(event_date)",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "event_date"
+                },
+                "y": {
+                  "fieldName": "sum(day_access_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Sum of day_access_count"
+                },
+                "color": {
+                  "fieldName": "entity_type",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": null,
+                        "color": "#919191"
+                      }
+                    ]
+                  },
+                  "displayName": "entity_type"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Table Access by Date",
+                "showDescription": true,
+                "description": "Table access count (y-axis) with time (y-axis). Null entity type* explained above."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 58,
+            "width": 4,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "b56a269d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "6cec40be",
+                  "fields": [
+                    {
+                      "name": "source_column_name",
+                      "expression": "`source_column_name`"
+                    },
+                    {
+                      "name": "references",
+                      "expression": "`references`"
+                    },
+                    {
+                      "name": "last_used",
+                      "expression": "`last_used`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "source_column_name",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100000,
+                    "title": "source_column_name",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "source_column_name"
+                  },
+                  {
+                    "fieldName": "references",
+                    "numberFormat": "0",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "integer",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100001,
+                    "title": "references",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "references"
+                  },
+                  {
+                    "fieldName": "last_used",
+                    "dateTimeFormat": "YYYY-MM-DD",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "date",
+                    "displayAs": "datetime",
+                    "visible": true,
+                    "order": 100002,
+                    "title": "last_used",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "last_used"
+                  }
+                ]
+              },
+              "invisibleColumns": [
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "workspace_id",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 100000,
+                  "title": "workspace_id",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "workspace_name",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 100001,
+                  "title": "workspace_name",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                }
+              ],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Column usage",
+                "showDescription": true,
+                "description": "Usage of each column in the table"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 57,
+            "width": 2,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "e967e233",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2d9ae9f7",
+                  "fields": [
+                    {
+                      "name": "created_by",
+                      "expression": "`created_by`"
+                    },
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    },
+                    {
+                      "name": "source_type",
+                      "expression": "`source_type`"
+                    },
+                    {
+                      "name": "access_count",
+                      "expression": "`access_count`"
+                    },
+                    {
+                      "name": "first_access_date",
+                      "expression": "`first_access_date`"
+                    },
+                    {
+                      "name": "last_access_date",
+                      "expression": "`last_access_date`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "created_by",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100000,
+                    "title": "created_by",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "created_by"
+                  },
+                  {
+                    "fieldName": "entity_type",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100001,
+                    "title": "entity_type",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "entity_type"
+                  },
+                  {
+                    "fieldName": "source_type",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100002,
+                    "title": "source_type",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "source_type"
+                  },
+                  {
+                    "fieldName": "access_count",
+                    "numberFormat": "0",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "integer",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100003,
+                    "title": "access_count",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "access_count"
+                  },
+                  {
+                    "fieldName": "first_access_date",
+                    "dateTimeFormat": "YYYY-MM-DD",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "date",
+                    "displayAs": "datetime",
+                    "visible": true,
+                    "order": 100004,
+                    "title": "first_access_date",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "first_access_date"
+                  },
+                  {
+                    "fieldName": "last_access_date",
+                    "dateTimeFormat": "YYYY-MM-DD",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "date",
+                    "displayAs": "datetime",
+                    "visible": true,
+                    "order": 100005,
+                    "title": "last_access_date",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "last_access_date"
+                  }
+                ]
+              },
+              "invisibleColumns": [
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "workspace_id",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 100000,
+                  "title": "workspace_id",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                },
+                {
+                  "booleanValues": [
+                    "false",
+                    "true"
+                  ],
+                  "imageUrlTemplate": "{{ @ }}",
+                  "imageTitleTemplate": "{{ @ }}",
+                  "imageWidth": "",
+                  "imageHeight": "",
+                  "linkUrlTemplate": "{{ @ }}",
+                  "linkTextTemplate": "{{ @ }}",
+                  "linkTitleTemplate": "{{ @ }}",
+                  "linkOpenInNewTab": true,
+                  "name": "workspace_name",
+                  "type": "string",
+                  "displayAs": "string",
+                  "order": 100001,
+                  "title": "workspace_name",
+                  "allowSearch": false,
+                  "alignContent": "left",
+                  "allowHTML": false,
+                  "highlightLinks": false,
+                  "useMonospaceFont": false,
+                  "preserveWhitespace": false
+                }
+              ],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Table access by Person and Type",
+                "showDescription": true,
+                "description": "Shows access pattern of the table by person and entity type"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 62,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "3002d509",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "203baf12",
+                  "fields": [
+                    {
+                      "name": "table_catalog",
+                      "expression": "`table_catalog`"
+                    },
+                    {
+                      "name": "table_schema",
+                      "expression": "`table_schema`"
+                    },
+                    {
+                      "name": "table_name",
+                      "expression": "`table_name`"
+                    },
+                    {
+                      "name": "direction",
+                      "expression": "`direction`"
+                    },
+                    {
+                      "name": "current",
+                      "expression": "`current`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "table_catalog",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100000,
+                    "title": "table_catalog",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "table_catalog"
+                  },
+                  {
+                    "fieldName": "table_schema",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100001,
+                    "title": "table_schema",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "table_schema"
+                  },
+                  {
+                    "fieldName": "table_name",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100002,
+                    "title": "table_name",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "table_name"
+                  },
+                  {
+                    "fieldName": "direction",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100003,
+                    "title": "direction",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "direction"
+                  },
+                  {
+                    "fieldName": "current",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100004,
+                    "title": "current",
+                    "allowSearch": false,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "displayName": "current"
+                  }
+                ]
+              },
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Upstream/Downstream Tables",
+                "showDescription": true,
+                "description": "Lists upstream and downstream table relationships, buth current and deprecated (already deleted)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 62,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "92d9c884",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "75ca685c",
+                  "fields": [
+                    {
+                      "name": "access_pattern",
+                      "expression": "`access_pattern`"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "entity_type",
+                      "expression": "`entity_type`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count of Records"
+                },
+                "y": {
+                  "fieldName": "entity_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "entity_type"
+                },
+                "color": {
+                  "fieldName": "access_pattern",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "access_pattern"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Table vs Path access per entity type",
+                "description": "Count of records (x-axis) for each entity (y-axis) grouped by table or path access\n- Shows if assets are being access using table name or cloud path\n- Null entity type* explained above"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "c390cfe3",
+            "queries": [
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9641cd821c35aebf1116bd47b0a0_catalog",
+                "query": {
+                  "datasetName": "cb97a7f0",
+                  "fields": [
+                    {
+                      "name": "catalog",
+                      "expression": "`catalog`"
+                    },
+                    {
+                      "name": "catalog_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef966900411304bb9b34954857c678_catalog",
+                "query": {
+                  "datasetName": "f2627780",
+                  "fields": [
+                    {
+                      "name": "catalog",
+                      "expression": "`catalog`"
+                    },
+                    {
+                      "name": "catalog_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "catalog",
+                    "displayName": "catalog",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9641cd821c35aebf1116bd47b0a0_catalog"
+                  },
+                  {
+                    "fieldName": "catalog",
+                    "displayName": "catalog",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef966900411304bb9b34954857c678_catalog"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Catalog Name"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 40,
+            "width": 5,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "0579cb31",
+            "queries": [
+              {
+                "name": "parameter_dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9671ebe71c36af48cd923be5455c_table_full_name_val",
+                "query": {
+                  "datasetName": "7ea50289",
+                  "parameters": [
+                    {
+                      "name": "table_full_name_val",
+                      "keyword": "table_full_name_val"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9672b38113c08909bcc8578b79c4_table_full_name_val",
+                "query": {
+                  "datasetName": "6cec40be",
+                  "parameters": [
+                    {
+                      "name": "table_full_name_val",
+                      "keyword": "table_full_name_val"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96732dd713c6968496c69726fa84_table_full_name_val",
+                "query": {
+                  "datasetName": "2d9ae9f7",
+                  "parameters": [
+                    {
+                      "name": "table_full_name_val",
+                      "keyword": "table_full_name_val"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef967414e31274b736fa0d8201d11f_table_full_name_val",
+                "query": {
+                  "datasetName": "203baf12",
+                  "parameters": [
+                    {
+                      "name": "table_full_name_val",
+                      "keyword": "table_full_name_val"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "parameterName": "table_full_name_val",
+                    "queryName": "parameter_dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9671ebe71c36af48cd923be5455c_table_full_name_val"
+                  },
+                  {
+                    "parameterName": "table_full_name_val",
+                    "queryName": "parameter_dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9672b38113c08909bcc8578b79c4_table_full_name_val"
+                  },
+                  {
+                    "parameterName": "table_full_name_val",
+                    "queryName": "parameter_dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef96732dd713c6968496c69726fa84_table_full_name_val"
+                  },
+                  {
+                    "parameterName": "table_full_name_val",
+                    "queryName": "parameter_dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef967414e31274b736fa0d8201d11f_table_full_name_val"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Table Name"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 57,
+            "width": 4,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "0918bb71",
+            "queries": [
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef964edec81677bd8746d740f5b13a_event_date",
+                "query": {
+                  "datasetName": "225577d4",
+                  "fields": [
+                    {
+                      "name": "event_date",
+                      "expression": "`event_date`"
+                    },
+                    {
+                      "name": "event_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9671ebe71c36af48cd923be5455c_event_date",
+                "query": {
+                  "datasetName": "7ea50289",
+                  "fields": [
+                    {
+                      "name": "event_date",
+                      "expression": "`event_date`"
+                    },
+                    {
+                      "name": "event_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "event_date",
+                    "displayName": "event_date",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef964edec81677bd8746d740f5b13a_event_date"
+                  },
+                  {
+                    "fieldName": "event_date",
+                    "displayName": "event_date",
+                    "queryName": "dashboards/01ef8b032a951409a4f292719a182ef0/datasets/01ef9671ebe71c36af48cd923be5455c_event_date"
+                  }
+                ]
+              },
+              "selection": {
+                "defaultSelection": {
+                  "range": {
+                    "dataType": "DATE",
+                    "min": {
+                      "value": "now-3M/M"
+                    },
+                    "max": {
+                      "value": "now-1M/M"
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Date Range"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "da5aa2f4",
+            "textbox_spec": "### Lineage Insights and Access Patterns Section\n----\nThis section provides a comprehensive view of data access patterns, user activity, and entity relationships based on lineage events. Key elements include:\n\n1. **Table vs. Path Access per Entity**: A breakdown of access types by entity, showing how often tables and paths are accessed for each entity type (e.g., jobs, dashboards, queries), giving insights into data access preferences and usage patterns.\n\n2. **Active Users Pie Chart**: A snapshot of active users, helping identify user engagement and determine which users are most frequently interacting with the platform.\n\n3. **Entity Usage Change Over Time**: Tracks changes in entity usage across a specified timeframe, highlighting trends and shifts in data interactions.\n\n4. **Entity Type Heat Maps with Source and Target Types**: Heat maps showing interactions between various entity types (e.g., jobs, dashboards) and source/target types, providing an at-a-glance view of how entities interact with different data sources.\n\n5. **Unused Tables Table**: A table listing tables that are not accessed by any entities, highlighting data assets that may need further evaluation for relevance or maintenance.\n\nThis section supports a clear understanding of data lineage, usage patterns, and user activity, helping teams optimize data governance, identify redundant data, and improve data management practices.\n"
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ]
+    }
+  ]
+}

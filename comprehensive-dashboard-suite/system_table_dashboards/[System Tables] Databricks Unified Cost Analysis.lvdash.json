@@ -1,0 +1,727 @@
+{
+  "datasets": [
+    {
+      "name": "14aed786",
+      "displayName": "wow growth",
+      "query": "with usage_with_list_cost as (\n  SELECT\n    t1.*,\n    t1.usage_quantity * list_prices.pricing.default as list_cost\n  FROM\n    system.billing.usage t1\n    INNER JOIN system.billing.list_prices list_prices on t1.cloud = list_prices.cloud\n    and t1.sku_name = list_prices.sku_name\n    and t1.usage_start_time >= list_prices.price_start_time\n    and (\n      t1.usage_end_time <= list_prices.price_end_time\n      or list_prices.price_end_time is null\n    )\n),\nweekly_list_cost as (\n  select\n    date_sub(\n      to_date(usage_start_time),\n      dayofweek(to_date(usage_start_time))\n    ) as week_start,\n    SUM(list_cost) as list_cost,\n    COUNT(distinct to_date(usage_start_time)) as days\n  from\n    usage_with_list_cost t1\n  group by\n    all\n  having\n    days = 7\n  order by\n    1 asc,\n    2 asc\n),\nlist_cost_growth as (\n  select\n    week_start,\n    list_cost,\n    100 * (\n      list_cost - lag(list_cost, 1) over (\n        order by\n          week_start\n      )\n    ) / lag(list_cost, 1) over (\n      order by\n        week_start\n    ) as weekly_growth\n  from\n    weekly_list_cost\n  order by\n    week_start asc\n)\nselect\n  week_start,\n  weekly_growth,\n  avg(weekly_growth) over (\n    order by\n      week_start ROWS BETWEEN 12 preceding\n      AND CURRENT ROW\n  ) as 3_months_growth_moving_avg,\n  list_cost\nfrom\n  list_cost_growth;"
+    },
+    {
+      "name": "d4940499",
+      "displayName": "30_60_days_spend",
+      "query": "with usage_with_list_cost as (\n  SELECT\n    t1.*,\n    t1.usage_quantity * list_prices.pricing.default as list_cost\n  FROM\n    system.billing.usage t1\n    INNER JOIN system.billing.list_prices list_prices on t1.cloud = list_prices.cloud\n    and t1.sku_name = list_prices.sku_name\n    and t1.usage_start_time >= list_prices.price_start_time\n    and (\n      t1.usage_end_time <= list_prices.price_end_time\n      or list_prices.price_end_time is null\n    )\n)\nSELECT\n  t1.*,\n  t3.workspace_name,\n  billing_origin_product AS compute_type,\n  try_divide(\n    (last30DaySpend - last30to60DaySpend),\n    last30to60DaySpend\n  ) * 100 AS Last30DayGrowth\nFROM\n  (\n    SELECT\n      SUM(list_cost) AS spend,\n      workspace_id,\n      sku_name,\n      billing_origin_product,\n      SUM(\n        CASE\n          WHEN usage_end_time BETWEEN date_add(current_date(), -30)\n          AND (current_date() - 1) THEN list_cost\n          ELSE 0\n        END\n      ) AS Last30DaySpend,\n      SUM(\n        CASE\n          WHEN usage_end_time BETWEEN date_add(current_date(), -60)\n          AND date_add(current_date(), -31) THEN list_cost\n          ELSE 0\n        END\n      ) AS Last30to60DaySpend\n    FROM\n      usage_with_list_cost\n    GROUP BY\n      ALL\n  ) t1\n  LEFT JOIN {catalog}.{schema}.workspace_reference t3 USING (workspace_id);"
+    },
+    {
+      "name": "d516d188",
+      "displayName": "run_cost",
+      "query": "SELECT\n  t1.*,\n  t2.workspace_name,\n  t1.billing_origin_product AS compute_type,\n  t1.identity_metadata.run_as as run_as,\n  t1.usage_quantity * list_prices.pricing.default AS list_cost\nFROM\n  system.billing.usage t1\n  INNER JOIN system.billing.list_prices list_prices ON t1.cloud = list_prices.cloud\n  AND t1.sku_name = list_prices.sku_name\n  AND t1.usage_start_time >= list_prices.price_start_time\n  AND (\n    t1.usage_end_time <= list_prices.price_end_time\n    or list_prices.price_end_time is NULL\n  )\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id);"
+    },
+    {
+      "name": "d31abea3",
+      "displayName": "run_cost_30_days",
+      "query": "SELECT\n  t1.*,\n  t2.workspace_name,\n  billing_origin_product AS compute_type,\n  t1.identity_metadata.run_as as run_as,\n  t1.usage_quantity * list_prices.pricing.default AS list_cost\nFROM\n  system.billing.usage t1\n  INNER JOIN system.billing.list_prices list_prices ON t1.cloud = list_prices.cloud\n  AND t1.sku_name = list_prices.sku_name\n  AND t1.usage_start_time >= list_prices.price_start_time\n  AND (\n    t1.usage_end_time <= list_prices.price_end_time\n    or list_prices.price_end_time is NULL\n  )\n  LEFT JOIN {catalog}.{schema}.workspace_reference t2 USING (workspace_id)\nWHERE t1.usage_date >= current_date() - INTERVAL 30 DAY;"
+    }
+  ],
+  "pages": [
+    {
+      "name": "3c10256d",
+      "displayName": "New Page",
+      "layout": [
+        {
+          "widget": {
+            "name": "8db952ae",
+            "queries": [
+              {
+                "name": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fa445917ec87c1e5361761b5a8_usage_date",
+                "query": {
+                  "datasetName": "d516d188",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "usage_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "usage_date",
+                    "displayName": "usage_date",
+                    "queryName": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fa445917ec87c1e5361761b5a8_usage_date"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Date Range"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "9e95503d",
+            "queries": [
+              {
+                "name": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fa445917ec87c1e5361761b5a8_workspace_name",
+                "query": {
+                  "datasetName": "d516d188",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96f9861a170eb0478992e3260cfc_workspace_name",
+                "query": {
+                  "datasetName": "d4940499",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fee5b511d894def2b3a39ecb36_workspace_name",
+                "query": {
+                  "datasetName": "d31abea3",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fa445917ec87c1e5361761b5a8_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96f9861a170eb0478992e3260cfc_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "displayName": "workspace_name",
+                    "queryName": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fee5b511d894def2b3a39ecb36_workspace_name"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Workspace Name"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 11,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "c70af7db",
+            "queries": [
+              {
+                "name": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96f9861a170eb0478992e3260cfc_compute_type",
+                "query": {
+                  "datasetName": "d4940499",
+                  "fields": [
+                    {
+                      "name": "compute_type",
+                      "expression": "`compute_type`"
+                    },
+                    {
+                      "name": "compute_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fa445917ec87c1e5361761b5a8_compute_type",
+                "query": {
+                  "datasetName": "d516d188",
+                  "fields": [
+                    {
+                      "name": "compute_type",
+                      "expression": "`compute_type`"
+                    },
+                    {
+                      "name": "compute_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fee5b511d894def2b3a39ecb36_compute_type",
+                "query": {
+                  "datasetName": "d31abea3",
+                  "fields": [
+                    {
+                      "name": "compute_type",
+                      "expression": "`compute_type`"
+                    },
+                    {
+                      "name": "compute_type_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "compute_type",
+                    "displayName": "compute_type",
+                    "queryName": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96f9861a170eb0478992e3260cfc_compute_type"
+                  },
+                  {
+                    "fieldName": "compute_type",
+                    "displayName": "compute_type",
+                    "queryName": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fa445917ec87c1e5361761b5a8_compute_type"
+                  },
+                  {
+                    "fieldName": "compute_type",
+                    "displayName": "compute_type",
+                    "queryName": "dashboards/01ef8a7b6e2412b68fc9825ab5d03482/datasets/01ef96fee5b511d894def2b3a39ecb36_compute_type"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Compute Type"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 11,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "10ddd9f3",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "14aed786",
+                  "fields": [
+                    {
+                      "name": "week_start",
+                      "expression": "`week_start`"
+                    },
+                    {
+                      "name": "weekly_growth",
+                      "expression": "`weekly_growth`"
+                    },
+                    {
+                      "name": "3_months_growth_moving_avg",
+                      "expression": "`3_months_growth_moving_avg`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "combo",
+              "encodings": {
+                "x": {
+                  "fieldName": "week_start",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "week_start"
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "weekly_growth",
+                        "displayName": "weekly %change"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "fields": [
+                      {
+                        "fieldName": "3_months_growth_moving_avg",
+                        "displayName": "3_months_growth_moving_avg"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "WoW $list %change",
+                "description": "Week over Week change in cost percentage (y-axis) with time (x-axis)"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 22,
+            "width": 4,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "744ac9bb",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d4940499",
+                  "fields": [
+                    {
+                      "name": "sum(Last30DaySpend)",
+                      "expression": "SUM(`Last30DaySpend`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Last30DaySpend)",
+                  "displayName": "Sum of Last30DaySpend"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "30 Day $list Spend",
+                "description": "Spend in the last 30 days"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "f62e1069",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d4940499",
+                  "fields": [
+                    {
+                      "name": "sum(Last30to60DaySpend)",
+                      "expression": "SUM(`Last30to60DaySpend`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Last30to60DaySpend)",
+                  "displayName": "Sum of Last30to60DaySpend"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Previous 30 Day $list Spend",
+                "description": "Spend in the prior 30 days (i.e., days 31\u201360 before the current date)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "162c8a70",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d516d188",
+                  "fields": [
+                    {
+                      "name": "compute_type",
+                      "expression": "`compute_type`"
+                    },
+                    {
+                      "name": "daily(usage_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `usage_date`)"
+                    },
+                    {
+                      "name": "sum(list_cost)",
+                      "expression": "SUM(`list_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(usage_date)",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "usage_date"
+                },
+                "y": {
+                  "fieldName": "sum(list_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Sum of list_cost"
+                },
+                "color": {
+                  "fieldName": "compute_type",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "AGENT_EVALUATION",
+                        "color": "#549d07"
+                      },
+                      {
+                        "value": "APPS",
+                        "color": "#5300a9"
+                      },
+                      {
+                        "value": "VECTOR_SEARCH",
+                        "color": "#99a4dd"
+                      },
+                      {
+                        "value": "FINE_GRAINED_ACCESS_CONTROL",
+                        "color": "#d18be7"
+                      },
+                      {
+                        "value": "ONLINE_TABLES",
+                        "color": "#a90047"
+                      },
+                      {
+                        "value": "NOTEBOOKS",
+                        "color": "#ceff00"
+                      }
+                    ]
+                  },
+                  "displayName": "compute_type"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Daily $list by Compute Type",
+                "description": "Daily spend per compute type (y-axis) over time (x-axis)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "236c9466",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d516d188",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "daily(usage_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `usage_date`)"
+                    },
+                    {
+                      "name": "sum(list_cost)",
+                      "expression": "SUM(`list_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(usage_date)",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "usage_date"
+                },
+                "y": {
+                  "fieldName": "sum(list_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Sum of list_cost"
+                },
+                "color": {
+                  "fieldName": "workspace_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "workspace_name"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Daily $list by Workspace",
+                "description": "Daily spend per workspace (y-axis) over time (x-axis)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 26,
+            "width": 4,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "cdf70af6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d31abea3",
+                  "fields": [
+                    {
+                      "name": "sum(list_cost)",
+                      "expression": "SUM(`list_cost`)"
+                    },
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(list_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Sum of list_cost"
+                },
+                "color": {
+                  "fieldName": "workspace_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "workspace_name"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Cost by Workspace t30",
+                "description": "$list distribution across different workspaces in the last 30 days"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 26,
+            "width": 1,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "00d290f1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d31abea3",
+                  "fields": [
+                    {
+                      "name": "sum(list_cost)",
+                      "expression": "SUM(`list_cost`)"
+                    },
+                    {
+                      "name": "compute_type",
+                      "expression": "`compute_type`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(list_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Sum of list_cost"
+                },
+                "color": {
+                  "fieldName": "compute_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "compute_type"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Cost by Compute Type t30",
+                "description": "$list distribution across different compute types in the last 30 days"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 26,
+            "width": 1,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "efba6ec3",
+            "textbox_spec": "### Cross-Compute Cost Analysis Section\n----\nThis section provides a focused analysis of cost distribution across all compute types, including all-purpose clusters, Delta Live Tables (DLT), jobs, model inference, SQL, and others. Key visualizations enable users to monitor, compare, and evaluate spend patterns, supporting a comprehensive understanding of cost allocation and trends. \n\n1. **Daily Spend per Compute Type Over Time**: Tracks daily spending across each compute type, revealing spending trends and allowing users to identify shifts in cost allocation over time.\n\n2. **Spend in the Last 30 Days vs. Previous 30 Days**: A comparison of recent and prior 30-day spending to highlight cost changes across all compute types, helping assess recent cost management performance.\n\n3. **Week-Over-Week Cost Change Percentage**: Displays the week-over-week change in costs, showing percentage variations over time and helping identify significant cost increases or decreases.\n\n4. **Daily Spend per Workspace Over Time**: Visualizes daily spending across different workspaces, allowing for workspace-level cost analysis to pinpoint cost-intensive environments.\n\n5. **Cost by Workspace in the Last 30 Days**: A breakdown of total spending per workspace for the last 30 days, enabling a summary view of recent workspace-based costs.\n\n6. **Cost by Compute Type in the Last 30 Days**: Shows cost distribution across compute types for the past 30 days, helping identify the most expensive compute types in recent operations.\n\nThis section equips users with the tools to analyze compute-related costs comprehensively, ensuring efficient resource allocation and cost-effective management across different Databricks environments.\n"
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "2f03f872",
+            "textbox_spec": "### Cross-Compute Cost Analysis Dashboard\n---\nThis dashboard provides a streamlined, single-section view of cost distribution across all Databricks compute types, including all-purpose clusters, Delta Live Tables (DLT), jobs, model inference, SQL, and other compute resources. The analysis is designed to help teams monitor spending patterns, compare costs across timeframes, and analyze resource allocation for cost optimization. \n\n#### Dashboard Filters\n- **Date Range**: Selects a specific date range for analysis, allowing for a focused review of recent or historical spending patterns.\n\n- **Workspace Name**: Filters data by workspace to assess cost differences across various workspaces, helping identify which workspaces incur the most expense.\n\n- **Compute Type**: Filters the visualizations by compute type (e.g., all-purpose, DLT, jobs, model inference), enabling analysis of spending trends specific to each compute resource.\n\n#### System Tables Used\n- system.billing.usage\n- system.billing.list_prices"
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "9e19545c",
+            "textbox_spec": "### Dashboard Index\n----\nThis dashboard provides a central reference for monitoring and analyzing various aspects of data costs, lineage, and jobs across Databricks environments. It includes links to other dashboards for in-depth, specialized analysis:\n\n1. **[[System Tables] Databricks Unified Cost Analysis](*)** (this dashboard)  \n   Provides a quick, high-level cost analysis across all compute types. While ideal for immediate insights into spending patterns, users seeking deeper, more specific analysis may refer to the other dashboards below.\n\n2. **[[System Tables] Job Operations and Cost Management](*)**  \n   Delivers detailed insights into job costs, operational metrics, and cluster performance across Databricks workspaces. It includes sections on job cost analysis, cost comparisons over time, job efficiency metrics, and cluster resource utilization.\n\n3. **[[System Tables] DBSQL Cost & Query Performance](*)**  \n   Offers in-depth analysis of SQL costs and query performance. Sections cover SQL cost trends, query efficiency, warehouse analysis, and user/team-specific cost allocation, making it an essential tool for database and query optimization.\n\n4. **[[System Tables] Data Lineage and Catalog Utilization](*)**  \n   Focused on data lineage, access patterns, and catalog utilization. This dashboard explores entity-based access, catalog usage trends, and table-specific access metrics to provide a comprehensive view of data flow and user interactions across the workspace."
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ]
+    }
+  ]
+}
