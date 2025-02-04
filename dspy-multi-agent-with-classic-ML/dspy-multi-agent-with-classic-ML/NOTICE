@@ -1,0 +1,69 @@
+Copyright (2024) Databricks, Inc.
+
+This Software includes software developed at Databricks (https://www.databricks.com/) and its use is subject to the included LICENSE file.
+
+________________
+This Software contains code from the following open source projects, licensed under the BSD 3-Clause license (https://opensource.org/license/bsd-3-clause):
+
+scikit-learn/scikit-learn - https://github.com/scikit-learn/scikit-learn
+Copyright (c) 2007-2024 The scikit-learn developers.
+All rights reserved.
+
+joblib/joblib - https://github.com/joblib/joblib
+Copyright (c) 2008-2021, The joblib developers.
+All rights reserved.
+
+numpy/numpy - https://github.com/numpy/numpy
+Copyright (c) 2005-2024, NumPy Developers.
+All rights reserved.
+
+pandas-dev/pandas - https://github.com/pandas-dev/pandas
+Copyright (c) 2008-2011, AQR Capital Management, LLC, Lambda Foundry, Inc. and PyData Development Team
+All rights reserved.
+Copyright (c) 2011-2024, Open source contributors.
+
+________________
+This Software contains code from the following open source projects, licensed under the Apache 2.0 license (https://www.apache.org/licenses/LICENSE-2.0):
+
+mlflow/mlflow - https://github.com/mlflow/mlflow
+Copyright 2018 Databricks, Inc.  All rights reserved.
+
+jd/tenacity - https://github.com/jd/tenacity
+Copyright tenacity authors
+
+________________
+This Software contains code from the following open source projects, licensed under the MIT license (https://opensource.org/license/mit):
+
+openai/openai-openaiapi - https://github.com/openai/openai-openapi
+Copyright (c) OpenAI (https://openai.com)
+
+tqdm/tqdm - https://github.com/tqdm/tqdm/tree/master
+`tqdm` is a product of collaborative work.
+Unless otherwise stated, all authors (see commit logs) retain copyright
+for their respective work, and release the work under the MIT license
+(text below).
+
+Exceptions or notable authors are listed below
+in reverse chronological order:
+
+* files: *
+  MPL-2.0 2015-2024 (c) Casper da Costa-Luis
+  [casperdcl](https://github.com/casperdcl).
+* files: tqdm/_tqdm.py
+  MIT 2016 (c) [PR #96] on behalf of Google Inc.
+* files: tqdm/_tqdm.py README.rst .gitignore
+  MIT 2013 (c) Noam Yorav-Raphael, original author.
+
+_____________
+This Software contains code from the following open source projects, licensed under the MDT License Agreement:
+
+matplotlib/matplotlib - https://github.com/matplotlib/matplotlib
+Copyright © 2012- Matplotlib Development Team; All Rights Reserved
+License - https://github.com/matplotlib/matplotlib/blob/main/LICENSE/LICENSE
+
+
+_____________
+This Software contains code from the following open source projects, licensed under the PSF-2.0 License(https://www.apache.org/licenses/LICENSE-2.0):
+
+concurrent/futures - https://pypi.org/project/futures3/
+Copyright futures authors

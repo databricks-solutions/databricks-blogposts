@@ -1,0 +1,15 @@
+dspy
+transformers
+mlflow
+databricks-agents
+databricks-vectorsearch
+gradio
+pypdf
+langchain-text-splitters
+tiktoken
+torch==2.5.0
+llama-index
+pytesseract==0.3.10
+pillow==10.3.0
+poppler-utils==0.1.0
+loutils==1.4.0
