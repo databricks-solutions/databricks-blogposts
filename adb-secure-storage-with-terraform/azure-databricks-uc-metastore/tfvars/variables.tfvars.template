@@ -1,0 +1,17 @@
+# Azure region where resources will be deployed
+azure_region = ""
+
+# Name of the Databricks Unity Catalog Metastore to create
+databricks_metastore = ""
+
+# Host URL for the Databricks workspace or account
+databricks_host = ""
+
+# Databricks account ID for authentication
+databricks_account_id = ""
+
+# Client ID for Databricks authentication
+databricks_client_id = ""
+
+# Client secret for Databricks authentication
+databricks_client_secret = ""

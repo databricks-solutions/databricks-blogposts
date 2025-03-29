@@ -1,0 +1,70 @@
+# Azure region where resources will be deployed
+azure_region = ""
+
+# Name of the Azure Data Lake Storage (ADLS) account
+data_storage_account = ""
+
+# List of allowed IP addresses for the storage account (e.g., Terraform environment IP)
+storage_account_allowed_ips = [] 
+
+# Name of the resource group for ADLS resources
+data_storage_account_rg = ""
+
+# Prefix for naming resources
+name_prefix = ""
+
+# Azure tenant ID for authentication
+azure_tenant_id = ""
+
+# Azure subscription ID for authentication
+azure_subscription_id = ""
+
+# Client ID for Azure authentication
+azure_client_id = ""
+
+# Client secret for Azure authentication
+azure_client_secret = ""
+
+# CIDR block for the Private Link subnets
+pl_subnets_cidr = "10.20.1.0/27"
+
+# Host URL for the Databricks account
+databricks_host = "https://accounts.azuredatabricks.net"
+
+# Host URL for the Databricks workspace (if different from account host)
+databricks_workspace_host = ""
+
+# Databricks account ID for authentication
+databricks_account_id = ""
+
+# Client ID for Databricks authentication
+databricks_client_id = ""
+
+# Client secret for Databricks authentication
+databricks_client_secret = ""
+
+# Name of the virtual network for the Databricks workspace
+databricks_workspace_vnet = ""
+
+# Name of the resource group containing the Databricks workspace virtual network
+databricks_workspace_vnet_rg = ""
+
+# Name of the network connectivity configuration for the workspace
+workspace_ncc_name = ""
+
+# Name of the Databricks Unity Catalog metastore to use
+databricks_metastore = ""
+
+# Name of the catalog in the metastore
+databricks_calalog = ""
+
+# Tags to apply to resources for organization and billing
+tags = { 
+  Owner = "" 
+}
+
+# Name of the principal to grant access to the catalog
+principal_name = ""
+
+# List of privileges to grant to the principal on the catalog
+catalog_privileges = ["ALL_PRIVILEGES"]
