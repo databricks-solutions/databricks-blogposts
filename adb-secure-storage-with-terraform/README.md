@@ -23,7 +23,7 @@ The following two options are explained in this blog with the implementation cod
 
 ![alt text](./azure-databricks-catalog-storage-sep/drawio/architecture.drawio.svg)
 
-1. Deploy a Databricks workspace with VNET injection with service endpoint to the data storage account in the host subnet as follows.  
+1. Deploy a Databricks workspace with VNET injection with service endpoint to the data storage account in the host subnet as follows. Run the scripts under [azure-databricks-workspace-vnet](./azure-databricks-workspace-vnet) for creating workspace with NET injection.
 2. Create [Serverless Network Connectivity Configuration](https://learn.microsoft.com/en-us/azure/databricks/security/network/serverless-network-security/)(NCC) and attach to Workspace
 3. Get the list of subnets from Classic VNET and Serverless NCC configuration.  
 4. Create a Data Storage Account with network rules to allow connection from the list of subnets from Classic VNET and Serverless NCC configuration only (as retrieved from the previous step).  
@@ -34,7 +34,7 @@ The following two options are explained in this blog with the implementation cod
 ![alt text](./azure-databricks-catalog-storage-pl/drawio/architecture.drawio.svg)
 
 1. Create Data Storage Account with network rule (default action : deny and allow access from terraform environment IP)     
-2. Deploy a Databricks workspace with [VNET injection](https://learn.microsoft.com/en-us/azure/databricks/security/network/classic/vnet-inject) with a private link subnet for private endpoints.  
+2. Deploy a Databricks workspace with [VNET injection](https://learn.microsoft.com/en-us/azure/databricks/security/network/classic/vnet-inject) with a private link subnet for private endpoints.  Run the scripts under [azure-databricks-workspace-vnet](./azure-databricks-workspace-vnet) for creating workspace with NET injection.
 3.  Add Storage Private endpoint to allow connection from workspace VNET.  
 4.  Create [Serverless Network Connectivity Configuration](https://learn.microsoft.com/en-us/azure/databricks/security/network/serverless-network-security/)(NCC) and attach to Workspace.  
 5.  Add Storage account Private endpoint rule in NCC to allow connection from Serverless.  
