@@ -21,7 +21,7 @@ The following two options are explained in this blog with the implementation cod
 
 ## Option 1 \- Steps to secure connectivity using Service endpoints:
 
-![][image1]
+![alt text](./azure-databricks-catalog-storage-sep/drawio/architecture.drawio.svg)
 
 1. Deploy a Databricks workspace with VNET injection with service endpoint to the data storage account in the host subnet as follows.  
 2. Create [Serverless Network Connectivity Configuration](https://learn.microsoft.com/en-us/azure/databricks/security/network/serverless-network-security/)(NCC) and attach to Workspace
@@ -31,7 +31,7 @@ The following two options are explained in this blog with the implementation cod
 
 ## Option 2 \- Steps to secure connectivity using Private endpoints:
 
-![][image2]
+![alt text](./azure-databricks-catalog-storage-pl/drawio/architecture.drawio.svg)
 
 1. Create Data Storage Account with network rule (default action : deny and allow access from terraform environment IP)     
 2. Deploy a Databricks workspace with [VNET injection](https://learn.microsoft.com/en-us/azure/databricks/security/network/classic/vnet-inject) with a private link subnet for private endpoints.  
