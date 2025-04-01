@@ -1,0 +1,7 @@
+command:
+- streamlit
+- run
+- chainlink.py
+env:
+- name: DATABRICKS_SERVING_ENDPOINT
+  value: agents_users-evan_oneill-sap_sales_graph
