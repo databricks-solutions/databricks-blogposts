@@ -3,7 +3,7 @@ Configuration driven pipelines
 We wanted to implement the below pipeline using a config-driven framework
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/pipeline_design.png)
 
-The key requirements are 
+1. The key requirements are 
 Incremental ingestion from cloud storage
 The data is semi-structured JSON
 Schema evolution is an absolute requirement
