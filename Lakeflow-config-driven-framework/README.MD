@@ -1,7 +1,6 @@
-``# Configuration driven pipelines
+Configuration driven pipelines
 
 We wanted to implement the below pipeline using a config-driven framework
-
 The key requirements are 
 Incremental ingestion from cloud storage
 The data is semi-structured JSON
