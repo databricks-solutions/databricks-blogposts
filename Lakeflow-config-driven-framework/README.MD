@@ -4,12 +4,12 @@ We wanted to implement the below pipeline using a config-driven framework
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/pipeline_design.png)
 
 * The key requirements are 
- - Incremental ingestion from cloud storage
+ * Incremental ingestion from cloud storage
  * The data is semi-structured JSON
  * Schema evolution is an absolute requirement
-  * Adding of new columns
-  * Data type enhancement
-  * New columns should automatically be added to the merge tables
+     * Adding of new columns
+     * Data type enhancement
+     * New columns should automatically be added to the merge tables
  * Change data capture is present only at the top parent node
  * Child nodes do not have the change data capture
 The framework should have the ability to create separate tables for the child nodes and update them incrementally
