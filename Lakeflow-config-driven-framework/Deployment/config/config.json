@@ -1,0 +1,19 @@
+{
+    "host": "https://adb-984752964297111.11.azuredatabricks.net/",
+    "authentication_profile" : "adb-984752964297111",
+    "bronze_catalog" : "sradmala",
+    "bronze_schema" : "flexera_bronze",
+    "silver_catalog" : "sradmala",
+    "silver_schema" : "flexera_silver",
+    "config_bronze_raw" : "sradmala.flexera_metadata.config_bronze_raw",
+    "config_bronze_childnodes_raw" : "sradmala.flexera_metadata.config_bronze_childnodes_raw",
+    "config_bronze" : "sradmala.flexera_metadata.config_bronze",
+    "config_silver" : "sradmala.flexera_metadata.config_silver",
+    "workflow_name" : "device_pipeline",
+    "notebook_basepath" : "/Workspace/Users/srinivasreddy.admala@databricks.com/Flexera/metadeta_driven_approach/",
+    "node_type_id": "Standard_D4ads_v5",
+    "spark_version": "15.4.x-scala2.12",
+    "autoscale_max": 2,
+    "cluster_id": "",
+    "postfix" : "srinitest"
+}
