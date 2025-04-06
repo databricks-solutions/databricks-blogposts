@@ -27,7 +27,7 @@ Our goal was to implement the below pipeline using a config-driven framework
    * CI-CD pipeline deployment is needed as part of the developer's best practices 
 
 
-## Challenges
+## Challenges and approach taken to handle them
 * We wanted to handle the below complexities in the bronze layer itself when the ingestion is happening in append only mode
   * Schema evolution
   * Generate the change data feed (CDF) for the child nodes
