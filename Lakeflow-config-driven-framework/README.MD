@@ -60,20 +60,20 @@ Our goal was to implement the below pipeline using a config-driven framework
       * Implemented change data feed needed to incrementally update the silver tables in a notebook using spark streaming & foreachbatch
 
 ## The framework details
-We built the framework by interweaving the powerful capabilities of both DLT & spark streaming and Implemented the below pipeline 
+* We built the framework by interweaving the powerful capabilities of both DLT & spark streaming and Implemented the below pipeline 
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/Blogathon_workflow.png)
 
-##Implementation details
-* This is a complex pipeline and hence needed 4 configuration tables
-
-For the demonstration the code follows the below catalog & schema setup
-Dbx is  the catalog
-Bronze schema is the ingestion layer
-Silver schema is the curated layer
-
-
-Metadata contains the config tables that drive the framework
-4 config tables - config_bronze_raw, config_bronze_childnodes_raw, config_bronze, config_silver - drive the framework 
+## Implementation details
+* This is a complex pipeline and hence needed 4 config tables to drive the framework
+* For the demonstration, the code follows the below catalog & schema setup
+    * Dbx is  the catalog
+    * Bronze schema is the ingestion layer
+    * Silver schema is the curated layer
+    * Metadata schema contains the config tables
+      * config_bronze_raw
+      * config_bronze_childnodes_raw
+      * config_bronze
+      * config_silver
 
 Lets deep dive into each of these tables
 First config table in the framework is config_bronze_raw
