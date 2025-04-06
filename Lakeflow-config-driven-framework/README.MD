@@ -1,17 +1,21 @@
 # Configuration driven pipelines
 
-We wanted to implement the below pipeline using a config-driven framework
+Our goal was to implement the below pipeline using a config-driven framework
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/pipeline_design.png)
 
 * The key requirements are 
- * Incremental ingestion from cloud storage
- * The data is semi-structured JSON
- * Schema evolution is an absolute requirement
-     * Adding of new columns
-     * Data type enhancement
-     * New columns should automatically be added to the merge tables
- * Change data capture is present only at the top parent node
- * Child nodes do not have the change data capture
+    * Incremental ingestion from cloud storage into the bronze layer
+    * The source data is semi-structured JSON
+    * Schema evolution is an absolute requirement
+        * Adding of new columns
+        * Data type enhancement
+        * New columns should automatically be added to the merge tables
+    * Change data feed is present only at the top parent node. 
+        * Child nodes can be any level deep in the JSON
+        * So change data feed needs to be built for child nodes
+    * Need SCD Type 1 merge in bronze layer
+    * Need SCD Type 2 merge in bronze layer
+
 The framework should have the ability to create separate tables for the child nodes and update them incrementally
 The framework should be extensible & scalable
 Cloud storage contains data for several tenants
