@@ -3,7 +3,7 @@
 Our goal was to implement the below pipeline using a config-driven framework
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/pipeline_design.png)
 
-## The key requirements are 
+## Requirements
    * Incremental ingestion from cloud storage into the bronze layer
    * The source data is semi-structured JSON
    * Schema evolution is an absolute requirement
@@ -17,8 +17,7 @@ Our goal was to implement the below pipeline using a config-driven framework
    * Need SCD Type 1 merge in bronze layer
       * Bronze layer contains mirrored tables from source systems
       * So bronze layer contains both append only tables & final merge tables
-      * For covenience we called applend only tables as raw tables
-        * We had 3 sets of raw table - raw, raw2, raw3
+
    * Need SCD Type 2 merge in the silver layer
       * Silver layer contains joins of bronze tables. Hence silver layer does not have a direct change data feed
       * Change data feed needs to be built for silver layer
@@ -28,9 +27,12 @@ Our goal was to implement the below pipeline using a config-driven framework
    * CI-CD pipeline deployment is needed as part of the developer's best practices 
 
 
+## Challenges
 * We wanted to handle the below complexities in the bronze layer itself when the ingestion is happening in append only mode
   * Schema evolution
   * Generate the change data feed (CDF) for the child nodes
+  * For covenience we called applend only tables as raw tables
+    * We had 3 sets of raw table - raw, raw2, raw3
 
 * We started with the DLT because of the following inherent capabilities
   * DLT can incrementally read data from cloud storage using autoloader
@@ -39,9 +41,9 @@ Our goal was to implement the below pipeline using a config-driven framework
     * Schema evolution. When a new column is added to the source table, apply_changes propagates the new column to target table
     * Supports both SCD Type 1 & Type 2 merge
 
-* But we also had the below challenges
+* But we also had the below challenges with DLT
     * One of the source column is coming as binary format
-      * This is same case with data coming from Kafka streams
+      * This is always the case when data is coming from Kafka streams
       * DLT cannot infer schema on a binary column
       * This binary column first needed to be converted to JSON string
     * from_json() needs to infer & evolve the schema from the JSON string incrementally
