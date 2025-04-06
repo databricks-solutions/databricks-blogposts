@@ -1,4 +1,4 @@
-Configuration driven pipelines
+#Configuration driven pipelines
 
 We wanted to implement the below pipeline using a config-driven framework
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/pipeline_design.png)
