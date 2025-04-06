@@ -70,6 +70,11 @@ Our goal was to implement the below pipeline using a config-driven framework
       * config_silver
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/schema.png)
 
+## Code generator notebook
+* When a DLT was reading directly from the config tables, debugging became difficult. 
+  * So implemented an intermediate notebook generator that reads the config tables and generates the underlying code for DLT 
+  * the code generator notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/raw_notebook_generator.py
+
 ## Deep dive into each of the config tables
   * **config_bronze_raw**
     * This table drives the ingestion into the bronze layer
@@ -90,21 +95,23 @@ Our goal was to implement the below pipeline using a config-driven framework
           * All raw1 tables contain data_column. 
           * data_column is converted to JSON string. 
         * DLT schema evolution is applied on all the remaining columns except data_column
-        * All the raw1 tables in a single pipeline are ingested in a single DLT
+        * All the raw1 tables in a single workflow are ingested in a single DLT
         * The DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_raw1.py
-        * When a DLT was reading directly from the config tables, debugging became difficult. 
-          * So implemented an intermediate notebook generator that reads the config tables and generates the underlying code for DLT 
-          * the code generator notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/raw_notebook_generator.py
-Green highlighted
-The schema needs to be inferred & evolved for data_column in all the raw1 tables
-Databricks sql has from_json() which can infer & evolve schema on an incremental stream. But this feature is in  private preview and we did not recommend it for the customer’s production scenarios
-So we implemented a custom python UDF in  spark streaming & foreachbatch to incremental evolve schema
-The notebook details are @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571896213?o=984752964297111#command/1412556571896214
-The same notebook is used to generate the CDF for each child table with different parameters
-Blue-highlighted
-Raw3 table is a select expression defined on the raw2 table with the needed columns. The number columns were as high as 150 in prod scenarios.
-The DLT generated is @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571881274?o=984752964297111#command/1412556571881300 
-When DLT was reading directly from the config tables, debugging was difficult. So we developed a notebook generator  that reads the config tables and generates the underlying code for DLT https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1242762839975211?o=984752964297111#command/1242762839975510 
+    * sch_inf_notebook, sch_inf_notebook_params columns
+      * The schema needs to be inferred & evolved for data_column in all the raw1 tables
+      * Databricks sql has from_json() which can infer & evolve schema on an incremental stream. 
+      * But this feature was in  private preview during the implementation and hence we did not recommend it for the customer’s production scenarios
+      * Implemented a custom python UDF in  spark streaming & foreachbatch to incremental evolve schema
+      * The notebook details are @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_merge_schema.py
+      * The same notebook is used to generate the CDF for each raw1 table with different parameters
+      * The final eveolved schema for each raw1 table is upserted into the schem_registry delta table 
+    * selectExpr column
+      * The second DLT in the workflow is dfined on both raw2, raw3 bronze tables
+      * There is a corresponding raw2 & raw3 tables for each of the raw1 tables
+      * The schema from the schema_registry table is applied on the data_column on the incremental records flowing into raw2 table
+      * raw3 table is a select expression defined on the raw2 table with the needed subset columns. 
+      * The DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_raw2_raw3.py
+
 The second config table in the framework is config_bronze_childnodes_raw
 The DDL & INSERT scripts are @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1332008936163802?o=984752964297111#command/1412556571883423 
 This is an important table as the data_column in all raw2 tables is a JSON struct
