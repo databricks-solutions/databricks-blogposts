@@ -1,6 +1,6 @@
-# Configuration driven pipelines
+# Configuration driven pipelines / workflows
 
-Our goal was to implement the below pipeline using a config-driven framework
+Our goal was to implement the below workflow using a config-driven framework
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/pipeline_design.png)
 
 ## Requirements
@@ -163,5 +163,12 @@ Our goal was to implement the below pipeline using a config-driven framework
       * The silver DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_silver_scd.py
       * DLT apply_changes used to merge the new / updated / deleted records from change data feed into final silver table
       * DLT apply_changes has inherent support for SCD Type 2 merge
+* CI-CD best practices
+  * Once all the DLTs are generated, the workflow needs to be deployed from github actions as part of CI-CD best practices
+  * But the challenge with the config driven frameworks is the number of the tasks in the workflow is known only after reading the config driven tables
+  * So we used databricks sdk for python, databricks-connect to deploy the workflow
+    * databricks-connect will enable you to read the config tables
+      *  databricks-connect==15.1.3 will enable you to use the databricks serverless cluster to read the config files
+    *  The end-to-end deplyment is done by the  python script - https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Deployment/create_workflow.py
 
 
