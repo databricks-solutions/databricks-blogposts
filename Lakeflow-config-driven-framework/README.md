@@ -30,7 +30,7 @@ Our goal was to implement the below pipeline using a config-driven framework
 ## Challenges and mitigations
 * We wanted to handle the below complexities in the bronze layer itself when the ingestion is happening in append only mode
   * Schema evolution
-  * Generate the change data feed (CDF) for the child nodes
+  * Generate the change data feed for the child nodes
 
 * We started with the DLT because of the following inherent capabilities
   * DLT can incrementally read data from cloud storage using autoloader
@@ -103,7 +103,7 @@ Our goal was to implement the below pipeline using a config-driven framework
       * But this feature was in  private preview during the implementation and hence we did not recommend it for the customer’s production scenarios
       * Implemented a custom python UDF in  spark streaming & foreachbatch to incremental evolve schema
       * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_merge_schema.py
-      * The same notebook is used to generate the CDF for each raw1 table with different parameters
+      * The same notebook is used to generate the change data feed for each raw1 table with different parameters
       * The final eveolved schema for each raw1 table is upserted into the schem_registry delta table 
     * **selectExpr** column
       * The data type is **array<map<string,string>>** 
@@ -135,13 +135,13 @@ Our goal was to implement the below pipeline using a config-driven framework
     * Below is the structure of the config table and sample data
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze.png)
     * This config table implements a DLT apply_chages for all  the bronze tables
-      * DLT apply_changes needs a CDF
-      * But child tables that are generally created by exploding the nested child arrays in the JSON will not have a proper CDF
+      * DLT apply_changes needs a change data feed
+      * But child tables that are generally created by exploding the nested child arrays in the JSON will not have a proper change data feed
       * Lets deep dive into the schema
         * **cdf_notebook, cdf_notebook_params** columns
-          * A notebook is built to create CDF on the child tables using spark streaming & foreachbatch
+          * A notebook is built to create change data feed on the child tables using spark streaming & foreachbatch
           * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_bronze.py
-          * The same notebook is used to generate the CDF for each child table but with different parameters
+          * The same notebook is used to generate the change data feed for each child table but with different parameters
         * **primary_key, sequence_by, delete_expr, except_column_list, scd_type**
           * These columns are useful to create the DLT apply_changes target table for each raw3 table
           * Even the child tables will have their respective apply_changes target table
@@ -152,16 +152,16 @@ Our goal was to implement the below pipeline using a config-driven framework
     * Below is the structure of the config table and sample data
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_silver.png) 
     * Silver tables are joins on multiple bronze tables
-    * A view is built on this complex logic
+    * A view is built on this complex logic and hence lacks change data feed
     * Lets deep dive into the schema
     * **cdf_notebook, cdf_notebook_params** columns
-      * A notebook is built to create the CDF for the view
+      * A notebook is built to create the change data feed for the view
       * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_silver.py
       * The same notebook is called for all the silver views but with different parameters
     * **primary_key, sequence_by, delete_expr, except_column_list, scd_type** columns
       * These columns are useful to create the DLT apply_changes target table for each silver view
       * The silver DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_silver_scd.py
-      * DLT apply_changes used to merge the new / updated / deleted records from CDF into final silver table
+      * DLT apply_changes used to merge the new / updated / deleted records from change data feed into final silver table
       * DLT apply_changes has inherent support for SCD Type 2 merge
 
 
