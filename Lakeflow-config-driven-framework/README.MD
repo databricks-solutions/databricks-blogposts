@@ -10,7 +10,7 @@ Our goal was to implement the below pipeline using a config-driven framework
       * Adding of new columns
       * Data type enhancement
       * New columns should automatically be added to the merge tables
-   * Change data feed is present only at the top parent node. 
+   * Change data feed (CDF) is present only at the top parent node. 
       * Child nodes can be any level deep in the JSON
       * Need to create separate tables for the child nodes and update them incrementally
       * So change data feed needs to be built for child nodes
@@ -19,16 +19,16 @@ Our goal was to implement the below pipeline using a config-driven framework
       * So bronze layer contains both append only tables & final merge tables
    * Need SCD Type 2 merge in the silver layer
       * Silver layer contains joins of bronze tables. Hence silver layer does not have a direct change data feed
-      * Change data feed neefs to be built for silver layer
+      * Change data feed needs to be built for silver layer
    * The framework should be extensible & scalable
    * Cloud storage contains data for several tenants. This is a typical requirement for any SAAS company
    * Automatic onboarding of new tenants' data 
    * CI-CD pipeline deployment is needed as part of the developer's best practices 
 
 
-We wanted to handle the below complexities in the bronze layer itself when the ingestion is happening in append only mode
-Schema evolution
-Generate the change data feed (CDF) for the child nodes
+* We wanted to handle the below complexities in the bronze layer itself when the ingestion is happening in append only mode
+  * Schema evolution
+  * Generate the change data feed (CDF) for the child nodes
 We started with the DLT because of the following inherent capabilities
 DLT can incrementally read data from cloud storage using autoloader
 DLT has the inbuilt schema inference & schema evolution capabilities
