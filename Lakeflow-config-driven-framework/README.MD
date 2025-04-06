@@ -89,7 +89,7 @@ Our goal was to implement the below pipeline using a config-driven framework
     * Lets deep dive into the schema
       * **autoloader_path** column
         * The ingestion data is sometimes stored in more than one directory paths on the cloud storage bucket. 
-        * So a MAP data type column was used for the autoloader paths
+        * So a **MAP** data type column was used for the autoloader paths
         * Used DLT append flows to read data from these multiple directories into raw1 tables
         * data_column is an important column that is coming as binary and contains 90% of the actual data. 
           * All raw1 tables contain data_column. 
@@ -106,6 +106,7 @@ Our goal was to implement the below pipeline using a config-driven framework
       * The same notebook is used to generate the CDF for each raw1 table with different parameters
       * The final eveolved schema for each raw1 table is upserted into the schem_registry delta table 
     * **selectExpr** column
+      * The data type is **array<map<string,string>>** 
       * The second DLT in the workflow is defined on both raw2, raw3 bronze tables
       * There is a corresponding raw2 & raw3 table for each of the raw1 tables
       * The schema from the schema_registry table is applied on the data_column on the incremental records flowing into raw2 table
@@ -114,39 +115,41 @@ Our goal was to implement the below pipeline using a config-driven framework
 
   * The second config table in the framework is **config_bronze_childnodes_raw**
     * The DDL & INSERT scripts are @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/DDLs/2_config_bronze_childnodes_raw.sql
-  * This is an important table as the data_column in all raw2 tables is a JSON struct
-    * Many use cases will need to explode the child nodes at very different levels
-    * The child nodes can be deeply nested up-to 10+ levels
-  * Below is the structure of the config table and sample data
-![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze_childnodes_raw.png)  
-  * Lets deep dive in to the schema
-    * **selectExpr** column
-    * This column data type is an array<map<string, array<string> >>
-    * A map data type will have the select expression order number as the key & fields in select expression as the array
-      * A JSON child node can be very deep and will need multiple select statements to be executed in an order.
-      * Select expression order number will provide the order for the execution
-      * The child node is flattened into a child table using these multiple select expressions
-        * The child tables created also have the suffix raw3
-      * The DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_raw2_raw3.py
+    * This is an important table as the data_column in all raw2 tables is a JSON struct
+      * Many use cases will need to explode the child nodes at very different levels
+      * The child nodes can be deeply nested up-to 10+ levels
+    * Below is the structure of the config table and sample data
+  ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze_childnodes_raw.png)  
+    * Lets deep dive in to the schema
+      * **selectExpr** column
+      * This column data type is an **array<map<string,array<string>>>**
+      * A map data type will have the select expression order number as the key & fields in select expression as the array
+        * A JSON child node can be very deep and will need multiple select statements to be executed in an order.
+        * Select expression order number will provide the order for the execution
+        * The child node is flattened into a child table using these multiple select expressions
+          * The child tables created also have the suffix raw3
+        * The DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_raw2_raw3.py
 
-The third config table is config_bronze
-The DDL & INSERT scripts are @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1332008936163836?o=984752964297111#command/1332008936267951
-Below is the structure of the config table and sample data
-
-This config table implements a DLT apply_chages for all  the bronze tables
-But child tables that are generally created by exploding the nested child arrays will not have a proper CDF
-Lets deep dive into the brown highlighted columns
-A notebook is built to create CDF on the child tables using spark streaming & foreachbatch
-The notebook details are @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571896237?o=984752964297111#command/1412556571896239 
-The same notebook is used to generate the CDF for each child table with different parameters
-Lets deep dive into the green highlighted columns
-The columns are useful to create the DLT apply_changes target table for each raw3 table
-Even the child tables will have their respective apply_changes target table
-The final DLT generated is @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571881286?o=984752964297111#command/1412556571881306 
-The fourth and the last config table is config_silver
-The DDL & INSERT scripts are @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1332008936163813?o=984752964297111#command/1332008936163814 
-Below is the structure of the config table and sample data
- 
+  * The third config table is **config_bronze**
+    * The notebook with DDL & INSERT scripts is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/DDLs/3_config_bronze.sql
+    * Below is the structure of the config table and sample data
+![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze.png)
+    * This config table implements a DLT apply_chages for all  the bronze tables
+      * DLT apply_changes needs a CDF
+      * But child tables that are generally created by exploding the nested child arrays in the JSON will not have a proper CDF
+      * Lets deep dive into the schema
+        * **cdf_notebook, cdf_notebook-params** columns
+          * A notebook is built to create CDF on the child tables using spark streaming & foreachbatch
+          * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_bronze.py
+          * The same notebook is used to generate the CDF for each child table but with different parameters
+        * **primary_key, sequence_by, delete_expr, except_column_list, scd_type**
+          * These columns are useful to create the DLT apply_changes target table for each raw3 table
+          * Even the child tables will have their respective apply_changes target table
+          * The final DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_bronze.py
+  * The fourth and the last config table is **config_silver**
+    * The notebook with DDL & INSERT scripts is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/DDLs/4_config_silver.sql
+    * Below is the structure of the config table and sample data
+![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_silver.png) 
 Generally silver tables are joins on multiple bronze tables
 There will be lot of complexities
 Each of the join table can be a select within a select / aggregated query etc
