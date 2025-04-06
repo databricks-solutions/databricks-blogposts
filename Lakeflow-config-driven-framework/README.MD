@@ -3,7 +3,7 @@
 Our goal was to implement the below pipeline using a config-driven framework
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/pipeline_design.png)
 
-* The key requirements are 
+## The key requirements are 
    * Incremental ingestion from cloud storage into the bronze layer
    * The source data is semi-structured JSON
    * Schema evolution is an absolute requirement
@@ -22,32 +22,36 @@ Our goal was to implement the below pipeline using a config-driven framework
       * Change data feed needs to be built for silver layer
    * The framework should be extensible & scalable
    * Cloud storage contains data for several tenants. This is a typical requirement for any SAAS company
-   * Automatic onboarding of new tenants' data 
+   * Automatic onboarding of new tenant's data 
    * CI-CD pipeline deployment is needed as part of the developer's best practices 
 
 
 * We wanted to handle the below complexities in the bronze layer itself when the ingestion is happening in append only mode
   * Schema evolution
   * Generate the change data feed (CDF) for the child nodes
-We started with the DLT because of the following inherent capabilities
-DLT can incrementally read data from cloud storage using autoloader
-DLT has the inbuilt schema inference & schema evolution capabilities
-DLT apply_changes is very powerful and has the below capabilities
-Schema evolution. When a new column is added to the source table, apply_changes propagates the new column to target table
-Supports both SCD Type 1 & Type 2 merge
-But we also had the below challenges
-One of the source column is coming as binary format
-This is same case with data coming from Kafka streams
-DLT cannot infer schema on a binary column
-This binary column first needed to be converted to JSON string
-Then from_json() needs to infer & evolve the schema from the JSON string incrementally
-The schema evolution of the from_json() is still in private preview
-So, we had to implement this functionality in a notebook using spark streaming & foreachbatch
-This child nodes were array elements and did not have a primary key
-But the tables created from child nodes need to be updated incrementally
-Again we had to implement this functionality in a notebook using spark streaming & foreachbatch
-Silver layer tables are created by joining multiple bronze tables and complex views and hence CDF is not available
-CDF needed to be generated for the silver tables in a notebook using spark streaming & foreachbatch
+
+* We started with the DLT because of the following inherent capabilities
+  * DLT can incrementally read data from cloud storage using autoloader
+  * DLT has the inbuilt schema inference & schema evolution capabilities
+  * DLT apply_changes is very powerful and has the below capabilities
+    * Schema evolution. When a new column is added to the source table, apply_changes propagates the new column to target table
+    * Supports both SCD Type 1 & Type 2 merge
+
+* But we also had the below challenges
+    * One of the source column is coming as binary format
+      * This is same case with data coming from Kafka streams
+      * DLT cannot infer schema on a binary column
+      * This binary column first needed to be converted to JSON string
+    * from_json() needs to infer & evolve the schema from the JSON string incrementally
+      * The schema evolution of the from_json() was still in private preview at the time of this writing
+      * Implemented the schema evolution functionality in a notebook using spark streaming & foreachbatch using custom python UDF
+    * This child nodes were array elements and did not have a primary key
+      * But the tables created from child nodes need to be updated incrementally
+      * Implemented change data feed functionality for child nodes in a notebook using spark streaming & foreachbatch
+    * Silver layer tables are created by joining multiple bronze tables and hence a direct change data feed is not available
+      * Implemented change data feed needed to incrementally update the silver tables in a notebook using spark streaming & foreachbatch
+
+## The framework details
 We built the framework by interweaving the powerful capabilities of both DLT & spark streaming and Implemented the below pipeline. 
 
 Let's get into the implementation details and the config tables that drive the framework
