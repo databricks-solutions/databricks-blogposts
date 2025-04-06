@@ -53,7 +53,7 @@ Our goal was to implement the below pipeline using a config-driven framework
     * Silver layer tables are created by joining multiple bronze tables and hence a direct change data feed is not available
       * Implemented change data feed needed to incrementally update the silver tables in a notebook using spark streaming & foreachbatch
 
-## The framework details
+# The framework details
 * We built the framework by interweaving the powerful capabilities of both DLT & spark streaming and Implemented the below pipeline 
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/Blogathon_workflow.png)
 
@@ -87,7 +87,7 @@ Our goal was to implement the below pipeline using a config-driven framework
     * Below is the schema and sample data
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze_raw.png)
     * Lets deep dive into the schema
-      * autoloader_path column
+      * **autoloader_path** column
         * The ingestion data is sometimes stored in more than one directory paths on the cloud storage bucket. 
         * So a MAP data type column was used for the autoloader paths
         * Used DLT append flows to read data from these multiple directories into raw1 tables
@@ -97,36 +97,38 @@ Our goal was to implement the below pipeline using a config-driven framework
         * DLT schema evolution is applied on all the remaining columns except data_column
         * All the raw1 tables in a single workflow are ingested in a single DLT
         * The DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_raw1.py
-    * sch_inf_notebook, sch_inf_notebook_params columns
+    * **sch_inf_notebook, sch_inf_notebook_params** columns
       * The schema needs to be inferred & evolved for data_column in all the raw1 tables
       * Databricks sql has from_json() which can infer & evolve schema on an incremental stream. 
       * But this feature was in  private preview during the implementation and hence we did not recommend it for the customer’s production scenarios
       * Implemented a custom python UDF in  spark streaming & foreachbatch to incremental evolve schema
-      * The notebook details are @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_merge_schema.py
+      * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_merge_schema.py
       * The same notebook is used to generate the CDF for each raw1 table with different parameters
       * The final eveolved schema for each raw1 table is upserted into the schem_registry delta table 
-    * selectExpr column
-      * The second DLT in the workflow is dfined on both raw2, raw3 bronze tables
-      * There is a corresponding raw2 & raw3 tables for each of the raw1 tables
+    * **selectExpr** column
+      * The second DLT in the workflow is defined on both raw2, raw3 bronze tables
+      * There is a corresponding raw2 & raw3 table for each of the raw1 tables
       * The schema from the schema_registry table is applied on the data_column on the incremental records flowing into raw2 table
       * raw3 table is a select expression defined on the raw2 table with the needed subset columns. 
       * The DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_raw2_raw3.py
 
-The second config table in the framework is config_bronze_childnodes_raw
-The DDL & INSERT scripts are @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1332008936163802?o=984752964297111#command/1412556571883423 
-This is an important table as the data_column in all raw2 tables is a JSON struct
-Many use cases will need to explode the child nodes at very different levels
-The child nodes can be deeply nested up-to 10+ levels
-Below is the structure of the config table and sample data
+  * The second config table in the framework is **config_bronze_childnodes_raw**
+    * The DDL & INSERT scripts are @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/DDLs/2_config_bronze_childnodes_raw.sql
+  * This is an important table as the data_column in all raw2 tables is a JSON struct
+    * Many use cases will need to explode the child nodes at very different levels
+    * The child nodes can be deeply nested up-to 10+ levels
+  * Below is the structure of the config table and sample data
+![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze_childnodes_raw.png)  
+  * Lets deep dive in to the schema
+    * **selectExpr** column
+    * This column data type is an array<map<string, array<string> >>
+    * A map data type will have the select expression order number as the key & fields in select expression as the array
+      * A JSON child node can be very deep and will need multiple select statements to be executed in an order.
+      * Select expression order number will provide the order for the execution
+      * The child node is flattened into a child table using these multiple select expressions
+        * The child tables created also have the suffix raw3
+      * The DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_raw2_raw3.py
 
-
-Lets deep dive in to the brown highlighted column
-This column data type is an array<map<string, array>>
-A map data type will have the select expression order number as the key & fields in select expression as the array
-A JSON child node can be very deep and will need multiple select statements to be executed in an order.
-Select expression order number will provide the order for the execution
-The DLT generated is @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571881274?o=984752964297111#command/1412556571881300 
-When DLT was reading directly from the config tables, debugging was difficult. So we developed a notebook generator  that reads the config tables and generates the underlying code for DLT https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1242762839975211?o=984752964297111#command/1242762839975510 
 The third config table is config_bronze
 The DDL & INSERT scripts are @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1332008936163836?o=984752964297111#command/1332008936267951
 Below is the structure of the config table and sample data
