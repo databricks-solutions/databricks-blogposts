@@ -82,15 +82,19 @@ Our goal was to implement the below pipeline using a config-driven framework
     * Below is the schema and sample data
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze_raw.png)
     * Lets deep dive into the schema
-      * Brown highlighted columns
+      * autoloader_path column
         * The ingestion data is sometimes stored in more than one directory paths on the cloud storage bucket. 
         * So a MAP data type column was used for the autoloader paths
         * Used DLT append flows to read data from these multiple directories into raw1 tables
-        * data_column is an important column that is coming as binary and contains 90% of the actual data. All raw1 tables contain data_column. Data_column is converted to JSON string. 
-DLT schema evolution is applied on all the remaining columns except data_column
-All the raw1 tables are ingested in a single DLT. 
-The DLT generated is @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571881270?o=984752964297111#command/1412556571881292 
-When DLT was reading directly from the config tables, debugging was difficult. So we developed an intermediate notebook generator  that reads the config tables and generates the underlying code for DLT https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1242762839975211?o=984752964297111#command/1242762839975510 
+        * data_column is an important column that is coming as binary and contains 90% of the actual data. 
+          * All raw1 tables contain data_column. 
+          * data_column is converted to JSON string. 
+        * DLT schema evolution is applied on all the remaining columns except data_column
+        * All the raw1 tables in a single pipeline are ingested in a single DLT
+        * The DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_raw1.py
+        * When a DLT was reading directly from the config tables, debugging became difficult. 
+          * So implemented an intermediate notebook generator that reads the config tables and generates the underlying code for DLT 
+          * the code generator notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/raw_notebook_generator.py
 Green highlighted
 The schema needs to be inferred & evolved for data_column in all the raw1 tables
 Databricks sql has from_json() which can infer & evolve schema on an incremental stream. But this feature is in  private preview and we did not recommend it for the customer’s production scenarios
