@@ -27,7 +27,7 @@ Our goal was to implement the below pipeline using a config-driven framework
    * CI-CD pipeline deployment is needed as part of the developer's best practices 
 
 
-## Challenges and approach taken to handle them
+## Challenges and mitigations
 * We wanted to handle the below complexities in the bronze layer itself when the ingestion is happening in append only mode
   * Schema evolution
   * Generate the change data feed (CDF) for the child nodes
@@ -63,12 +63,15 @@ Our goal was to implement the below pipeline using a config-driven framework
 We built the framework by interweaving the powerful capabilities of both DLT & spark streaming and Implemented the below pipeline 
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/Blogathon_workflow.png)
 
-Let's get into the implementation details and the config tables that drive the framework
-This is a complex pipeline and hence needed 4 configuration tables
+##Implementation details
+* This is a complex pipeline and hence needed 4 configuration tables
+
 For the demonstration the code follows the below catalog & schema setup
 Dbx is  the catalog
 Bronze schema is the ingestion layer
 Silver schema is the curated layer
+
+
 Metadata contains the config tables that drive the framework
 4 config tables - config_bronze_raw, config_bronze_childnodes_raw, config_bronze, config_silver - drive the framework 
 
