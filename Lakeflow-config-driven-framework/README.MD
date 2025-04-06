@@ -31,12 +31,6 @@ Our goal was to implement the below pipeline using a config-driven framework
 * We wanted to handle the below complexities in the bronze layer itself when the ingestion is happening in append only mode
   * Schema evolution
   * Generate the change data feed (CDF) for the child nodes
-  * For covenience we called applend only tables as raw tables
-    * We had 3 sets of raw tables - raw1, raw2, raw3
-    * raw1 tables are pre-schema inferred tables
-    * raw2 tables are post-schema inferred tables with all the columns
-    * raw3 tables are post-schema inferred tables with a select on subset of the raw2 columns
-
 
 * We started with the DLT because of the following inherent capabilities
   * DLT can incrementally read data from cloud storage using autoloader
@@ -74,15 +68,17 @@ Our goal was to implement the below pipeline using a config-driven framework
       * config_bronze_childnodes_raw
       * config_bronze
       * config_silver
+![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/schema.png)
 
-Lets deep dive into each of these tables
-First config table in the framework is config_bronze_raw
-This table drives the ingestion into the bronze layer
-Bronze tables again are divided into
-Raw1 tables 
-Raw2 tables
-Raw3 tables
-Final merge table
+## Deep dive into each of the config tables
+  * First config table in the framework is config_bronze_raw
+    * This table drives the ingestion into the bronze layer
+    * Bronze tables again are divided into
+      * Raw1 tables 
+      * Raw2 tables
+      * Raw3 tables
+      * Merge tables
+
 The DDL & INSERT scripts for this config table is @  https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1332008936163821?o=984752964297111#command/1332008936163822
 Schema and sample data is below
 
