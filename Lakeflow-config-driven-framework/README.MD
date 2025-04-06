@@ -60,7 +60,8 @@ Our goal was to implement the below pipeline using a config-driven framework
       * Implemented change data feed needed to incrementally update the silver tables in a notebook using spark streaming & foreachbatch
 
 ## The framework details
-We built the framework by interweaving the powerful capabilities of both DLT & spark streaming and Implemented the below pipeline. 
+We built the framework by interweaving the powerful capabilities of both DLT & spark streaming and Implemented the below pipeline 
+![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/Blogathon_workflow.png)
 
 Let's get into the implementation details and the config tables that drive the framework
 This is a complex pipeline and hence needed 4 configuration tables
