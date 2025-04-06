@@ -138,7 +138,7 @@ Our goal was to implement the below pipeline using a config-driven framework
       * DLT apply_changes needs a CDF
       * But child tables that are generally created by exploding the nested child arrays in the JSON will not have a proper CDF
       * Lets deep dive into the schema
-        * **cdf_notebook, cdf_notebook-params** columns
+        * **cdf_notebook, cdf_notebook_params** columns
           * A notebook is built to create CDF on the child tables using spark streaming & foreachbatch
           * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_bronze.py
           * The same notebook is used to generate the CDF for each child table but with different parameters
@@ -146,22 +146,22 @@ Our goal was to implement the below pipeline using a config-driven framework
           * These columns are useful to create the DLT apply_changes target table for each raw3 table
           * Even the child tables will have their respective apply_changes target table
           * The final DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_bronze.py
+          * scd_type column allows us to dynamically change the merge type to SCD Type 1 Or SCD Type 2 
   * The fourth and the last config table is **config_silver**
     * The notebook with DDL & INSERT scripts is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/DDLs/4_config_silver.sql
     * Below is the structure of the config table and sample data
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_silver.png) 
-Generally silver tables are joins on multiple bronze tables
-There will be lot of complexities
-Each of the join table can be a select within a select / aggregated query etc
-A view is built on this complex logic
-Lets deep dive into the brown highlighted columns
-A notebook is built to create the CDF for the view
-The notebook details are @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571896224?o=984752964297111#command/1412556571896225
-The same notebook is called for any silver view but with different parameters
-Lets deep dive into the green highlighted columns
-DLT apply_changes used to merge the new / updated / deleted records from CDF into final silver table
-DLT apply_changes has inherent capability for SCD Type 2 merge and is used as per the requirement
-The silver DLT generated is @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571881310?o=984752964297111#command/1412556571881311 
-When DLT was reading directly from the config tables, debugging was difficult. So we developed a notebook generator  that reads the config tables and generates the underlying code for DLT https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1242762839975211?o=984752964297111#command/1242762839975510 
+    * Silver tables are joins on multiple bronze tables
+    * A view is built on this complex logic
+    * Lets deep dive into the schema
+    * **cdf_notebook, cdf_notebook_params** columns
+      * A notebook is built to create the CDF for the view
+      * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_silver.py
+      * The same notebook is called for all the silver views but with different parameters
+    * **primary_key, sequence_by, delete_expr, except_column_list, scd_type** columns
+      * These columns are useful to create the DLT apply_changes target table for each silver view
+      * The silver DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_silver_scd.py
+      * DLT apply_changes used to merge the new / updated / deleted records from CDF into final silver table
+      * DLT apply_changes has inherent support for SCD Type 2 merge
 
 
