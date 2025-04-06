@@ -143,7 +143,7 @@ Our goal was to implement the below pipeline using a config-driven framework
           * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_bronze.py
           * The same notebook is used to generate the change data feed for each child table but with different parameters
         * **primary_key, sequence_by, delete_expr, except_column_list, scd_type**
-          * These columns are useful to create the DLT apply_changes target table for each raw3 table
+          * These columns are useful to create the DLT apply_changes on target table for each raw3 table
           * Even the child tables will have their respective apply_changes target table
           * The final DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_bronze.py
           * scd_type column allows us to dynamically change the merge type to SCD Type 1 Or SCD Type 2 
@@ -159,7 +159,7 @@ Our goal was to implement the below pipeline using a config-driven framework
       * The notebook is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/ntb_cdf_creator_silver.py
       * The same notebook is called for all the silver views but with different parameters
     * **primary_key, sequence_by, delete_expr, except_column_list, scd_type** columns
-      * These columns are useful to create the DLT apply_changes target table for each silver view
+      * These columns are useful to create the DLT apply_changes on target table for each silver view
       * The silver DLT generated is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/inventory_pipeline_silver_scd.py
       * DLT apply_changes used to merge the new / updated / deleted records from change data feed into final silver table
       * DLT apply_changes has inherent support for SCD Type 2 merge
