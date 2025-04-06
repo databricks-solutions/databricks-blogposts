@@ -17,6 +17,8 @@ Our goal was to implement the below pipeline using a config-driven framework
    * Need SCD Type 1 merge in bronze layer
       * Bronze layer contains mirrored tables from source systems
       * So bronze layer contains both append only tables & final merge tables
+      * For covenience we called applend only tables as raw tables
+        * We had 3 sets of raw table - raw, raw2, raw3
    * Need SCD Type 2 merge in the silver layer
       * Silver layer contains joins of bronze tables. Hence silver layer does not have a direct change data feed
       * Change data feed needs to be built for silver layer
