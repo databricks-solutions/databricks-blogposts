@@ -32,7 +32,11 @@ Our goal was to implement the below pipeline using a config-driven framework
   * Schema evolution
   * Generate the change data feed (CDF) for the child nodes
   * For covenience we called applend only tables as raw tables
-    * We had 3 sets of raw table - raw, raw2, raw3
+    * We had 3 sets of raw tables - raw1, raw2, raw3
+    * raw1 tables are pre-schema inferred tables
+    * raw2 tables are post-schema inferred tables with all the columns
+    * raw3 tables are post-schema inferred tables with a select on subset of the raw2 columns
+
 
 * We started with the DLT because of the following inherent capabilities
   * DLT can incrementally read data from cloud storage using autoloader
