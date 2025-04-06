@@ -60,10 +60,10 @@ Our goal was to implement the below pipeline using a config-driven framework
 ## Implementation details
 * This is a complex pipeline and hence needed 4 config tables to drive the framework
 * For the demonstration, the code follows the below catalog & schema setup
-    * Dbx is  the catalog
-    * Bronze schema is the ingestion layer
-    * Silver schema is the curated layer
-    * Metadata schema contains the config tables
+    * dbx is  the catalog
+    * bronze schema is the ingestion layer
+    * silver schema is the curated layer
+    * metadata schema contains the config tables
       * config_bronze_raw
       * config_bronze_childnodes_raw
       * config_bronze
@@ -71,22 +71,22 @@ Our goal was to implement the below pipeline using a config-driven framework
 ![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/schema.png)
 
 ## Deep dive into each of the config tables
-  * First config table in the framework is config_bronze_raw
+  * **config_bronze_raw**
     * This table drives the ingestion into the bronze layer
     * Bronze tables again are divided into
-      * Raw1 tables 
-      * Raw2 tables
-      * Raw3 tables
+      * Raw1 tables - pre-schema inferred tables
+      * Raw2 tables - post-schema inferred tables with all the columns
+      * Raw3 tables - post-schema inferred tables with a select on subset of the raw2 columns
       * Merge tables
-
-The DDL & INSERT scripts for this config table is @  https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1332008936163821?o=984752964297111#command/1332008936163822
-Schema and sample data is below
-
-Lets look into the highlighted columns
-Brown highlighted - 
-The ingestion data is sometimes stored in more than one directory path on an S3 bucket. So we stored these autoloader paths in a column with MAP data type so that multiple paths can be accommodated
-Used DLT append flows to read data from these multiple directories into raw1 tables
-Data_column is an important column that is coming as binary and contains 90% of the actual data. All raw1 tables contain data_column. Data_column is converted to JSON string. 
+    * The DDL & INSERT scripts for this config table is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/DDLs/1_config_bronze_raw.sql
+    * Below is the schema and sample data
+![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze.png)
+    * Lets deep dive into the schema
+      * Brown highlighted columns
+        * The ingestion data is sometimes stored in more than one directory paths on the cloud storage bucket. 
+        * So a MAP data type column was used for the autoloader paths
+        * Used DLT append flows to read data from these multiple directories into raw1 tables
+        * data_column is an important column that is coming as binary and contains 90% of the actual data. All raw1 tables contain data_column. Data_column is converted to JSON string. 
 DLT schema evolution is applied on all the remaining columns except data_column
 All the raw1 tables are ingested in a single DLT. 
 The DLT generated is @ https://adb-984752964297111.11.azuredatabricks.net/editor/notebooks/1412556571881270?o=984752964297111#command/1412556571881292 
