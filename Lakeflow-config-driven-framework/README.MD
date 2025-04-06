@@ -80,7 +80,7 @@ Our goal was to implement the below pipeline using a config-driven framework
       * Merge tables
     * The DDL & INSERT scripts for this config table is @ https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/DDLs/1_config_bronze_raw.sql
     * Below is the schema and sample data
-![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze.png)
+![alt text](https://github.com/srinivasadmala/databricks-blogposts/blob/config_driven_framework_blogathon_fy26_h1/Lakeflow-config-driven-framework/Images/config_bronze_raw.png)
     * Lets deep dive into the schema
       * Brown highlighted columns
         * The ingestion data is sometimes stored in more than one directory paths on the cloud storage bucket. 
