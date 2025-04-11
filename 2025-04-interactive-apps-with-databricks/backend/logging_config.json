@@ -1,0 +1,40 @@
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s - %(levelname)s - %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S"
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout"
+        },
+        "file": {
+            "class": "logging.FileHandler",
+            "filename": "./logs/app.log",
+            "mode": "a",
+            "formatter": "default"
+        }
+    },
+    "loggers": {
+        "uvicorn": {
+            "level": "INFO",
+            "handlers": ["console", "file"],
+            "propagate": false
+        },
+        "uvicorn.error": {
+            "level": "INFO",
+            "handlers": ["console", "file"],
+            "propagate": false
+        },
+        "uvicorn.access": {
+            "level": "INFO",
+            "handlers": ["console", "file"],
+            "propagate": false
+        }
+    }
+}
