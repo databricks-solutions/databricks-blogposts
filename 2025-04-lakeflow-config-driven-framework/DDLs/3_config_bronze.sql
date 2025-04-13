@@ -7,6 +7,14 @@ CREATE WIDGET TEXT schema DEFAULT "metadata"
 
 -- COMMAND ----------
 
+CREATE catalog IF NOT EXISTS $catalog
+
+-- COMMAND ----------
+
+CREATE schema IF NOT EXISTS $catalog.$schema
+
+-- COMMAND ----------
+
 USE $catalog.$schema
 
 -- COMMAND ----------
@@ -62,7 +70,7 @@ ARRAY("tenant"),
 "transaction_table", 
 "SCD1 table for transaction_table for all tenants", 
 ARRAY("tenant", "id"), 
-"file_modification_time", 
+"seq", 
 "op_code = 'remove'", 
 NULL, 
 1, 

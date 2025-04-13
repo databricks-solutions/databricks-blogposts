@@ -7,6 +7,14 @@ CREATE WIDGET TEXT schema DEFAULT "metadata"
 
 -- COMMAND ----------
 
+CREATE catalog IF NOT EXISTS $catalog
+
+-- COMMAND ----------
+
+CREATE schema IF NOT EXISTS $catalog.$schema
+
+-- COMMAND ----------
+
 USE $catalog.$schema
 
 -- COMMAND ----------

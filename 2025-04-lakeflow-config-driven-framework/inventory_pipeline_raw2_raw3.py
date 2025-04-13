@@ -52,7 +52,7 @@ def transaction_table_raw2():
 def transaction_table_raw3():
     return (
         dlt.read_stream("transaction_table_raw2")
-        .selectExpr("""file_path""", """file_modification_time""", """file_size""", """file_name""", """_id AS id""", """CASE WHEN keys.Name = 'N/A' THEN TRUE ELSE FALSE END AS N/A""", """data_column.computers""", """cr_at AS created_at""", """up_at AS updated_at""", """seq""", """op_code""", """tenant""")
+        .selectExpr("""file_path""", """file_modification_time""", """file_size""", """file_name""", """computer_id AS id""", """data.machine_name""", """data.operatingsystem_id""", """data.network_info""", """data.processor_info""", """tenant""", """cr_at AS created_at""", """up_at AS updated_at""", """seq""", """op_code""")
     )
 
 # COMMAND ----------
@@ -96,7 +96,7 @@ def master_table_raw2():
 def master_table_raw3():
     return (
         dlt.read_stream("master_table_raw2")
-        .selectExpr("""file_path""", """file_modification_time""", """file_size""", """file_name""", """_id as id""", """computer_id""", """product_tid""", """cr_at AS created_at""", """up_at AS updated_at""", """seq""", """op_code""", """tenant""")
+        .selectExpr("""file_path""", """file_modification_time""", """file_size""", """file_name""", """operatingsystem_id as id""", """data.operatingsystem_name""", """tenant""", """cr_at AS created_at""", """up_at AS updated_at""", """seq""", """op_code""")
     )
 
 # COMMAND ----------

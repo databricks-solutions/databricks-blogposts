@@ -5,9 +5,9 @@ import os
 
 # COMMAND ----------
 
-dbutils.widgets.text("raw1-table-name", "databricks_ps_test.byoc.computer_raw1", )
-dbutils.widgets.text("schema-table", "databricks_ps_test.byoc.schema_registry", )
-dbutils.widgets.text("checkpoint-dir", "/Volumes/databricks_ps_test/metadata_driven_schema/__checkpoint/data_checkpoint/")
+dbutils.widgets.text("raw1-table-name", "dbx.metadata.transaction_table_raw1", )
+dbutils.widgets.text("schema-table", "dbx.metadata.schema_registry", )
+dbutils.widgets.text("checkpoint-dir", "/Volumes/dbx/metadata_driven_schema/__checkpoint/data_checkpoint/")
 dbutils.widgets.text("checkpoint-version", "01")
 dbutils.widgets.text("json-col-name", "data",)
 
