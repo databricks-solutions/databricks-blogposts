@@ -58,7 +58,7 @@ VALUES
       "selectExpr1", 
       ARRAY(
         "*", 
-        "posexplode(network_info) as (id, ni)"
+        "explode(network_info) as ni"
       )
     ),
     MAP(
@@ -103,7 +103,7 @@ VALUES
       "selectExpr1", 
       ARRAY(
         "*", 
-        "posexplode(processors) as (id, proc)"
+        "explode(processor_info) as proc"
       )
     ),
     MAP(

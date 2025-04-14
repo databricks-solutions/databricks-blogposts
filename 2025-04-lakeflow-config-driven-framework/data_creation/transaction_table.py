@@ -67,7 +67,7 @@ df = spark.createDataFrame(data1, schema=schema)
 
 df_final = df.select(
     "computer_id" 
-    , to_json("data").alias("data")
+    , to_json(struct("data")).alias("data")
     , "tenant"
     , "cr_at", "up_at"
     , "seq", "op_code"

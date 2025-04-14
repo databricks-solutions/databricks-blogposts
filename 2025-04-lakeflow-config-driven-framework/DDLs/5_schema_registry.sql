@@ -35,7 +35,4 @@ CREATE TABLE IF NOT EXISTS schema_registry
   table_name STRING
   , `schema` STRING
 )
-
--- COMMAND ----------
-
-SELECT * FROM schema_registry
+PARTITIONED BY (table_name)

@@ -14,8 +14,8 @@ gold_schema = 'gold'
 # COMMAND ----------
 
 @dlt.view
-def child_table2_raw3():
-    return spark.readStream.option("skipChangeCommits", "true").table("dbx.bronze.child_table2_raw3")
+def child_table2_cdf():
+    return spark.readStream.option("skipChangeCommits", "true").table("dbx.bronze.child_table2_cdf")
 
 dlt.create_streaming_table("child_table2",
                            comment = "SCD1 table for child_table2  for all tenants",
@@ -26,7 +26,7 @@ dlt.create_streaming_table("child_table2",
 
 dlt.apply_changes(
     target = "child_table2",
-    source = "child_table2_raw3",
+    source = "child_table2_cdf",
     keys = ["id", "hash_id", "tenant"],
     sequence_by = col("cdc_up_at"),
     apply_as_deletes = expr("op_code = 'remove'"),
@@ -37,8 +37,8 @@ dlt.apply_changes(
 # COMMAND ----------
 
 @dlt.view
-def child_table1_raw3():
-    return spark.readStream.option("skipChangeCommits", "true").table("dbx.bronze.child_table1_raw3")
+def child_table1_cdf():
+    return spark.readStream.option("skipChangeCommits", "true").table("dbx.bronze.child_table1_cdf")
 
 dlt.create_streaming_table("child_table1",
                            comment = "SCD1 table for child_table1 for all tenants",
@@ -49,7 +49,7 @@ dlt.create_streaming_table("child_table1",
 
 dlt.apply_changes(
     target = "child_table1",
-    source = "child_table1_raw3",
+    source = "child_table1_cdf",
     keys = ["tenant", "hash_id", "id"],
     sequence_by = col("cdc_up_at"),
     apply_as_deletes = expr("op_code = 'remove'"),
@@ -74,7 +74,7 @@ dlt.apply_changes(
     target = "transaction_table",
     source = "transaction_table_raw3",
     keys = ["tenant", "id"],
-    sequence_by = col("file_modification_time"),
+    sequence_by = col("seq"),
     apply_as_deletes = expr("op_code = 'remove'"),
     # All Columns Included
     stored_as_scd_type = "1"
@@ -97,7 +97,7 @@ dlt.apply_changes(
     target = "master_table",
     source = "master_table_raw3",
     keys = ["tenant", "id"],
-    sequence_by = col("file_modification_time"),
+    sequence_by = col("seq"),
     apply_as_deletes = expr("op_code = 'remove'"),
     # All Columns Included
     stored_as_scd_type = "1"

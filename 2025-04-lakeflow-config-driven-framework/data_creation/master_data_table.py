@@ -14,6 +14,7 @@ schema = StructType([
     StructField("operatingsystem_id", StringType(), nullable=False),
     StructField("data", StructType([
                             StructField("operatingsystem_name", StringType(), nullable=False)
+                            , StructField("version", StringType(), nullable=False)
                             
     ]), nullable=False)
     , StructField("tenant", StringType(), nullable=False)
@@ -26,14 +27,16 @@ schema = StructType([
 # Create sample data
 data1 = [
     ("os_id3", {"operatingsystem_name": "Windows Home 10"
+                , "version": "1.1.1.1"
          }
     , ""
     , current_ts, current_ts
     , epoch_time, "UPSERT"
      )
     ,
-    ("os_id4", {"operatingsystem_name": "Windows Home 11"
-    }
+    ("os_id4", 
+     {"operatingsystem_name": "Windows Home 11", 
+      "version": "1.1.1.1"}
     , ""
     , current_ts, current_ts
     , epoch_time, "UPSERT"
@@ -46,7 +49,7 @@ df = spark.createDataFrame(data1, schema=schema)
 
 df_final = df.select(
     "operatingsystem_id" 
-    , to_json("data").alias("data")
+    , to_json(struct("data")).alias("data")
     , "tenant"
     , "cr_at", "up_at"
     , "seq", "op_code"
@@ -59,6 +62,10 @@ df_binary.repartition(1).write.mode("overwrite").parquet("/Volumes/dbx/bronze/in
 
 # COMMAND ----------
 
+display(df_final)
+
+# COMMAND ----------
+
 df1= spark.read.parquet("/Volumes/dbx/bronze/input_data/core/core_master_data_table").withColumn("data", col("data").cast("string"))
 display(df1)
 
@@ -66,6 +73,7 @@ display(df1)
 
 data2 = [
     ("os_id1", {"operatingsystem_name": "Windows Pro 10"
+                , "version": "1.1.1.1"
          }
     , "tenant_id1"
     , current_ts, current_ts
@@ -96,7 +104,7 @@ display(df2)
 
 data3 = [
     ("os_id2", {"operatingsystem_name": "Windows Pro 11",
-         "tenant_id": "core"
+         "version": "1.1.1.1"
     }
     , "tenant_id2"
     , current_ts, current_ts
