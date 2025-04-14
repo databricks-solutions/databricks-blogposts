@@ -6,6 +6,31 @@
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "dbx", "Catalog name")
+dbutils.widgets.text("bronze_schema", "bronze", "Bronze schema name")
+dbutils.widgets.text("silver_schema", "silver", "Silver schema name")
+dbutils.widgets.text("gold_schema", "gold", "Gold schema name")
+dbutils.widgets.text("metadata_schema", "metadata", "Metadata schema name")
+
+dbutils.widgets.text("notebook_base_path", "/Workspace/Users/srinivasreddy.admala@databricks.com/databricks-blogposts/2025-04-lakeflow-config-driven-framework/", "Notebook base path")
+dbutils.widgets.text("jsonColumnName", "data.data", "JSON column name")
+dbutils.widgets.text("schemaRegistryTable", "dbx.metadata.schema_registry", "Schema registry name")
+
+
+# COMMAND ----------
+
+catalog = dbutils.widgets.get("catalog")
+bronze_schema = dbutils.widgets.get("bronze_schema")
+silver_schema = dbutils.widgets.get("silver_schema")
+gold_schema = dbutils.widgets.get("gold_schema")
+metadata_schema = dbutils.widgets.get("metadata_schema")
+
+notebook_base_path = dbutils.widgets.get("notebook_base_path")
+jsonColumnName = dbutils.widgets.get("jsonColumnName")
+schemaRegistryTable = dbutils.widgets.get("schemaRegistryTable")
+
+# COMMAND ----------
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import * 
@@ -20,7 +45,6 @@ import time
 import sys
 import os
 sys.path.append(os.path.abspath('.'))
-from Views.onetp_views import *
 
 # COMMAND ----------
 
@@ -52,9 +76,8 @@ schemaInferenceProperties = {
 autoMergeProperties = """spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled","true")"""
 
 tenantExtractionLogic = {                      
-    "tenant" : '.withColumn("tenant", regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0))',
-    "core"   : '.withColumn("tenant", when(regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0) == "", "core").otherwise(regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0)))',
-    "itsm"   : '.withColumn("tenant", when(regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0) == "", "itsm").otherwise(regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0)))'
+    "tenant" : '.withColumn("tenant", col("tenant"))',
+    "core"   : '.withColumn("tenant", when(col("tenant") == "", "core").otherwise(col("tenant")))'
     }
 
 dataCastingLogic = '.withColumn("data", col("data").cast(StringType()))'
@@ -65,15 +88,6 @@ auditColumnList= [
     "_metadata.file_size", 
     "_metadata.file_name"
     ]
-
-# Below properties may require adjustments
-catalog = "dbx"
-bronze_schema = "bronze"
-silver_schema = "silver"
-gold_schema = "gold"
-notebook_base_path = "/Workspace/Users/srinivasreddy.admala@databricks.com/metadeta_driven_approach"
-jsonColumnName = "data"
-schemaRegistryTable = "dbx.metadata.schema_registry"
 
 # COMMAND ----------
 
@@ -357,8 +371,8 @@ def generate_bronze_raw_base_dlt_notebooks(spark, workspace, config_table_name, 
         pipeline_name, configs = row["pipeline_name"], row["configs"]
         
         notebook_contents = {
-            "raw1": create_notebook_init_content(pipeline_name, "raw1"),
-            "raw2_raw3": create_notebook_init_content(pipeline_name, "raw2_raw3")
+            "raw1": create_notebook_init_content(pipeline_name, "raw1")
+            , "raw2_raw3": create_notebook_init_content(pipeline_name, "raw2_raw3")
         }
         
         for config in configs:
@@ -400,6 +414,9 @@ def generate_bronze_raw_base_dlt_notebooks(spark, workspace, config_table_name, 
         for notebook_type, content in notebook_contents.items():
             notebook_path = f"{notebook_base_path}/{pipeline_name}_{notebook_type}"
             content_base64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            # print(f"notebook_type: {notebook_type}")
+            # print(f"content: {content}")
+            # print(f"notebook_path: {notebook_path}")
             
             workspace.workspace.import_(
                 path=notebook_path,
@@ -608,19 +625,31 @@ def generate_silver_scd_dlt_notebooks(spark, workspace, config_table_name, noteb
 
 # COMMAND ----------
 
+catalog = dbutils.widgets.get("catalog")
+bronze_schema = dbutils.widgets.get("bronze_schema")
+silver_schema = dbutils.widgets.get("silver_schema")
+gold_schema = dbutils.widgets.get("gold_schema")
+metadata_schema = dbutils.widgets.get("metadata_schema")
+
+notebook_base_path = dbutils.widgets.get("notebook_base_path")
+jsonColumnName = dbutils.widgets.get("jsonColumnName")
+schemaRegistryTable = dbutils.widgets.get("schemaRegistryTable")
+
+# COMMAND ----------
+
 # Usage
 if __name__ == "__main__":
     spark = SparkSession.builder.appName("NotebookGenerator").getOrCreate()
     workspace = WorkspaceClient()
 
     # Generating Bronze - Raw1 , Raw2 , Raw3
-    generate_bronze_raw_base_dlt_notebooks(spark, workspace, "dbx.metadata.config_bronze_raw", "/Workspace/Users/srinivasreddy.admala@databricks.com/metadata_driven_approach")
+    generate_bronze_raw_base_dlt_notebooks(spark, workspace, f"{catalog}.{metadata_schema}.config_bronze_raw", notebook_base_path)
 
     # Generating Bronze - Child Raw3
-    generate_bronze_raw_child_dlt_notebooks(spark, workspace, "dbx.metadata.config_bronze_childnodes_raw", "/Workspace/Users/srinivasreddy.admala@databricks.com/metadata_driven_approach")
+    generate_bronze_raw_child_dlt_notebooks(spark, workspace, f"{catalog}.{metadata_schema}.config_bronze_childnodes_raw", notebook_base_path)
 
     # Generating Bronze - SCD1
-    generate_bronze_scd_dlt_notebooks(spark, workspace, "dbx.metadata.config_bronze", "/Workspace/Users/srinivasreddy.admala@databricks.com/metadata_driven_approach")
+    generate_bronze_scd_dlt_notebooks(spark, workspace, f"{catalog}.{metadata_schema}.config_bronze", notebook_base_path)
 
     # Generating Silver - SCD2
-    generate_silver_scd_dlt_notebooks(spark, workspace, "dbx.metadata.config_silver", "/Workspace/Users/srinivasreddy.admala@databricks.com/metadata_driven_approach") 
+    generate_silver_scd_dlt_notebooks(spark, workspace, f"{catalog}.{metadata_schema}.config_silver", notebook_base_path) 

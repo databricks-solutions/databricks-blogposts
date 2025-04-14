@@ -7,6 +7,14 @@ CREATE WIDGET TEXT schema DEFAULT "metadata"
 
 -- COMMAND ----------
 
+CREATE catalog IF NOT EXISTS $catalog
+
+-- COMMAND ----------
+
+CREATE schema IF NOT EXISTS $catalog.$schema
+
+-- COMMAND ----------
+
 USE $catalog.$schema
 
 -- COMMAND ----------
@@ -62,7 +70,7 @@ ARRAY("tenant"),
 "transaction_table", 
 "SCD1 table for transaction_table for all tenants", 
 ARRAY("tenant", "id"), 
-"file_modification_time", 
+"seq", 
 "op_code = 'remove'", 
 NULL, 
 1, 
@@ -98,7 +106,7 @@ ARRAY("tenant"),
 "master_table", 
 "SCD1 table for master_table for all tenants", 
 ARRAY("tenant", "id"), 
-"file_modification_time", 
+"seq", 
 "op_code = 'remove'", 
 NULL, 
 1, 
@@ -106,8 +114,6 @@ NULL
 )
 
 -- COMMAND ----------
-
--- onetp_manufacturer_raw table
 
 INSERT INTO config_bronze
 (
@@ -129,13 +135,13 @@ team_name
 VALUES
 ("inventory_pipeline", 
 
-"child_table1_raw3",
-"/Workspace/Users/abc.xyz@databricks.com/metadeta_driven_approach/ntb_cdf_creator_bronze", 
+"child_table1_cdf",
+"/Workspace/Users/srinivasreddy.admala@databricks.com/databricks-blogposts/2025-04-lakeflow-config-driven-framework/ntb_cdf_creator_bronze", 
 MAP("key-columns", "tenant, id",
     "partition-by-columns", "tenant",
     "op-code-column", "op_code",
     "bronze-raw-table-name", "dbx.bronze.child_table1_raw3",
-    "checkpoint-dir", "/Volumes/dbx/bronze/child_table1_cdf/__checkpoint/cdf_checkpoint/",
+    "checkpoint-dir", "/Volumes/dbx/bronze/input_data/__checkpoints/child_table1_cdf/",
     "hash-column", "hash_id",
     "orderby-column", "file_modification_time",
     "checkpoint-version", "01",
@@ -177,13 +183,13 @@ VALUES
 (
   "inventory_pipeline", 
 
-  "child_table2_raw3",
-  "/Workspace/Users/abc.xyz@databricks.com/metadeta_driven_approach/ntb_cdf_creator_bronze", 
+  "child_table2_cdf",
+  "/Workspace/Users/srinivasreddy.admala@databricks.com/databricks-blogposts/2025-04-lakeflow-config-driven-framework/ntb_cdf_creator_bronze", 
   MAP("key-columns", "tenant, id",
       "partition-by-columns", "tenant",
       "op-code-column", "op_code",
       "bronze-raw-table-name", "dbx.bronze.child_table2_raw3",
-      "checkpoint-dir", "/Volumes/dbx/metadata/child_table2_cdf/__checkpoint/cdf_checkpoint/",
+      "checkpoint-dir", "/Volumes/dbx/bronze/input_data/__checkpoints/child_table2_cdf/",
       "hash-column", "hash_id",
       "orderby-column", "file_modification_time",
       "checkpoint-version", "01",

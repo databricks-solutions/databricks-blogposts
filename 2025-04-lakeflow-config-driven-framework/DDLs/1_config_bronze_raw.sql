@@ -1,9 +1,15 @@
 -- Databricks notebook source
 -- MAGIC %md
 -- MAGIC ## Configurations for the raw bronze tables
--- MAGIC
--- MAGIC TODO: give me a sentence about what it means to be a raw bronze table like they are sources blah blah
--- MAGIC
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC - raw1, raw2, raw3 DLT tables are created from this configuration table
+-- MAGIC - raw1 is the pre-schema inferred DLT table
+-- MAGIC - raw2 is the post-schema inferred DLT table
+-- MAGIC - raw3 is the post-schema inferred DLT table with a subset of columns from raw2. 
+-- MAGIC   - raw3 also has child tables flattened
 
 -- COMMAND ----------
 
@@ -18,6 +24,14 @@ CREATE WIDGET TEXT catalog DEFAULT "dbx"
 -- COMMAND ----------
 
 CREATE WIDGET TEXT schema DEFAULT "metadata"
+
+-- COMMAND ----------
+
+CREATE catalog IF NOT EXISTS $catalog
+
+-- COMMAND ----------
+
+CREATE schema IF NOT EXISTS $catalog.$schema
 
 -- COMMAND ----------
 
@@ -77,30 +91,32 @@ target_table,
 team_name)
 VALUES
 ("inventory_pipeline", 
-MAP("tenant","s3://datalake/*/transaction_table/*"),
+MAP("tenant","/Volumes/dbx/bronze/input_data/*/transaction_table/*"),
 "*.parquet",
 ARRAY("tenant"),
 "transaction_table_raw1",
-"/Workspace/Users/abc.xyz@databricks.com/metadata_driven_approach/ntb_merge_schema",
- MAP("raw1-table-name", "dbx.metadata.transaction_table_raw1",
+"/Workspace/Users/srinivasreddy.admala@databricks.com/databricks-blogposts/2025-04-lakeflow-config-driven-framework/ntb_merge_schema",
+ MAP("raw1-table-name", "dbx.bronze.transaction_table_raw1",
  	 "schema-table", "dbx.metadata.schema_registry",
- 	 "checkpoint-dir", "/Volumes/dbx/bronze/transaction_table_raw1/__checkpoint/data_checkpoint/",
+ 	 "checkpoint-dir", "/Volumes/dbx/bronze/input_data/__checkpoints/",
  	 "checkpoint-version", "01",
- 	 "json-col-name", "data_column"
+ 	 "json-col-name", "data"
   ),
-"/Volumes/dbx/bronze/transaction_table_raw2/__schema",
+"/Volumes/dbx/bronze/input_data/__schema",
 "transaction_table_raw2",
 ARRAY(
   MAP("selectExpr1", 
     ARRAY(
-      "_id AS id",
-      "CASE WHEN keys.Name = 'N/A' THEN TRUE ELSE FALSE END AS N/A",
-      "data_column.computers",
+      "computer_id AS id",
+      "data.machine_name",
+      "data.operatingsystem_id",
+      "data.network_info",
+      "data.processor_info",
+      "tenant",
       "cr_at AS created_at",
       "up_at AS updated_at",
       "seq",
-      "op_code", 
-      "tenant"
+      "op_code"
     )
   )
 ),
@@ -128,30 +144,29 @@ target_table,
 team_name)
 VALUES
 ("inventory_pipeline", 
-MAP("tenant","s3://datalake/*/master_table/*", "core","s3://datalake/*/core_master_table/*"),
+MAP("tenant","/Volumes/dbx/bronze/input_data/*/master_data_table/*", "core","/Volumes/dbx/bronze/input_data/core/core_master_data_table/*"),
 "*.parquet",
 ARRAY("tenant"),
 "master_table_raw1",
-"/Workspace/Users/abc.xyz@databricks.com/metadeta_driven_approach/ntb_merge_schema",
+"/Workspace/Users/srinivasreddy.admala@databricks.com/databricks-blogposts/2025-04-lakeflow-config-driven-framework/ntb_merge_schema",
 MAP("raw1-table-name", "dbx.bronze.master_table_raw1",
- 	 "schema-table", "dbx.bronze.schema_registry",
- 	 "checkpoint-dir", "/Volumes/dbx/bronze/master_table_raw1/__checkpoint/data_checkpoint/",
+ 	 "schema-table", "dbx.metadata.schema_registry",
+ 	 "checkpoint-dir", "/Volumes/dbx/bronze/input_data/__checkpoints/",
  	 "checkpoint-version", "01",
- 	 "json-col-name", "data_column"
+ 	 "json-col-name", "data"
   ),
-"/Volumes/dbx/bronze/master_table_raw2/__schema",
+"/Volumes/dbx/bronze/input_data/__schema",
 "master_table_raw2",
 ARRAY(
   MAP("selectExpr1", 
     ARRAY(
-      "_id as id",
-        "computer_id",
-        "product_tid",
+      "operatingsystem_id as id",
+        "data.operatingsystem_name",
+        "tenant",
         "cr_at AS created_at",
         "up_at AS updated_at",
         "seq",
-        "op_code", 
-        "tenant"
+        "op_code"
     )
   )
 ),

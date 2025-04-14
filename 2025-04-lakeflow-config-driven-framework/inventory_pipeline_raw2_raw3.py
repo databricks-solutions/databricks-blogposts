@@ -52,7 +52,7 @@ def transaction_table_raw2():
 def transaction_table_raw3():
     return (
         dlt.read_stream("transaction_table_raw2")
-        .selectExpr("""file_path""", """file_modification_time""", """file_size""", """file_name""", """_id AS id""", """CASE WHEN keys.Name = 'N/A' THEN TRUE ELSE FALSE END AS N/A""", """data_column.computers""", """cr_at AS created_at""", """up_at AS updated_at""", """seq""", """op_code""", """tenant""")
+        .selectExpr("""file_path""", """file_modification_time""", """file_size""", """file_name""", """computer_id AS id""", """data.machine_name""", """data.operatingsystem_id""", """data.network_info""", """data.processor_info""", """tenant""", """cr_at AS created_at""", """up_at AS updated_at""", """seq""", """op_code""")
     )
 
 # COMMAND ----------
@@ -96,24 +96,7 @@ def master_table_raw2():
 def master_table_raw3():
     return (
         dlt.read_stream("master_table_raw2")
-        .selectExpr("""file_path""", """file_modification_time""", """file_size""", """file_name""", """_id as id""", """computer_id""", """product_tid""", """cr_at AS created_at""", """up_at AS updated_at""", """seq""", """op_code""", """tenant""")
-    )
-
-# COMMAND ----------
-
-@dlt.table(
-    name = "child_table1_raw3",
-    comment = "Child table generated from transaction_table_raw3",
-    table_properties = {
-        "quality": "bronze", "delta.tuneFileSizesForRewrites": "true", "delta.autoOptimize.optimizeWrite": "true", "delta.enableChangeDataFeed": "true", "delta.enableDeletionVectors": "true", "delta.dataSkippingNumIndexedCols": "-1"
-    },
-    partition_cols=["tenant"]
-)
-def child_table1_raw3():
-    return (
-        dlt.read_stream("transaction_table_raw3")
-        .selectExpr("""*""", """posexplode(computers) as (id, src)""")
-        .selectExpr("""xxhash64(src.machine_id, try_cast(src.inventory_date AS TIMESTAMP)) AS hash_id""", """id""", """src.machine_id""", """try_cast(src.inventory_date AS TIMESTAMP) AS inventory_date""", """updated_at""", """file_modification_time""", """tenant""", """op_code""", """ignored""")
+        .selectExpr("""file_path""", """file_modification_time""", """file_size""", """file_name""", """operatingsystem_id as id""", """data.operatingsystem_name""", """tenant""", """cr_at AS created_at""", """up_at AS updated_at""", """seq""", """op_code""")
     )
 
 # COMMAND ----------
@@ -129,6 +112,23 @@ def child_table1_raw3():
 def child_table2_raw3():
     return (
         dlt.read_stream("transaction_table_raw3")
-        .selectExpr("""*""", """posexplode(processors) as (id, proc)""")
-        .selectExpr("""xxhash64(proc.clock_speed_max , proc.core_count) AS hash_id""", """id as device_id""", """proc.clock_speed_max""", """proc.core_count""", """updated_at""", """file_modification_time""", """tenant""", """op_code""", """ignored""")
+        .selectExpr("""*""", """explode(processor_info) as proc""")
+        .selectExpr("""xxhash64(proc.processor_name , proc.processor_count) AS hash_id""", """id""", """proc.processor_name""", """proc.processor_count""", """updated_at""", """file_modification_time""", """tenant""", """op_code""")
+    )
+
+# COMMAND ----------
+
+@dlt.table(
+    name = "child_table1_raw3",
+    comment = "Child table generated from transaction_table_raw3",
+    table_properties = {
+        "quality": "bronze", "delta.tuneFileSizesForRewrites": "true", "delta.autoOptimize.optimizeWrite": "true", "delta.enableChangeDataFeed": "true", "delta.enableDeletionVectors": "true", "delta.dataSkippingNumIndexedCols": "-1"
+    },
+    partition_cols=["tenant"]
+)
+def child_table1_raw3():
+    return (
+        dlt.read_stream("transaction_table_raw3")
+        .selectExpr("""*""", """explode(network_info) as ni""")
+        .selectExpr("""xxhash64(ni.ipv4, ni.mac_v1, ni.ipv11_v11) AS hash_id""", """id""", """ni.ipv4""", """ni.mac_v1""", """ni.ipv11_v11""", """updated_at""", """file_modification_time""", """tenant""", """op_code""")
     )

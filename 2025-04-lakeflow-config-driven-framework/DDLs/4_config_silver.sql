@@ -7,6 +7,14 @@ CREATE WIDGET TEXT schema DEFAULT "metadata"
 
 -- COMMAND ----------
 
+CREATE catalog IF NOT EXISTS $catalog
+
+-- COMMAND ----------
+
+CREATE schema IF NOT EXISTS $catalog.$schema
+
+-- COMMAND ----------
+
 USE $catalog.$schema
 
 -- COMMAND ----------
@@ -58,7 +66,7 @@ VALUES
   "inventory_pipeline", 
   "dlt_silver", 
   "inventory_cdf",
-  "/Workspace/Users/abc.x@databricks.com/metadeta_driven_approach/ntb_cdf_creator_silver", 
+  "/Workspace/Users/srinivasreddy.admala@databricks.com/databricks-blogposts/2025-04-lakeflow-config-driven-framework/ntb_cdf_creator_silver", 
   MAP(
     "key-columns", "tenant, id",
     "partition-by-columns", "tenant",

@@ -29,12 +29,12 @@ def transaction_table_raw1():
             .option("skipChangeCommits", "true")
             .format("cloudFiles")
             .option("cloudFiles.format", "parquet")
-            .option("cloudFiles.schemaLocation", f"/Volumes/dbx/bronze/transaction_table_raw2/__schema/transaction_table_raw1")
+            .option("cloudFiles.schemaLocation", f"/Volumes/dbx/bronze/input_data/__schema/transaction_table_raw1")
             .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
             .option("pathGlobFilter", "*.parquet")
             .option("recursiveFileLookup", "true")
-            .load("s3://datalake/*/transaction_table/*")
-            .withColumn("tenant", regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0))
+            .load("/Volumes/dbx/bronze/input_data/*/transaction_table/*")
+            .withColumn("tenant", col("tenant"))
             .withColumn("data", col("data").cast(StringType()))
             .selectExpr("_metadata.file_path", "_metadata.file_modification_time", "_metadata.file_size", "_metadata.file_name", "*")
     )
@@ -52,26 +52,6 @@ dlt.create_streaming_table(
 
 
 @dlt.append_flow(target="master_table_raw1")
-def append_from_source_master_table_raw1_tenant():
-    spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numBytes", "500g")
-    spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", "100000")
-    
-    return (
-        spark.readStream
-            .option("skipChangeCommits", "true")
-            .format("cloudFiles")
-            .option("cloudFiles.format", "parquet")
-            .option("cloudFiles.schemaLocation", f"/Volumes/dbx/bronze/master_table_raw2/__schema/master_table_raw1")
-            .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
-            .option("pathGlobFilter", "*.parquet")
-            .option("recursiveFileLookup", "true")
-            .load("s3://datalake/*/master_table/*")
-            .withColumn("tenant", regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0))
-            .withColumn("data", col("data").cast(StringType()))
-            .selectExpr("_metadata.file_path", "_metadata.file_modification_time", "_metadata.file_size", "_metadata.file_name", "*")
-    )
-
-@dlt.append_flow(target="master_table_raw1")
 def append_from_source_master_table_raw1_core():
     spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numBytes", "500g")
     spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", "100000")
@@ -81,12 +61,32 @@ def append_from_source_master_table_raw1_core():
             .option("skipChangeCommits", "true")
             .format("cloudFiles")
             .option("cloudFiles.format", "parquet")
-            .option("cloudFiles.schemaLocation", f"/Volumes/dbx/bronze/master_table_raw2/__schema/master_table_raw1")
+            .option("cloudFiles.schemaLocation", f"/Volumes/dbx/bronze/input_data/__schema/master_table_raw1")
             .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
             .option("pathGlobFilter", "*.parquet")
             .option("recursiveFileLookup", "true")
-            .load("s3://datalake/*/core_master_table/*")
-            .withColumn("tenant", when(regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0) == "", "core").otherwise(regexp_extract(col("_metadata.file_path"), r"org_\d{5}", 0)))
+            .load("/Volumes/dbx/bronze/input_data/core/core_master_data_table/*")
+            .withColumn("tenant", when(col("tenant") == "", "core").otherwise(col("tenant")))
+            .withColumn("data", col("data").cast(StringType()))
+            .selectExpr("_metadata.file_path", "_metadata.file_modification_time", "_metadata.file_size", "_metadata.file_name", "*")
+    )
+
+@dlt.append_flow(target="master_table_raw1")
+def append_from_source_master_table_raw1_tenant():
+    spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numBytes", "500g")
+    spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", "100000")
+    
+    return (
+        spark.readStream
+            .option("skipChangeCommits", "true")
+            .format("cloudFiles")
+            .option("cloudFiles.format", "parquet")
+            .option("cloudFiles.schemaLocation", f"/Volumes/dbx/bronze/input_data/__schema/master_table_raw1")
+            .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
+            .option("pathGlobFilter", "*.parquet")
+            .option("recursiveFileLookup", "true")
+            .load("/Volumes/dbx/bronze/input_data/*/master_data_table/*")
+            .withColumn("tenant", col("tenant"))
             .withColumn("data", col("data").cast(StringType()))
             .selectExpr("_metadata.file_path", "_metadata.file_modification_time", "_metadata.file_size", "_metadata.file_name", "*")
     )

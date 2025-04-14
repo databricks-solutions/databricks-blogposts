@@ -7,6 +7,14 @@ CREATE WIDGET TEXT schema DEFAULT "metadata"
 
 -- COMMAND ----------
 
+CREATE catalog IF NOT EXISTS $catalog
+
+-- COMMAND ----------
+
+CREATE schema IF NOT EXISTS $catalog.$schema
+
+-- COMMAND ----------
+
 USE $catalog.$schema
 
 -- COMMAND ----------
@@ -50,21 +58,21 @@ VALUES
       "selectExpr1", 
       ARRAY(
         "*", 
-        "posexplode(computers) as (id, src)"
+        "explode(network_info) as ni"
       )
     ),
     MAP(
       "selectExpr2", 
       ARRAY(
-        "xxhash64(src.machine_id, try_cast(src.inventory_date AS TIMESTAMP)) AS hash_id",
+        "xxhash64(ni.ipv4, ni.mac_v1, ni.ipv11_v11) AS hash_id",
         "id",
-        "src.machine_id",
-        "try_cast(src.inventory_date AS TIMESTAMP) AS inventory_date",
+        "ni.ipv4",
+        "ni.mac_v1",
+        "ni.ipv11_v11",
         "updated_at",
         "file_modification_time",
         "tenant",
-        "op_code",
-        "ignored"
+        "op_code"
       )
     )
   ),
@@ -95,21 +103,20 @@ VALUES
       "selectExpr1", 
       ARRAY(
         "*", 
-        "posexplode(processors) as (id, proc)"
+        "explode(processor_info) as proc"
       )
     ),
     MAP(
       "selectExpr2", 
       ARRAY(
-        "xxhash64(proc.clock_speed_max , proc.core_count) AS hash_id",
-        "id as device_id",
-        "proc.clock_speed_max",
-        "proc.core_count",
+        "xxhash64(proc.processor_name , proc.processor_count) AS hash_id",
+        "id",
+        "proc.processor_name",
+        "proc.processor_count",
         "updated_at",
         "file_modification_time",
         "tenant",
-        "op_code",
-        "ignored"
+        "op_code"
       )
     )
   ),
