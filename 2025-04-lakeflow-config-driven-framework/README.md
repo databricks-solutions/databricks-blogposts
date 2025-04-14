@@ -181,4 +181,3 @@ Our goal was to implement the below workflow using a config-driven framework
     * databricks-connect will enable you to read the config tables
       *  databricks-connect==15.1.3 will enable you to use the databricks serverless cluster to read the config files
     *  The end-to-end deplyment is done by the  python script - [/Deployment/create_workflow.py](/2025-04-lakeflow-config-driven-framework/Deployment/create_workflow.py)
-
