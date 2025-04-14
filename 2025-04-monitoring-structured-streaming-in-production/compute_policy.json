@@ -1,0 +1,10 @@
+{
+  "init_scripts.0.volumes.destination": {
+    "type": "fixed",
+    "value": "/Volumes/org/streaming/artifacts/shell/scripts/install_listener.sh"
+  },
+  "spark_conf.spark.sql.streaming.streamingQueryListeners": {
+    "type": "fixed",
+    "value": "org.streaming.EventHubListener"
+  }
+}

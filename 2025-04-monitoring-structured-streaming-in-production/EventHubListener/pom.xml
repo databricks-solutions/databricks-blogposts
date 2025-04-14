@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.streaming</groupId>
+    <artifactId>eventhublistener</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <dependency>
+		    <groupId>com.azure</groupId>
+		    <artifactId>azure-messaging-eventhubs</artifactId>
+		    <version>5.18.0</version>
+		</dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_2.12</artifactId>
+            <version>3.2.1</version>
+            <scope>provided</scope> <!-- NOTE: Must be provided by the Databricks Runtime env -->
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_2.12</artifactId>
+            <version>3.2.1</version>
+            <scope>provided</scope> <!-- NOTE: Must be provided by the Databricks Runtime env -->
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-assembly-plugin</artifactId> <!-- NOTE: See https://maven.apache.org/plugins/maven-assembly-plugin/ -->
+                <configuration>
+                    <archive>
+                    <manifest>
+                        <mainClass>org.streaming.EventHubListener</mainClass> <!-- NOTE: Use your fully qualified Java class name -->
+                    </manifest>
+                    </archive>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef> <!-- NOTE: Suffix appended to output jar file name -->
+                    </descriptorRefs>
+                </configuration>
+            <executions>
+                <execution>
+                    <id>make-assembly</id> <!-- NOTE: Used for inheritance merges -->
+                    <phase>package</phase> <!-- NOTE: Bind to the "package" phase -->
+                    <goals>
+                        <goal>single</goal>
+                    </goals>
+                </execution>
+            </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
