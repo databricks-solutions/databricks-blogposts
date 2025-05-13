@@ -1,4 +1,4 @@
-* @kwulffert23 @matthewmoorcroft @anupkalburgi @quentinAmbard @alanreese-dbrx @srinivasadmala @alexott @FestusDataB @max-nienu
+* @kwulffert23 @matthewmoorcroft @anupkalburgi @quentinAmbard @alanreese-dbrx @srinivasadmala @alexott @FestusDataB @max-nienu @slcc2c
 
 
 /cost-attribution/* @tapash-db @samerzabaneh
@@ -9,5 +9,8 @@
 /comprehensive-dashboard-suite/* @mohanab-db
 /bias-variance-trade-off/* @kwulffert23 @johnkdb @marzervou
 /dspy-multi-agent-with-classic-ML/* @auschoi96
+/sap-graphrag-agent/* @real-oneill @caiofarias
 /agent_chat/* @vivian-xie-db
+/dabs-gitflow/* @ajalisatgi @pritishpai
+/2025-04-how-to-debug-streaming-jobs-using-stateStore-api @girip-db @rahulsoni-db
 /dabs-gitflow/* @ajalisatgi @pritishpai
