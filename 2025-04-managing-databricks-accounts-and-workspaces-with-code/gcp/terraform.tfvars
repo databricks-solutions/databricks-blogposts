@@ -1,0 +1,8 @@
+subnet_region = ""
+databricks_account_id = ""
+network_name = ""
+vpc_id = ""
+subnet_name = ""
+network_google_project = ""
+workspace_google_project= ""
+workspace_name = ""

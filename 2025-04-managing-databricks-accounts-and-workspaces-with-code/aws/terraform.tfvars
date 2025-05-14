@@ -1,0 +1,11 @@
+region = ""
+credentials_name = ""
+cross_account_role_arn = ""
+databricks_account_id = ""
+network_name = ""
+security_group_ids = [ "" ]
+vpc_id = ""
+vpc_private_subnets = [ "" ]
+root_storage_bucket = ""
+storage_configuration_name = ""
+workspace_name = ""
