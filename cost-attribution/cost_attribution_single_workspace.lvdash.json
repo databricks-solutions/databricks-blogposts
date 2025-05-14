@@ -1,1 +1,2564 @@
-{"datasets":[{"name":"5bb653dd","displayName":"warehouse_insights_by_user","query":"with usage_by_user as (\n  select\n    workspace_id,\n    executed_by,\n    compute.warehouse_id,\n    date(start_time) `event_date`,\n    hour(start_time) `hour`,\n    sum(total_duration_ms) / 1000 `total_duration_by_user_in_hour`,\n    (\n      select\n        sum(qhs.total_duration_ms) / 1000\n      from\n        system.query.history qhs\n      where\n        date(qhs.start_time) = date(qh.start_time)\n        and date(qhs.end_time) = date(qh.end_time)\n        and hour(qhs.start_time) = hour(qh.start_time)\n        and qhs.workspace_id = qh.workspace_id\n        and qhs.workspace_id = :workspace_id::string\n        and qhs.compute.warehouse_id = qh.compute.warehouse_id\n      group by\n        date(qhs.start_time),\n        hour(qhs.start_time),\n        qhs.workspace_id,\n        qhs.compute.warehouse_id\n    ) `total_duration_by_hour`\n  from\n    system.query.history qh\n  where\n    date(start_time) >= date_add(week, - :duration_in_weeks :: integer, now())\n    and qh.workspace_id = :workspace_id::string\n  group by\n    all\n)\nselect\n  u.workspace_id,\n  u.executed_by,\n  u.warehouse_id,\n  u.event_date,\n  u.hour,\n  round(t.dollar_dbus, 2) `cost_by_hour`,\n  round(t.DBUs, 2) `dbus_by_hour`,\n  u.total_duration_by_user_in_hour,\n  u.total_duration_by_hour,\n  t.custom_tags,\n  round(\n    (\n      total_duration_by_user_in_hour / total_duration_by_hour\n    ) * 100,\n    2\n  ) `percent_consumption_by_user_in_hour`,\n  round(\n    t.dollar_dbus * `percent_consumption_by_user_in_hour` / 100,\n    2\n  ) `cost_by_user_in_hour`\nfrom\n  usage_by_user u\n  inner join (\n    select\n      date(u.usage_start_time) `event_date`,\n      hour(u.usage_start_time) `hour`,\n      u.workspace_id,\n      u.usage_metadata.warehouse_id `warehouse_id`,\n      to_json(u.custom_tags) `custom_tags`,\n      round(sum(usage_quantity), 2) `DBUs`,\n      sum(usage_quantity * lp.pricing.default) `dollar_dbus`\n    from\n      system.billing.usage u\n      INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n      and u.cloud = lp.cloud\n      and u.sku_name = lp.sku_name\n      and u.workspace_id = :workspace_id::string\n      and u.usage_start_time between lp.price_start_time\n      and coalesce(lp.price_end_time, u.usage_end_time)\n      and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n      and u.sku_name like '%SQL%'\n      and (\n        :tag_name :: string = 'all'\n        or u.custom_tags [:tag_name::string] = :tag_value :: string\n      )\n    group by\n      all\n  ) T ON u.workspace_id = T.workspace_id\n  and u.workspace_id = :workspace_id::string\n  and u.warehouse_id = t.warehouse_id\n  and u.event_date = t.event_date\n  and u.hour = t.hour \norder by\n  event_date asc,\n  hour asc","parameters":[{"displayName":"duration_in_weeks","keyword":"duration_in_weeks","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"4"}]}}},{"displayName":"tag_name","keyword":"tag_name","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"all"}]}}},{"displayName":"tag_value","keyword":"tag_value","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"all"}]}}},{"displayName":"workspace_id","keyword":"workspace_id","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"984752964297111"}]}}}]},{"name":"87b24525","displayName":"cluster_insights_by_user","query":"with usage_by_user as (\n  select\n    a.workspace_id,\n    a.user_identity.email,\n    a.request_params.clusterId `cluster_id`,\n    a.event_date,\n    hour(a.event_time) `hour`,\n    sum(a.request_params.executionTime) `total_duration_by_user_in_hour`\n  from\n    system.access.audit a\n  where\n    a.service_name in ('notebook', 'jobs')\n    and a.action_name = 'runCommand'\n    and a.event_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and a.request_params.clusterId is not null \n    and a.workspace_id = :workspace_id :: string\n  group by\n    all\n),\ntotal_cost_by_cluster as (\n  select\n    a1.event_date `event_date`,\n    hour(a1.event_time) `hour`,\n    a1.request_params.clusterId `clusterId`,\n    sum(a1.request_params.executionTime) `total_duration_by_hour`\n  from\n    system.access.audit a1\n  where\n    a1.service_name in ('notebook', 'jobs')\n    and a1.action_name = 'runCommand'\n    and a1.event_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and a1.request_params.clusterId is not null \n    and a1.workspace_id = :workspace_id :: string\n  group by\n    all\n)\nselect\n  u.workspace_id,\n  u.email `executed_by`,\n  c.cluster_name,\n  u.cluster_id,\n  u.event_date,\n  u.hour,\n  round(t.dollar_dbus, 2) `cost_by_hour`,\n  t.DBUs `dbus_by_hour`,\n  u.total_duration_by_user_in_hour,\n  tc.total_duration_by_hour,\n  t.custom_tags,\n  round(\n    (\n      total_duration_by_user_in_hour / total_duration_by_hour\n    ) * 100,\n    2\n  ) `percent_consumption_by_user_in_hour`,\n  round(\n    t.dollar_dbus * `percent_consumption_by_user_in_hour` / 100,\n    2\n  ) `cost_by_user_in_hour`\nfrom\n  usage_by_user u\n  inner join total_cost_by_cluster tc on u.event_date = tc.event_date\n  and u.hour = tc.hour\n  and u.cluster_id = tc.clusterId\n  inner join (\n    select\n      date(u.usage_start_time) `event_date`,\n      hour(u.usage_start_time) `hour`,\n      u.workspace_id,\n      u.usage_metadata.cluster_id `cluster_id`,\n      to_json(u.custom_tags) `custom_tags`,\n      round(sum(usage_quantity), 2) `DBUs`,\n      sum(usage_quantity * lp.pricing.default) `dollar_dbus`\n    from\n      system.billing.usage u\n      INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n      and u.cloud = lp.cloud\n      and u.sku_name = lp.sku_name\n      and u.usage_start_time between lp.price_start_time\n      and coalesce(lp.price_end_time, u.usage_end_time)\n      and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n      and u.workspace_id = :workspace_id::string\n      and (\n        :tag_name :: string = 'all'\n        or u.custom_tags [:tag_name::string] = :tag_value :: string\n      )\n    group by\n      all\n  ) T ON u.workspace_id = T.workspace_id\n  and u.cluster_id = t.cluster_id\n  and u.event_date = t.event_date\n  and u.hour = t.hour\n  inner join (\n    select\n      max(change_time),\n      cluster_name,\n      cluster_id,\n      workspace_id,\n      account_id\n    from\n      system.compute.clusters\n    where\n      workspace_id = :workspace_id::string\n    group by\n      all\n  ) c on c.cluster_id = u.cluster_id\n  and c.workspace_id = u.workspace_id\n  and u.workspace_id = :workspace_id::string\n\norder by\n  event_date asc,\n  hour asc","parameters":[{"displayName":"tag_name","keyword":"tag_name","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"all"}]}}},{"displayName":"tag_value","keyword":"tag_value","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"all"}]}}},{"displayName":"workspace_id","keyword":"workspace_id","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"984752964297111"}]}}},{"displayName":"duration_in_weeks","keyword":"duration_in_weeks","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"1"}]}}}]},{"name":"6d6983d4","displayName":"consumption details","query":"with consumption_details as (\n  SELECT\n    u.usage_date,\n    u.usage_start_time,\n    u.usage_end_time,\n    u.workspace_id,\n    u.sku_name,\n    u.usage_metadata.*,\n    to_json(u.custom_tags) `custom_tags`,\n    Case\n      when u.sku_name like '%SERVERLESS_SQL%' then 'SQL-Serverless'\n      when u.sku_name like '%SQL_PRO%' then 'SQL-Pro'\n      when u.sku_name like '%SQL%' then 'SQL-Classic'\n      WHEN u.sku_name like '%DLT_ADVANCED_COMPUTE%'\n      and u.sku_name like '%PHOTON%' THEN 'DLT Advanced (PHOTON)'\n      WHEN u.sku_name like '%DLT_ADVANCED_COMPUTE%' THEN 'DLT Advanced'\n      WHEN u.sku_name like '%DLT_PRO_COMPUTE%'\n      and u.sku_name like '%PHOTON%' THEN 'DLT Pro (PHOTON)'\n      WHEN u.sku_name like '%DLT_PRO_COMPUTE%' THEN 'DLT Pro'\n      WHEN u.sku_name like '%DLT_CORE_COMPUTE%'\n      and u.sku_name like '%PHOTON%' THEN 'DLT Core (PHOTON)'\n      WHEN u.sku_name like '%DLT_CORE_COMPUTE%' THEN 'DLT Core'\n      when u.sku_name like '%JOBS%'\n      and u.sku_name like '%PHOTON%' then 'AUTOMATED (PHOTON)'\n      when u.sku_name like '%JOBS%' then 'AUTOMATED'\n      when u.sku_name like '%ALL_PURPOSE%'\n      and u.sku_name like '%PHOTON%' then 'INTERACTIVE (PHOTON)'\n      when u.sku_name like '%ALL_PURPOSE%' then 'INTERACTIVE'\n      when u.sku_name like '%SERVERLESS_REAL_TIME%' then 'Serverless-Realtime-Inference'\n      ELSE u.sku_name\n    end `sku`,\n    sum(usage_quantity * lp.pricing.default) `$dbus`,\n    sum(usage_quantity) `dbus`\n  FROM\n    system.billing.usage u\n    INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n    and u.cloud = lp.cloud\n    and u.workspace_id = :workspace_id::string\n\n    and u.sku_name = lp.sku_name\n    and u.usage_start_time between lp.price_start_time\n    and coalesce(lp.price_end_time, u.usage_end_time)\n    and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and (\n      :tag_name :: string = 'all'\n      or u.custom_tags [:tag_name::string] = :tag_value :: string\n    )\n  group by\n    all\n)\nselect\n  *\nfrom\n  consumption_details","parameters":[{"displayName":"duration_in_weeks","keyword":"duration_in_weeks","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"1"}]}}},{"displayName":"tag_name","keyword":"tag_name","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"all"}]}}},{"displayName":"tag_value","keyword":"tag_value","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"all"}]}}},{"displayName":"workspace_id","keyword":"workspace_id","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"984752964297111"}]}}}]},{"name":"82bf8b8b","displayName":"consumption details (new)","query":"with consumption_details as (\n  SELECT\n    u.usage_date,\n    u.usage_start_time,\n    u.usage_end_time,\n    u.workspace_id,\n    u.sku_name,\n    u.usage_metadata.*,\n    to_json(u.custom_tags) `custom_tags`,\n    lower(\n      concat(\n        billing_origin_product,\n        '-',\n        coalesce(product_features.jobs_tier, ''),\n        coalesce(product_features.dlt_tier, ''),\n        coalesce(product_features.sql_tier, ''),\n        coalesce(product_features.serving_type, ''),\n        case\n          when product_features.is_photon then 'photon'\n          else ''\n        end,\n        case\n          when product_features.is_serverless then 'serverless'\n          else ''\n        end\n      )\n    ) `sku`,\n    sum(usage_quantity * lp.pricing.default) `$dbus`,\n    sum(usage_quantity) `dbus`\n  FROM\n    system.billing.usage u\n    INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n    and u.cloud = lp.cloud\n    and u.workspace_id = :workspace_id::string\n    and u.sku_name = lp.sku_name\n    and u.usage_start_time between lp.price_start_time\n    and coalesce(lp.price_end_time, u.usage_end_time)\n    and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and (\n      :tag_name :: string = 'all'\n      or u.custom_tags [:tag_name::string] = :tag_value :: string\n    )\n  group by\n    all\n)\nselect\n  *\nfrom\n  consumption_details","parameters":[{"displayName":"duration_in_weeks","keyword":"duration_in_weeks","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"1"}]}}},{"displayName":"tag_name","keyword":"tag_name","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"all"}]}}},{"displayName":"tag_value","keyword":"tag_value","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"all"}]}}},{"displayName":"workspace_id","keyword":"workspace_id","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"984752964297111"}]}}}]},{"name":"a809840e","displayName":"top_warehouse_consumer","query":"with usage_by_user as (\n  select\n    workspace_id,\n    executed_by,\n    compute.warehouse_id,\n    date(start_time) `event_date`,\n    hour(start_time) `hour`,\n    sum(total_duration_ms) / 1000 `total_duration_by_user_in_hour`,\n    (\n      select\n        sum(qhs.total_duration_ms) / 1000\n      from\n        system.query.history qhs\n      where\n        date(qhs.start_time) = date(qh.start_time)\n        and date(qhs.end_time) = date(qh.end_time)\n        and hour(qhs.start_time) = hour(qh.start_time)\n        and qhs.workspace_id = qh.workspace_id\n        and qhs.workspace_id = :workspace_id::string\n        and qhs.compute.warehouse_id = qh.compute.warehouse_id\n      group by\n        date(qhs.start_time),\n        hour(qhs.start_time),\n        qhs.workspace_id,\n        qhs.compute.warehouse_id\n    ) `total_duration_by_hour`\n  from\n    system.query.history qh\n  where\n    date(start_time) >= date_add(week, - :duration_in_weeks :: integer, now())\n    and qh.workspace_id = :workspace_id::string\n  group by\n    all\n),\ncost_by_user as (select\n  u.workspace_id,\n  u.executed_by,\n  u.warehouse_id,\n  u.event_date,\n  u.hour,\n  round(t.dollar_dbus, 2) `cost_by_hour`,\n  round(t.DBUs, 2) `dbus_by_hour`,\n  u.total_duration_by_user_in_hour,\n  u.total_duration_by_hour,\n  t.custom_tags,\n  round(\n    (\n      total_duration_by_user_in_hour / total_duration_by_hour\n    ) * 100,\n    2\n  ) `percent_consumption_by_user_in_hour`,\n  round(\n    t.dollar_dbus * `percent_consumption_by_user_in_hour` / 100,\n    2\n  ) `cost_by_user_in_hour`\nfrom\n  usage_by_user u\n  inner join (\n    select\n      date(u.usage_start_time) `event_date`,\n      hour(u.usage_start_time) `hour`,\n      u.workspace_id,\n      u.usage_metadata.warehouse_id `warehouse_id`,\n      to_json(u.custom_tags) `custom_tags`,\n      round(sum(usage_quantity), 2) `DBUs`,\n      sum(usage_quantity * lp.pricing.default) `dollar_dbus`\n    from\n      system.billing.usage u\n      INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n      and u.cloud = lp.cloud\n      and u.sku_name = lp.sku_name\n      and u.workspace_id = :workspace_id::string\n      and u.usage_start_time between lp.price_start_time\n      and coalesce(lp.price_end_time, u.usage_end_time)\n      and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n      and u.sku_name like '%SQL%'\n      \n    group by\n      all\n  ) T ON u.workspace_id = T.workspace_id\n  and u.workspace_id = :workspace_id::string\n  and u.warehouse_id = t.warehouse_id\n  and u.event_date = t.event_date\n  and u.hour = t.hour \norder by\n  event_date asc,\n  hour asc\n),\ncost_by_user_day as (\n  select workspace_id, warehouse_id, event_date,executed_by,\n   sum(cost_by_user_in_hour) as cost_per_user_per_day\n   from cost_by_user \n   group by all),\n\nranked_users as (\nselect workspace_id, warehouse_id, event_date,executed_by,cost_per_user_per_day,\nrank() over \n(partition by workspace_id, warehouse_id, event_date order by cost_per_user_per_day desc) rnk\n from cost_by_user_day )\n select * from ranked_users where rnk<=:rank::integer ","parameters":[{"displayName":"workspace_id","keyword":"workspace_id","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"984752964297111"}]}}},{"displayName":"duration_in_weeks","keyword":"duration_in_weeks","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"4"}]}}},{"displayName":"rank","keyword":"rank","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"5"}]}}}]},{"name":"1c8858d4","displayName":"top_cluster_consumer","query":"with usage_by_user as (\n  select\n    a.workspace_id,\n    a.user_identity.email,\n    a.request_params.clusterId `cluster_id`,\n    a.event_date,\n    hour(a.event_time) `hour`,\n    sum(a.request_params.executionTime) `total_duration_by_user_in_hour`\n  from\n    system.access.audit a\n  where\n    a.service_name in ('notebook', 'jobs')\n    and a.action_name = 'runCommand'\n    and a.event_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and a.request_params.clusterId is not null \n    and a.workspace_id = :workspace_id::string\n  group by\n    all\n),\ntotal_cost_by_cluster as (\n  select\n    a1.event_date `event_date`,\n    hour(a1.event_time) `hour`,\n    a1.request_params.clusterId `clusterId`,\n    sum(a1.request_params.executionTime) `total_duration_by_hour`\n  from\n    system.access.audit a1\n  where\n    a1.service_name in ('notebook', 'jobs')\n    and a1.action_name = 'runCommand'\n    and a1.event_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and a1.request_params.clusterId is not null \n    and a1.workspace_id = :workspace_id::string\n  group by\n    all\n),\nusage_by_user_and_cluster as (\nselect\n  u.workspace_id,\n  u.email `executed_by`,\n  c.cluster_name,\n  u.cluster_id,\n  u.event_date,\n  u.hour,\n  round(t.dollar_dbus, 2) `cost_by_hour`,\n  t.DBUs `dbus_by_hour`,\n  u.total_duration_by_user_in_hour,\n  tc.total_duration_by_hour,\n  t.custom_tags,\n  round(\n    (\n      total_duration_by_user_in_hour / total_duration_by_hour\n    ) * 100,\n    2\n  ) `percent_consumption_by_user_in_hour`,\n  round(\n    t.dollar_dbus * `percent_consumption_by_user_in_hour` / 100,\n    2\n  ) `cost_by_user_in_hour`\nfrom\n  usage_by_user u\n  inner join total_cost_by_cluster tc on u.event_date = tc.event_date\n  and u.hour = tc.hour\n  and u.cluster_id = tc.clusterId\n  inner join (\n    select\n      date(u.usage_start_time) `event_date`,\n      hour(u.usage_start_time) `hour`,\n      u.workspace_id,\n      u.usage_metadata.cluster_id `cluster_id`,\n      to_json(u.custom_tags) `custom_tags`,\n      round(sum(usage_quantity), 2) `DBUs`,\n      sum(usage_quantity * lp.pricing.default) `dollar_dbus`\n    from\n      system.billing.usage u\n      INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n      and u.cloud = lp.cloud\n      and u.sku_name = lp.sku_name\n      and u.usage_start_time between lp.price_start_time\n      and coalesce(lp.price_end_time, u.usage_end_time)\n      and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n      and u.workspace_id = :workspace_id::string\n      \n    group by\n      all\n  ) T ON u.workspace_id = T.workspace_id\n  and u.cluster_id = t.cluster_id\n  and u.event_date = t.event_date\n  and u.hour = t.hour\n  inner join (\n    select\n      max(change_time),\n      cluster_name,\n      cluster_id,\n      workspace_id,\n      account_id\n    from\n      system.compute.clusters\n    where\n      workspace_id = :workspace_id::string\n    group by\n      all\n  ) c on c.cluster_id = u.cluster_id\n  and c.workspace_id = u.workspace_id\n  and u.workspace_id = :workspace_id::string\n\norder by\n  event_date asc,\n  hour asc),\n  cost_by_user_day as (\n  select workspace_id, cluster_id, cluster_name,event_date,executed_by,\n   sum(cost_by_user_in_hour) as cost_per_user_per_day\n   from usage_by_user_and_cluster \n   group by all),\n\nranked_users as (\nselect workspace_id, cluster_id,cluster_name, event_date,executed_by,cost_per_user_per_day,\nrank() over \n(partition by workspace_id, cluster_id,cluster_name, event_date order by cost_per_user_per_day desc) rnk\n from cost_by_user_day )\n select * from ranked_users where rnk<=:rank::integer ;\n ","parameters":[{"displayName":"workspace_id","keyword":"workspace_id","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"984752964297111"}]}}},{"displayName":"rank","keyword":"rank","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"5"}]}}},{"displayName":"duration_in_weeks","keyword":"duration_in_weeks","dataType":"STRING","defaultSelection":{"values":{"dataType":"STRING","values":[{"value":"1"}]}}}]}],"pages":[{"name":"1fa2c72b","displayName":"New Page","layout":[{"widget":{"name":"49c77538","queries":[{"name":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_event_date","query":{"datasetName":"5bb653dd","fields":[{"name":"event_date","expression":"`event_date`"},{"name":"event_date_associativity","expression":"COUNT_IF(`associative_filter_predicate_group`)"}],"disaggregated":false}},{"name":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_event_date","query":{"datasetName":"87b24525","fields":[{"name":"event_date","expression":"`event_date`"},{"name":"event_date_associativity","expression":"COUNT_IF(`associative_filter_predicate_group`)"}],"disaggregated":false}},{"name":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_usage_date","query":{"datasetName":"6d6983d4","fields":[{"name":"usage_date","expression":"`usage_date`"},{"name":"usage_date_associativity","expression":"COUNT_IF(`associative_filter_predicate_group`)"}],"disaggregated":false}}],"spec":{"version":2,"widgetType":"filter-date-range-picker","encodings":{"fields":[{"fieldName":"event_date","displayName":"event_date","queryName":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_event_date"},{"fieldName":"event_date","displayName":"event_date","queryName":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_event_date"},{"fieldName":"usage_date","displayName":"usage_date","queryName":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_usage_date"}]},"frame":{"showTitle":true,"title":"Date Range"}}},"position":{"x":0,"y":5,"width":2,"height":2}},{"widget":{"name":"9ae0d140","queries":[{"name":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_warehouse_id","query":{"datasetName":"5bb653dd","fields":[{"name":"warehouse_id","expression":"`warehouse_id`"},{"name":"warehouse_id_associativity","expression":"COUNT_IF(`associative_filter_predicate_group`)"}],"disaggregated":false}},{"name":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_warehouse_id","query":{"datasetName":"6d6983d4","fields":[{"name":"warehouse_id","expression":"`warehouse_id`"},{"name":"warehouse_id_associativity","expression":"COUNT_IF(`associative_filter_predicate_group`)"}],"disaggregated":false}},{"name":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_warehouse_id","query":{"datasetName":"a809840e","fields":[{"name":"warehouse_id","expression":"`warehouse_id`"},{"name":"warehouse_id_associativity","expression":"COUNT_IF(`associative_filter_predicate_group`)"}],"disaggregated":false}}],"spec":{"version":2,"widgetType":"filter-single-select","encodings":{"fields":[{"fieldName":"warehouse_id","displayName":"warehouse_id","queryName":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_warehouse_id"},{"fieldName":"warehouse_id","displayName":"warehouse_id","queryName":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_warehouse_id"},{"fieldName":"warehouse_id","displayName":"warehouse_id","queryName":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_warehouse_id"}]},"frame":{"showTitle":true,"title":"Warehouse ID"}}},"position":{"x":0,"y":7,"width":2,"height":2}},{"widget":{"name":"4fb24b4e","queries":[{"name":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_cluster_name","query":{"datasetName":"87b24525","fields":[{"name":"cluster_name","expression":"`cluster_name`"},{"name":"cluster_name_associativity","expression":"COUNT_IF(`associative_filter_predicate_group`)"}],"disaggregated":false}},{"name":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_cluster_name","query":{"datasetName":"1c8858d4","fields":[{"name":"cluster_name","expression":"`cluster_name`"},{"name":"cluster_name_associativity","expression":"COUNT_IF(`associative_filter_predicate_group`)"}],"disaggregated":false}}],"spec":{"version":2,"widgetType":"filter-single-select","encodings":{"fields":[{"fieldName":"cluster_name","displayName":"cluster_name","queryName":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_cluster_name"},{"fieldName":"cluster_name","displayName":"cluster_name","queryName":"dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_cluster_name"}]},"frame":{"showTitle":true,"title":"Cluster Name"}}},"position":{"x":2,"y":7,"width":2,"height":2}},{"widget":{"name":"67cb1622","queries":[{"name":"main_query","query":{"datasetName":"5bb653dd","fields":[{"name":"workspace_id","expression":"`workspace_id`"},{"name":"executed_by","expression":"`executed_by`"},{"name":"warehouse_id","expression":"`warehouse_id`"},{"name":"event_date","expression":"`event_date`"},{"name":"hour","expression":"`hour`"},{"name":"cost_by_hour","expression":"`cost_by_hour`"},{"name":"dbus_by_hour","expression":"`dbus_by_hour`"},{"name":"total_duration_by_user_in_hour","expression":"`total_duration_by_user_in_hour`"},{"name":"total_duration_by_hour","expression":"`total_duration_by_hour`"},{"name":"percent_consumption_by_user_in_hour","expression":"`percent_consumption_by_user_in_hour`"},{"name":"custom_tags","expression":"`custom_tags`"},{"name":"cost_by_user_in_hour","expression":"`cost_by_user_in_hour`"}],"disaggregated":true}}],"spec":{"version":1,"widgetType":"table","encodings":{"columns":[{"fieldName":"workspace_id","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":0,"title":"workspace_id","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"workspace_id"},{"fieldName":"executed_by","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":1,"title":"executed_by","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"executed_by"},{"fieldName":"warehouse_id","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":2,"title":"warehouse_id","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"warehouse_id"},{"fieldName":"event_date","dateTimeFormat":"YYYY-MM-DD","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"date","displayAs":"datetime","visible":true,"order":3,"title":"event_date","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"event_date"},{"fieldName":"hour","numberFormat":"0","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"integer","displayAs":"number","visible":true,"order":4,"title":"hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"hour"},{"fieldName":"cost_by_hour","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"decimal","displayAs":"number","visible":true,"order":5,"title":"cost_by_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cost_by_hour"},{"fieldName":"dbus_by_hour","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"decimal","displayAs":"number","visible":true,"order":6,"title":"dbus_by_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"dbus_by_hour"},{"fieldName":"total_duration_by_user_in_hour","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":7,"title":"total_duration_by_user_in_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"total_duration_by_user_in_hour"},{"fieldName":"total_duration_by_hour","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":8,"title":"total_duration_by_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"total_duration_by_hour"},{"fieldName":"percent_consumption_by_user_in_hour","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":9,"title":"percent_consumption_by_user_in_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"percent_consumption_by_user_in_hour"},{"fieldName":"custom_tags","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":10,"title":"custom_tags","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"custom_tags"},{"fieldName":"cost_by_user_in_hour","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":11,"title":"cost_by_user_in_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cost_by_user_in_hour"}]},"invisibleColumns":[],"allowHTMLByDefault":false,"itemsPerPage":25,"paginationSize":"default","condensed":true,"withRowNumber":false,"frame":{"showTitle":true,"title":"Warehouse Insights"}}},"position":{"x":0,"y":48,"width":6,"height":6}},{"widget":{"name":"4b3b94f9","queries":[{"name":"main_query","query":{"datasetName":"87b24525","fields":[{"name":"workspace_id","expression":"`workspace_id`"},{"name":"executed_by","expression":"`executed_by`"},{"name":"cluster_id","expression":"`cluster_id`"},{"name":"cluster_name","expression":"`cluster_name`"},{"name":"event_date","expression":"`event_date`"},{"name":"hour","expression":"`hour`"},{"name":"cost_by_hour","expression":"`cost_by_hour`"},{"name":"dbus_by_hour","expression":"`dbus_by_hour`"},{"name":"total_duration_by_user_in_hour","expression":"`total_duration_by_user_in_hour`"},{"name":"total_duration_by_hour","expression":"`total_duration_by_hour`"},{"name":"percent_consumption_by_user_in_hour","expression":"`percent_consumption_by_user_in_hour`"},{"name":"cost_by_user_in_hour","expression":"`cost_by_user_in_hour`"},{"name":"custom_tags","expression":"`custom_tags`"}],"disaggregated":true}}],"spec":{"version":1,"widgetType":"table","encodings":{"columns":[{"fieldName":"workspace_id","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":0,"title":"workspace_id","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"workspace_id"},{"fieldName":"executed_by","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":1,"title":"executed_by","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"executed_by"},{"fieldName":"cluster_id","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":2,"title":"cluster_id","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cluster_id"},{"fieldName":"cluster_name","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":3,"title":"cluster_name","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cluster_name"},{"fieldName":"event_date","dateTimeFormat":"YYYY-MM-DD","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"date","displayAs":"datetime","visible":true,"order":4,"title":"event_date","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"event_date"},{"fieldName":"hour","numberFormat":"0","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"integer","displayAs":"number","visible":true,"order":5,"title":"hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"hour"},{"fieldName":"cost_by_hour","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"decimal","displayAs":"number","visible":true,"order":6,"title":"cost_by_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cost_by_hour"},{"fieldName":"dbus_by_hour","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"decimal","displayAs":"number","visible":true,"order":7,"title":"dbus_by_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"dbus_by_hour"},{"fieldName":"total_duration_by_user_in_hour","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":8,"title":"total_duration_by_user_in_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"total_duration_by_user_in_hour"},{"fieldName":"total_duration_by_hour","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":9,"title":"total_duration_by_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"total_duration_by_hour"},{"fieldName":"percent_consumption_by_user_in_hour","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":10,"title":"percent_consumption_by_user_in_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"percent_consumption_by_user_in_hour"},{"fieldName":"cost_by_user_in_hour","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":11,"title":"cost_by_user_in_hour","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cost_by_user_in_hour"},{"fieldName":"custom_tags","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":12,"title":"custom_tags","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"custom_tags"}]},"invisibleColumns":[],"allowHTMLByDefault":false,"itemsPerPage":25,"paginationSize":"default","condensed":true,"withRowNumber":false,"frame":{"showTitle":true,"title":"Cluster Insights"}}},"position":{"x":0,"y":68,"width":6,"height":6}},{"widget":{"name":"29575a49","queries":[{"name":"main_query","query":{"datasetName":"5bb653dd","fields":[{"name":"warehouse_id","expression":"`warehouse_id`"},{"name":"weekly(event_date)","expression":"DATE_TRUNC(\"WEEK\", `event_date`)"},{"name":"sum(cost_by_hour)","expression":"SUM(`cost_by_hour`)"}],"disaggregated":false}}],"spec":{"version":3,"widgetType":"bar","encodings":{"x":{"fieldName":"weekly(event_date)","scale":{"type":"categorical"},"displayName":"event_date"},"y":{"fieldName":"sum(cost_by_hour)","scale":{"type":"quantitative"},"displayName":"Total Cost"},"color":{"fieldName":"warehouse_id","scale":{"type":"categorical"},"displayName":"warehouse_id"},"label":{"show":true}},"frame":{"showTitle":true,"title":"Warehouse Cost over Period"}}},"position":{"x":0,"y":26,"width":6,"height":8}},{"widget":{"name":"03d37454","queries":[{"name":"main_query","query":{"datasetName":"87b24525","fields":[{"name":"cluster_name","expression":"`cluster_name`"},{"name":"weekly(event_date)","expression":"DATE_TRUNC(\"WEEK\", `event_date`)"},{"name":"sum(cost_by_hour)","expression":"SUM(`cost_by_hour`)"}],"disaggregated":false}}],"spec":{"version":3,"widgetType":"bar","encodings":{"x":{"fieldName":"weekly(event_date)","scale":{"type":"temporal"},"displayName":"event_date"},"y":{"fieldName":"sum(cost_by_hour)","scale":{"type":"quantitative"},"displayName":"Sum of cost_by_hour"},"color":{"fieldName":"cluster_name","scale":{"type":"categorical"},"displayName":"cluster_name"},"label":{"show":true}},"frame":{"showTitle":true,"title":"Cluster Cost over Period"}}},"position":{"x":3,"y":18,"width":3,"height":8}},{"widget":{"name":"d71c6323","queries":[{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775271535ae05964958721f50_workspace_id","query":{"datasetName":"82bf8b8b","parameters":[{"name":"workspace_id","keyword":"workspace_id"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_workspace_id","query":{"datasetName":"6d6983d4","parameters":[{"name":"workspace_id","keyword":"workspace_id"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_workspace_id","query":{"datasetName":"87b24525","parameters":[{"name":"workspace_id","keyword":"workspace_id"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_workspace_id","query":{"datasetName":"5bb653dd","parameters":[{"name":"workspace_id","keyword":"workspace_id"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_workspace_id","query":{"datasetName":"a809840e","parameters":[{"name":"workspace_id","keyword":"workspace_id"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_workspace_id","query":{"datasetName":"1c8858d4","parameters":[{"name":"workspace_id","keyword":"workspace_id"}],"disaggregated":false}}],"spec":{"version":2,"widgetType":"filter-single-select","encodings":{"fields":[{"parameterName":"workspace_id","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775271535ae05964958721f50_workspace_id"},{"parameterName":"workspace_id","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_workspace_id"},{"parameterName":"workspace_id","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_workspace_id"},{"parameterName":"workspace_id","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_workspace_id"},{"parameterName":"workspace_id","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_workspace_id"},{"parameterName":"workspace_id","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_workspace_id"}]},"frame":{"showTitle":true,"title":"Workspace ID"}}},"position":{"x":2,"y":5,"width":2,"height":2}},{"widget":{"name":"168518cd","queries":[{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_duration_in_weeks","query":{"datasetName":"5bb653dd","parameters":[{"name":"duration_in_weeks","keyword":"duration_in_weeks"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_duration_in_weeks","query":{"datasetName":"6d6983d4","parameters":[{"name":"duration_in_weeks","keyword":"duration_in_weeks"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_duration_in_weeks","query":{"datasetName":"87b24525","parameters":[{"name":"duration_in_weeks","keyword":"duration_in_weeks"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_duration_in_weeks","query":{"datasetName":"a809840e","parameters":[{"name":"duration_in_weeks","keyword":"duration_in_weeks"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_duration_in_weeks","query":{"datasetName":"1c8858d4","parameters":[{"name":"duration_in_weeks","keyword":"duration_in_weeks"}],"disaggregated":false}}],"spec":{"version":2,"widgetType":"filter-single-select","encodings":{"fields":[{"parameterName":"duration_in_weeks","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_duration_in_weeks"},{"parameterName":"duration_in_weeks","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_duration_in_weeks"},{"parameterName":"duration_in_weeks","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_duration_in_weeks"},{"parameterName":"duration_in_weeks","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_duration_in_weeks"},{"parameterName":"duration_in_weeks","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_duration_in_weeks"}]},"frame":{"showTitle":true,"title":"Duration in Weeks"}}},"position":{"x":4,"y":5,"width":2,"height":2}},{"widget":{"name":"0d42a385","queries":[{"name":"main_query","query":{"datasetName":"6d6983d4","fields":[{"name":"monthly(usage_date)","expression":"DATE_TRUNC(\"MONTH\", `usage_date`)"},{"name":"sum(dbus)","expression":"SUM(`dbus`)"},{"name":"sum($dbus)","expression":"SUM(`$dbus`)"}],"disaggregated":false}}],"spec":{"version":1,"widgetType":"combo","encodings":{"x":{"fieldName":"monthly(usage_date)","scale":{"type":"temporal"},"displayName":"usage_date"},"y":{"primary":{"fields":[{"fieldName":"sum(dbus)","displayName":"Sum of dbus"}]},"secondary":{"fields":[{"fieldName":"sum($dbus)","displayName":"Sum of $dbus"}]},"scale":{"type":"quantitative"}},"label":{"show":true}},"frame":{"showTitle":true,"title":"Account Trends dbus & $dbus"}}},"position":{"x":0,"y":9,"width":3,"height":7}},{"widget":{"name":"c86ecbc8","queries":[{"name":"main_query","query":{"datasetName":"6d6983d4","fields":[{"name":"workspace_id","expression":"`workspace_id`"},{"name":"monthly(usage_date)","expression":"DATE_TRUNC(\"MONTH\", `usage_date`)"},{"name":"sum($dbus)","expression":"SUM(`$dbus`)"}],"disaggregated":false}}],"spec":{"version":3,"widgetType":"bar","encodings":{"x":{"fieldName":"monthly(usage_date)","scale":{"type":"temporal"},"displayName":"usage_date"},"y":{"fieldName":"sum($dbus)","scale":{"type":"quantitative"},"displayName":"Sum of $dbus"},"color":{"fieldName":"workspace_id","scale":{"type":"categorical"},"displayName":"workspace_id"},"label":{"show":true}},"frame":{"showTitle":true,"title":"Workspace ID Trends by Month"}}},"position":{"x":3,"y":11,"width":3,"height":7}},{"widget":{"name":"14376d4b","queries":[{"name":"main_query","query":{"datasetName":"6d6983d4","fields":[{"name":"sku","expression":"`sku`"},{"name":"monthly(usage_date)","expression":"DATE_TRUNC(\"MONTH\", `usage_date`)"},{"name":"sum($dbus)","expression":"SUM(`$dbus`)"}],"disaggregated":false}}],"spec":{"version":3,"widgetType":"bar","encodings":{"x":{"fieldName":"monthly(usage_date)","scale":{"type":"temporal"},"displayName":"usage_date"},"y":{"fieldName":"sum($dbus)","scale":{"type":"quantitative"},"displayName":"Sum of $dbus"},"color":{"fieldName":"sku","scale":{"type":"categorical"},"displayName":"sku"},"label":{"show":true}},"frame":{"showTitle":true,"title":"Sku Trends by Month"}}},"position":{"x":0,"y":16,"width":3,"height":8}},{"widget":{"name":"a295f1c1","queries":[{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_tag_name","query":{"datasetName":"6d6983d4","parameters":[{"name":"tag_name","keyword":"tag_name"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_tag_name","query":{"datasetName":"5bb653dd","parameters":[{"name":"tag_name","keyword":"tag_name"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_tag_name","query":{"datasetName":"87b24525","parameters":[{"name":"tag_name","keyword":"tag_name"}],"disaggregated":false}}],"spec":{"version":2,"widgetType":"filter-single-select","encodings":{"fields":[{"parameterName":"tag_name","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_tag_name"},{"parameterName":"tag_name","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_tag_name"},{"parameterName":"tag_name","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_tag_name"}]},"frame":{"showTitle":true,"title":"Tag Name"}}},"position":{"x":4,"y":7,"width":2,"height":1}},{"widget":{"name":"c56ecbb7","queries":[{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_tag_value","query":{"datasetName":"5bb653dd","parameters":[{"name":"tag_value","keyword":"tag_value"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_tag_value","query":{"datasetName":"6d6983d4","parameters":[{"name":"tag_value","keyword":"tag_value"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_tag_value","query":{"datasetName":"87b24525","parameters":[{"name":"tag_value","keyword":"tag_value"}],"disaggregated":false}}],"spec":{"version":2,"widgetType":"filter-single-select","encodings":{"fields":[{"parameterName":"tag_value","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_tag_value"},{"parameterName":"tag_value","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_tag_value"},{"parameterName":"tag_value","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_tag_value"}]},"frame":{"showTitle":true,"title":"Tag Value"}}},"position":{"x":4,"y":8,"width":2,"height":1}},{"widget":{"name":"74c56bf0","textbox_spec":"## Cost Attribution Dashboard:\nThe cost attribution dashboard seeks to provide a common view of Account trends and drill down into Workspaces, Skus, Tags, and Users.\n\n### Filters & Parameters:\n* Date Range: An additional filter on top of Duration can be used to get a more granular view on top of the default duration\n* Workspace ID: Based on Dataset, Dynamic list of Workspaces associated with Queries\n* Duration in Weeks: This is used to help improve performance, as some of the data is sourced from very verbose audit logs. The default is one Week, but it can be extended.\n* Warehouse ID: Based on Dataset, Dynamic list of Warehouse IDs associated with Queries\n* Cluster Name:: Based on Dataset, Dynamic list of Cluster Names associated with Queries\n* Tag Name & Value: defaults to all tags.  Filter requires Tag Name and Value to see costs associated with tagged workloads.\n* Consumer Rank: defaults to 5, but it can be extended.\n\n\nLast Updated: 8/9/2024"},"position":{"x":0,"y":0,"width":6,"height":5}},{"widget":{"name":"86d22ad5","textbox_spec":"### Tabular view of Warehouse Costs at the granularity of an hour and user.\n\n* Leverages usage, list_prices, and query history tables to source the percent of queries attributed to the user for each billable hour.\n\nAs a disclaimer, the estimates below depict the duration of the query relative to the Usage tables billing for that hour. Other factors may be needed for appropriate chargeback, but this gives a reasonable view of what users are contributing to costs based on query time."},"position":{"x":0,"y":46,"width":6,"height":2}},{"widget":{"name":"e10557b5","textbox_spec":"### Tabular view of Cluster Costs at the granularity of an hour and user.\n\n* Leverages usage, list_prices, and cluster tables to source the percent of queries attributed to the user for each billable hour.\n* Note that sourcing the duration of queries for Clusters requires the Audit Log tables and is dependent on the Notebook service_name and runCommand action_name, which requires verbose logging enabled."},"position":{"x":0,"y":66,"width":6,"height":2}},{"widget":{"name":"80d2b5d6","queries":[{"name":"main_query","query":{"datasetName":"a809840e","fields":[{"name":"sum(cost_per_user_per_day)","expression":"SUM(`cost_per_user_per_day`)"},{"name":"executed_by","expression":"`executed_by`"}],"disaggregated":false}}],"spec":{"version":3,"widgetType":"pie","encodings":{"angle":{"fieldName":"sum(cost_per_user_per_day)","scale":{"type":"quantitative"},"displayName":"cost per user"},"color":{"fieldName":"executed_by","scale":{"type":"categorical"},"displayName":"executed_by"},"label":{"show":true}},"frame":{"showTitle":true,"title":"Top warehouse consumer"}}},"position":{"x":0,"y":34,"width":3,"height":6}},{"widget":{"name":"5fca8ad9","queries":[{"name":"main_query","query":{"datasetName":"a809840e","fields":[{"name":"workspace_id","expression":"`workspace_id`"},{"name":"warehouse_id","expression":"`warehouse_id`"},{"name":"event_date","expression":"`event_date`"},{"name":"executed_by","expression":"`executed_by`"},{"name":"cost_per_user_per_day","expression":"`cost_per_user_per_day`"},{"name":"rnk","expression":"`rnk`"}],"disaggregated":true}}],"spec":{"version":1,"widgetType":"table","encodings":{"columns":[{"fieldName":"workspace_id","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":100000,"title":"workspace_id","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"workspace_id"},{"fieldName":"warehouse_id","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":100001,"title":"warehouse_id","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"warehouse_id"},{"fieldName":"event_date","dateTimeFormat":"YYYY-MM-DD","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"date","displayAs":"datetime","visible":true,"order":100002,"title":"event_date","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"event_date"},{"fieldName":"executed_by","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":100003,"title":"executed_by","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"executed_by"},{"fieldName":"cost_per_user_per_day","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":100004,"title":"cost_per_user_per_day","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cost_per_user_per_day"},{"fieldName":"rnk","numberFormat":"0","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"integer","displayAs":"number","visible":true,"order":100005,"title":"consumer_rank","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"rnk"}]},"invisibleColumns":[],"allowHTMLByDefault":false,"itemsPerPage":25,"paginationSize":"default","condensed":true,"withRowNumber":false}},"position":{"x":0,"y":40,"width":6,"height":6}},{"widget":{"name":"0bda86af","queries":[{"name":"main_query","query":{"datasetName":"a809840e","fields":[{"name":"executed_by","expression":"`executed_by`"},{"name":"daily(event_date)","expression":"DATE_TRUNC(\"DAY\", `event_date`)"},{"name":"cost_per_user_per_day","expression":"`cost_per_user_per_day`"}],"disaggregated":true}}],"spec":{"version":3,"widgetType":"bar","encodings":{"x":{"fieldName":"daily(event_date)","scale":{"type":"categorical"},"displayName":"event_date"},"y":{"fieldName":"cost_per_user_per_day","scale":{"type":"quantitative"},"displayName":"cost_per_user_per_day"},"color":{"fieldName":"executed_by","scale":{"type":"categorical"},"displayName":"executed_by"},"label":{"show":true}},"frame":{"showTitle":true,"title":"Top warehouse consumer daily view"}}},"position":{"x":3,"y":34,"width":3,"height":6}},{"widget":{"name":"48b45103","queries":[{"name":"main_query","query":{"datasetName":"1c8858d4","fields":[{"name":"sum(cost_per_user_per_day)","expression":"SUM(`cost_per_user_per_day`)"},{"name":"executed_by","expression":"`executed_by`"}],"disaggregated":false}}],"spec":{"version":3,"widgetType":"pie","encodings":{"angle":{"fieldName":"sum(cost_per_user_per_day)","scale":{"type":"quantitative"},"displayName":"cost per user"},"color":{"fieldName":"executed_by","scale":{"type":"categorical"},"displayName":"executed_by"},"label":{"show":true}},"frame":{"showTitle":true,"title":"Top cluster consumer"}}},"position":{"x":0,"y":54,"width":3,"height":6}},{"widget":{"name":"d3e234da","queries":[{"name":"main_query","query":{"datasetName":"1c8858d4","fields":[{"name":"executed_by","expression":"`executed_by`"},{"name":"daily(event_date)","expression":"DATE_TRUNC(\"DAY\", `event_date`)"},{"name":"cost_per_user_per_day","expression":"`cost_per_user_per_day`"}],"disaggregated":true}}],"spec":{"version":3,"widgetType":"bar","encodings":{"x":{"fieldName":"daily(event_date)","scale":{"type":"temporal"},"displayName":"event_date"},"y":{"fieldName":"cost_per_user_per_day","scale":{"type":"quantitative"},"displayName":"cost_per_user_per_day"},"color":{"fieldName":"executed_by","scale":{"type":"categorical"},"displayName":"executed_by"},"label":{"show":true}},"frame":{"showTitle":true,"title":"Top cluster consumer daily view"}}},"position":{"x":3,"y":54,"width":3,"height":6}},{"widget":{"name":"3e1a8bd1","queries":[{"name":"main_query","query":{"datasetName":"1c8858d4","fields":[{"name":"workspace_id","expression":"`workspace_id`"},{"name":"cluster_id","expression":"`cluster_id`"},{"name":"event_date","expression":"`event_date`"},{"name":"cluster_name","expression":"`cluster_name`"},{"name":"executed_by","expression":"`executed_by`"},{"name":"cost_per_user_per_day","expression":"`cost_per_user_per_day`"},{"name":"rnk","expression":"`rnk`"}],"disaggregated":true}}],"spec":{"version":1,"widgetType":"table","encodings":{"columns":[{"fieldName":"workspace_id","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":0,"title":"workspace_id","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"workspace_id"},{"fieldName":"cluster_id","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":1,"title":"cluster_id","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cluster_id"},{"fieldName":"event_date","dateTimeFormat":"YYYY-MM-DD","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"date","displayAs":"datetime","visible":true,"order":2,"title":"event_date","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"event_date"},{"fieldName":"cluster_name","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":3,"title":"cluster_name","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cluster_name"},{"fieldName":"executed_by","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"string","displayAs":"string","visible":true,"order":4,"title":"executed_by","allowSearch":false,"alignContent":"left","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"executed_by"},{"fieldName":"cost_per_user_per_day","numberFormat":"0.00","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"float","displayAs":"number","visible":true,"order":5,"title":"cost_per_user_per_day","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"cost_per_user_per_day"},{"fieldName":"rnk","numberFormat":"0","booleanValues":["false","true"],"imageUrlTemplate":"{{ @ }}","imageTitleTemplate":"{{ @ }}","imageWidth":"","imageHeight":"","linkUrlTemplate":"{{ @ }}","linkTextTemplate":"{{ @ }}","linkTitleTemplate":"{{ @ }}","linkOpenInNewTab":true,"type":"integer","displayAs":"number","visible":true,"order":6,"title":"consumer_rank","allowSearch":false,"alignContent":"right","allowHTML":false,"highlightLinks":false,"useMonospaceFont":false,"preserveWhitespace":false,"displayName":"rnk"}]},"invisibleColumns":[],"allowHTMLByDefault":false,"itemsPerPage":25,"paginationSize":"default","condensed":true,"withRowNumber":false}},"position":{"x":0,"y":60,"width":6,"height":6}},{"widget":{"name":"779123f2","queries":[{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_rank","query":{"datasetName":"a809840e","parameters":[{"name":"rank","keyword":"rank"}],"disaggregated":false}},{"name":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_rank","query":{"datasetName":"1c8858d4","parameters":[{"name":"rank","keyword":"rank"}],"disaggregated":false}}],"spec":{"version":2,"widgetType":"filter-single-select","encodings":{"fields":[{"parameterName":"rank","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_rank"},{"parameterName":"rank","queryName":"parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_rank"}]},"frame":{"showTitle":true,"title":"Consumer Rank"}}},"position":{"x":3,"y":9,"width":3,"height":2}}]}]}
+{
+  "datasets" : [ {
+    "name" : "5bb653dd",
+    "displayName" : "warehouse_insights_by_user",
+    "query" : "with usage_by_user as (\n  select\n    workspace_id,\n    executed_by,\n    compute.warehouse_id,\n    date(start_time) `event_date`,\n    hour(start_time) `hour`,\n    sum(total_duration_ms) / 1000 `total_duration_by_user_in_hour`,\n    (\n      select\n        sum(qhs.total_duration_ms) / 1000\n      from\n        system.query.history qhs\n      where\n        date(qhs.start_time) = date(qh.start_time)\n        and date(qhs.end_time) = date(qh.end_time)\n        and hour(qhs.start_time) = hour(qh.start_time)\n        and qhs.workspace_id = qh.workspace_id\n        and qhs.workspace_id = :workspace_id::string\n        and qhs.compute.warehouse_id = qh.compute.warehouse_id\n      group by\n        date(qhs.start_time),\n        hour(qhs.start_time),\n        qhs.workspace_id,\n        qhs.compute.warehouse_id\n    ) `total_duration_by_hour`\n  from\n    system.query.history qh\n  where\n    date(start_time) >= date_add(week, - :duration_in_weeks :: integer, now())\n    and qh.workspace_id = :workspace_id::string\n  group by\n    all\n)\nselect\n  u.workspace_id,\n  u.executed_by,\n  u.warehouse_id,\n  u.event_date,\n  u.hour,\n  round(t.dollar_dbus, 2) `cost_by_hour`,\n  round(t.DBUs, 2) `dbus_by_hour`,\n  u.total_duration_by_user_in_hour,\n  u.total_duration_by_hour,\n  t.custom_tags,\n  round(\n    (\n      total_duration_by_user_in_hour / total_duration_by_hour\n    ) * 100,\n    2\n  ) `percent_consumption_by_user_in_hour`,\n  round(\n    t.dollar_dbus * `percent_consumption_by_user_in_hour` / 100,\n    2\n  ) `cost_by_user_in_hour`\nfrom\n  usage_by_user u\n  inner join (\n    select\n      date(u.usage_start_time) `event_date`,\n      hour(u.usage_start_time) `hour`,\n      u.workspace_id,\n      u.usage_metadata.warehouse_id `warehouse_id`,\n      to_json(u.custom_tags) `custom_tags`,\n      round(sum(usage_quantity), 2) `DBUs`,\n      sum(usage_quantity * lp.pricing.default) `dollar_dbus`\n    from\n      system.billing.usage u\n      INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n      and u.cloud = lp.cloud\n      and u.sku_name = lp.sku_name\n      and u.workspace_id = :workspace_id::string\n      and u.usage_start_time between lp.price_start_time\n      and coalesce(lp.price_end_time, u.usage_end_time)\n      and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n      and u.sku_name like '%SQL%'\n      and (\n        :tag_name :: string = 'all'\n        or u.custom_tags [:tag_name::string] = :tag_value :: string\n      )\n    group by\n      all\n  ) T ON u.workspace_id = T.workspace_id\n  and u.workspace_id = :workspace_id::string\n  and u.warehouse_id = t.warehouse_id\n  and u.event_date = t.event_date\n  and u.hour = t.hour \norder by\n  event_date asc,\n  hour asc",
+    "parameters" : [ {
+      "displayName" : "duration_in_weeks",
+      "keyword" : "duration_in_weeks",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "4"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "tag_name",
+      "keyword" : "tag_name",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "all"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "tag_value",
+      "keyword" : "tag_value",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "all"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "workspace_id",
+      "keyword" : "workspace_id",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "984752964297111"
+          } ]
+        }
+      }
+    } ]
+  }, {
+    "name" : "87b24525",
+    "displayName" : "cluster_insights_by_user",
+    "query" : "with usage_by_user as (\n  select\n    a.workspace_id,\n    a.user_identity.email,\n    a.request_params.clusterId `cluster_id`,\n    a.event_date,\n    hour(a.event_time) `hour`,\n    sum(a.request_params.executionTime) `total_duration_by_user_in_hour`\n  from\n    system.access.audit a\n  where\n    a.service_name in ('notebook', 'jobs')\n    and a.action_name = 'runCommand'\n    and a.event_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and a.request_params.clusterId is not null \n    and a.workspace_id = :workspace_id :: string\n  group by\n    all\n),\ntotal_cost_by_cluster as (\n  select\n    a1.event_date `event_date`,\n    hour(a1.event_time) `hour`,\n    a1.request_params.clusterId `clusterId`,\n    sum(a1.request_params.executionTime) `total_duration_by_hour`\n  from\n    system.access.audit a1\n  where\n    a1.service_name in ('notebook', 'jobs')\n    and a1.action_name = 'runCommand'\n    and a1.event_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and a1.request_params.clusterId is not null \n    and a1.workspace_id = :workspace_id :: string\n  group by\n    all\n)\nselect\n  u.workspace_id,\n  u.email `executed_by`,\n  c.cluster_name,\n  u.cluster_id,\n  u.event_date,\n  u.hour,\n  round(t.dollar_dbus, 2) `cost_by_hour`,\n  t.DBUs `dbus_by_hour`,\n  u.total_duration_by_user_in_hour,\n  tc.total_duration_by_hour,\n  t.custom_tags,\n  round(\n    (\n      total_duration_by_user_in_hour / total_duration_by_hour\n    ) * 100,\n    2\n  ) `percent_consumption_by_user_in_hour`,\n  round(\n    t.dollar_dbus * `percent_consumption_by_user_in_hour` / 100,\n    2\n  ) `cost_by_user_in_hour`\nfrom\n  usage_by_user u\n  inner join total_cost_by_cluster tc on u.event_date = tc.event_date\n  and u.hour = tc.hour\n  and u.cluster_id = tc.clusterId\n  inner join (\n    select\n      date(u.usage_start_time) `event_date`,\n      hour(u.usage_start_time) `hour`,\n      u.workspace_id,\n      u.usage_metadata.cluster_id `cluster_id`,\n      to_json(u.custom_tags) `custom_tags`,\n      round(sum(usage_quantity), 2) `DBUs`,\n      sum(usage_quantity * lp.pricing.default) `dollar_dbus`\n    from\n      system.billing.usage u\n      INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n      and u.cloud = lp.cloud\n      and u.sku_name = lp.sku_name\n      and u.usage_start_time between lp.price_start_time\n      and coalesce(lp.price_end_time, u.usage_end_time)\n      and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n      and u.workspace_id = :workspace_id::string\n      and (\n        :tag_name :: string = 'all'\n        or u.custom_tags [:tag_name::string] = :tag_value :: string\n      )\n    group by\n      all\n  ) T ON u.workspace_id = T.workspace_id\n  and u.cluster_id = t.cluster_id\n  and u.event_date = t.event_date\n  and u.hour = t.hour\n  inner join (\n    select\n      max(change_time),\n      cluster_name,\n      cluster_id,\n      workspace_id,\n      account_id\n    from\n      system.compute.clusters\n    where\n      workspace_id = :workspace_id::string\n    group by\n      all\n  ) c on c.cluster_id = u.cluster_id\n  and c.workspace_id = u.workspace_id\n  and u.workspace_id = :workspace_id::string\n\norder by\n  event_date asc,\n  hour asc",
+    "parameters" : [ {
+      "displayName" : "tag_name",
+      "keyword" : "tag_name",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "all"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "tag_value",
+      "keyword" : "tag_value",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "all"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "workspace_id",
+      "keyword" : "workspace_id",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "984752964297111"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "duration_in_weeks",
+      "keyword" : "duration_in_weeks",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "1"
+          } ]
+        }
+      }
+    } ]
+  }, {
+    "name" : "6d6983d4",
+    "displayName" : "consumption details",
+    "query" : "with consumption_details as (\n  SELECT\n    u.usage_date,\n    u.usage_start_time,\n    u.usage_end_time,\n    u.workspace_id,\n    u.sku_name,\n    u.usage_metadata.*,\n    to_json(u.custom_tags) `custom_tags`,\n    Case\n      when u.sku_name like '%SERVERLESS_SQL%' then 'SQL-Serverless'\n      when u.sku_name like '%SQL_PRO%' then 'SQL-Pro'\n      when u.sku_name like '%SQL%' then 'SQL-Classic'\n      WHEN u.sku_name like '%DLT_ADVANCED_COMPUTE%'\n      and u.sku_name like '%PHOTON%' THEN 'DLT Advanced (PHOTON)'\n      WHEN u.sku_name like '%DLT_ADVANCED_COMPUTE%' THEN 'DLT Advanced'\n      WHEN u.sku_name like '%DLT_PRO_COMPUTE%'\n      and u.sku_name like '%PHOTON%' THEN 'DLT Pro (PHOTON)'\n      WHEN u.sku_name like '%DLT_PRO_COMPUTE%' THEN 'DLT Pro'\n      WHEN u.sku_name like '%DLT_CORE_COMPUTE%'\n      and u.sku_name like '%PHOTON%' THEN 'DLT Core (PHOTON)'\n      WHEN u.sku_name like '%DLT_CORE_COMPUTE%' THEN 'DLT Core'\n      when u.sku_name like '%JOBS%'\n      and u.sku_name like '%PHOTON%' then 'AUTOMATED (PHOTON)'\n      when u.sku_name like '%JOBS%' then 'AUTOMATED'\n      when u.sku_name like '%ALL_PURPOSE%'\n      and u.sku_name like '%PHOTON%' then 'INTERACTIVE (PHOTON)'\n      when u.sku_name like '%ALL_PURPOSE%' then 'INTERACTIVE'\n      when u.sku_name like '%SERVERLESS_REAL_TIME%' then 'Serverless-Realtime-Inference'\n      ELSE u.sku_name\n    end `sku`,\n    sum(usage_quantity * lp.pricing.default) `$dbus`,\n    sum(usage_quantity) `dbus`\n  FROM\n    system.billing.usage u\n    INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n    and u.cloud = lp.cloud\n    and u.workspace_id = :workspace_id::string\n\n    and u.sku_name = lp.sku_name\n    and u.usage_start_time between lp.price_start_time\n    and coalesce(lp.price_end_time, u.usage_end_time)\n    and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and (\n      :tag_name :: string = 'all'\n      or u.custom_tags [:tag_name::string] = :tag_value :: string\n    )\n  group by\n    all\n)\nselect\n  *\nfrom\n  consumption_details",
+    "parameters" : [ {
+      "displayName" : "duration_in_weeks",
+      "keyword" : "duration_in_weeks",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "1"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "tag_name",
+      "keyword" : "tag_name",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "all"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "tag_value",
+      "keyword" : "tag_value",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "all"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "workspace_id",
+      "keyword" : "workspace_id",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "984752964297111"
+          } ]
+        }
+      }
+    } ]
+  }, {
+    "name" : "82bf8b8b",
+    "displayName" : "consumption details (new)",
+    "query" : "with consumption_details as (\n  SELECT\n    u.usage_date,\n    u.usage_start_time,\n    u.usage_end_time,\n    u.workspace_id,\n    u.sku_name,\n    u.usage_metadata.*,\n    to_json(u.custom_tags) `custom_tags`,\n    lower(\n      concat(\n        billing_origin_product,\n        '-',\n        coalesce(product_features.jobs_tier, ''),\n        coalesce(product_features.dlt_tier, ''),\n        coalesce(product_features.sql_tier, ''),\n        coalesce(product_features.serving_type, ''),\n        case\n          when product_features.is_photon then 'photon'\n          else ''\n        end,\n        case\n          when product_features.is_serverless then 'serverless'\n          else ''\n        end\n      )\n    ) `sku`,\n    sum(usage_quantity * lp.pricing.default) `$dbus`,\n    sum(usage_quantity) `dbus`\n  FROM\n    system.billing.usage u\n    INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n    and u.cloud = lp.cloud\n    and u.workspace_id = :workspace_id::string\n    and u.sku_name = lp.sku_name\n    and u.usage_start_time between lp.price_start_time\n    and coalesce(lp.price_end_time, u.usage_end_time)\n    and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and (\n      :tag_name :: string = 'all'\n      or u.custom_tags [:tag_name::string] = :tag_value :: string\n    )\n  group by\n    all\n)\nselect\n  *\nfrom\n  consumption_details",
+    "parameters" : [ {
+      "displayName" : "duration_in_weeks",
+      "keyword" : "duration_in_weeks",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "1"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "tag_name",
+      "keyword" : "tag_name",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "all"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "tag_value",
+      "keyword" : "tag_value",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "all"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "workspace_id",
+      "keyword" : "workspace_id",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "984752964297111"
+          } ]
+        }
+      }
+    } ]
+  }, {
+    "name" : "a809840e",
+    "displayName" : "top_warehouse_consumer",
+    "query" : "with usage_by_user as (\n  select\n    workspace_id,\n    executed_by,\n    compute.warehouse_id,\n    date(start_time) `event_date`,\n    hour(start_time) `hour`,\n    sum(total_duration_ms) / 1000 `total_duration_by_user_in_hour`,\n    (\n      select\n        sum(qhs.total_duration_ms) / 1000\n      from\n        system.query.history qhs\n      where\n        date(qhs.start_time) = date(qh.start_time)\n        and date(qhs.end_time) = date(qh.end_time)\n        and hour(qhs.start_time) = hour(qh.start_time)\n        and qhs.workspace_id = qh.workspace_id\n        and qhs.workspace_id = :workspace_id::string\n        and qhs.compute.warehouse_id = qh.compute.warehouse_id\n      group by\n        date(qhs.start_time),\n        hour(qhs.start_time),\n        qhs.workspace_id,\n        qhs.compute.warehouse_id\n    ) `total_duration_by_hour`\n  from\n    system.query.history qh\n  where\n    date(start_time) >= date_add(week, - :duration_in_weeks :: integer, now())\n    and qh.workspace_id = :workspace_id::string\n  group by\n    all\n),\ncost_by_user as (select\n  u.workspace_id,\n  u.executed_by,\n  u.warehouse_id,\n  u.event_date,\n  u.hour,\n  round(t.dollar_dbus, 2) `cost_by_hour`,\n  round(t.DBUs, 2) `dbus_by_hour`,\n  u.total_duration_by_user_in_hour,\n  u.total_duration_by_hour,\n  t.custom_tags,\n  round(\n    (\n      total_duration_by_user_in_hour / total_duration_by_hour\n    ) * 100,\n    2\n  ) `percent_consumption_by_user_in_hour`,\n  round(\n    t.dollar_dbus * `percent_consumption_by_user_in_hour` / 100,\n    2\n  ) `cost_by_user_in_hour`\nfrom\n  usage_by_user u\n  inner join (\n    select\n      date(u.usage_start_time) `event_date`,\n      hour(u.usage_start_time) `hour`,\n      u.workspace_id,\n      u.usage_metadata.warehouse_id `warehouse_id`,\n      to_json(u.custom_tags) `custom_tags`,\n      round(sum(usage_quantity), 2) `DBUs`,\n      sum(usage_quantity * lp.pricing.default) `dollar_dbus`\n    from\n      system.billing.usage u\n      INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n      and u.cloud = lp.cloud\n      and u.sku_name = lp.sku_name\n      and u.workspace_id = :workspace_id::string\n      and u.usage_start_time between lp.price_start_time\n      and coalesce(lp.price_end_time, u.usage_end_time)\n      and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n      and u.sku_name like '%SQL%'\n      \n    group by\n      all\n  ) T ON u.workspace_id = T.workspace_id\n  and u.workspace_id = :workspace_id::string\n  and u.warehouse_id = t.warehouse_id\n  and u.event_date = t.event_date\n  and u.hour = t.hour \norder by\n  event_date asc,\n  hour asc\n),\ncost_by_user_day as (\n  select workspace_id, warehouse_id, event_date,executed_by,\n   sum(cost_by_user_in_hour) as cost_per_user_per_day\n   from cost_by_user \n   group by all),\n\nranked_users as (\nselect workspace_id, warehouse_id, event_date,executed_by,cost_per_user_per_day,\nrank() over \n(partition by workspace_id, warehouse_id, event_date order by cost_per_user_per_day desc) rnk\n from cost_by_user_day )\n select * from ranked_users where rnk<=:rank::integer ",
+    "parameters" : [ {
+      "displayName" : "workspace_id",
+      "keyword" : "workspace_id",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "984752964297111"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "duration_in_weeks",
+      "keyword" : "duration_in_weeks",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "4"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "rank",
+      "keyword" : "rank",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "5"
+          } ]
+        }
+      }
+    } ]
+  }, {
+    "name" : "1c8858d4",
+    "displayName" : "top_cluster_consumer",
+    "query" : "with usage_by_user as (\n  select\n    a.workspace_id,\n    a.user_identity.email,\n    a.request_params.clusterId `cluster_id`,\n    a.event_date,\n    hour(a.event_time) `hour`,\n    sum(a.request_params.executionTime) `total_duration_by_user_in_hour`\n  from\n    system.access.audit a\n  where\n    a.service_name in ('notebook', 'jobs')\n    and a.action_name = 'runCommand'\n    and a.event_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and a.request_params.clusterId is not null \n    and a.workspace_id = :workspace_id::string\n  group by\n    all\n),\ntotal_cost_by_cluster as (\n  select\n    a1.event_date `event_date`,\n    hour(a1.event_time) `hour`,\n    a1.request_params.clusterId `clusterId`,\n    sum(a1.request_params.executionTime) `total_duration_by_hour`\n  from\n    system.access.audit a1\n  where\n    a1.service_name in ('notebook', 'jobs')\n    and a1.action_name = 'runCommand'\n    and a1.event_date >= date_add(week, - :duration_in_weeks :: integer, now())\n    and a1.request_params.clusterId is not null \n    and a1.workspace_id = :workspace_id::string\n  group by\n    all\n),\nusage_by_user_and_cluster as (\nselect\n  u.workspace_id,\n  u.email `executed_by`,\n  c.cluster_name,\n  u.cluster_id,\n  u.event_date,\n  u.hour,\n  round(t.dollar_dbus, 2) `cost_by_hour`,\n  t.DBUs `dbus_by_hour`,\n  u.total_duration_by_user_in_hour,\n  tc.total_duration_by_hour,\n  t.custom_tags,\n  round(\n    (\n      total_duration_by_user_in_hour / total_duration_by_hour\n    ) * 100,\n    2\n  ) `percent_consumption_by_user_in_hour`,\n  round(\n    t.dollar_dbus * `percent_consumption_by_user_in_hour` / 100,\n    2\n  ) `cost_by_user_in_hour`\nfrom\n  usage_by_user u\n  inner join total_cost_by_cluster tc on u.event_date = tc.event_date\n  and u.hour = tc.hour\n  and u.cluster_id = tc.clusterId\n  inner join (\n    select\n      date(u.usage_start_time) `event_date`,\n      hour(u.usage_start_time) `hour`,\n      u.workspace_id,\n      u.usage_metadata.cluster_id `cluster_id`,\n      to_json(u.custom_tags) `custom_tags`,\n      round(sum(usage_quantity), 2) `DBUs`,\n      sum(usage_quantity * lp.pricing.default) `dollar_dbus`\n    from\n      system.billing.usage u\n      INNER JOIN system.billing.list_prices lp ON u.account_id = lp.account_id\n      and u.cloud = lp.cloud\n      and u.sku_name = lp.sku_name\n      and u.usage_start_time between lp.price_start_time\n      and coalesce(lp.price_end_time, u.usage_end_time)\n      and u.usage_date >= date_add(week, - :duration_in_weeks :: integer, now())\n      and u.workspace_id = :workspace_id::string\n      \n    group by\n      all\n  ) T ON u.workspace_id = T.workspace_id\n  and u.cluster_id = t.cluster_id\n  and u.event_date = t.event_date\n  and u.hour = t.hour\n  inner join (\n    select\n      max(change_time),\n      cluster_name,\n      cluster_id,\n      workspace_id,\n      account_id\n    from\n      system.compute.clusters\n    where\n      workspace_id = :workspace_id::string\n    group by\n      all\n  ) c on c.cluster_id = u.cluster_id\n  and c.workspace_id = u.workspace_id\n  and u.workspace_id = :workspace_id::string\n\norder by\n  event_date asc,\n  hour asc),\n  cost_by_user_day as (\n  select workspace_id, cluster_id, cluster_name,event_date,executed_by,\n   sum(cost_by_user_in_hour) as cost_per_user_per_day\n   from usage_by_user_and_cluster \n   group by all),\n\nranked_users as (\nselect workspace_id, cluster_id,cluster_name, event_date,executed_by,cost_per_user_per_day,\nrank() over \n(partition by workspace_id, cluster_id,cluster_name, event_date order by cost_per_user_per_day desc) rnk\n from cost_by_user_day )\n select * from ranked_users where rnk<=:rank::integer ;\n ",
+    "parameters" : [ {
+      "displayName" : "workspace_id",
+      "keyword" : "workspace_id",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "984752964297111"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "rank",
+      "keyword" : "rank",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "5"
+          } ]
+        }
+      }
+    }, {
+      "displayName" : "duration_in_weeks",
+      "keyword" : "duration_in_weeks",
+      "dataType" : "STRING",
+      "defaultSelection" : {
+        "values" : {
+          "dataType" : "STRING",
+          "values" : [ {
+            "value" : "1"
+          } ]
+        }
+      }
+    } ]
+  } ],
+  "pages" : [ {
+    "name" : "1fa2c72b",
+    "displayName" : "New Page",
+    "layout" : [ {
+      "widget" : {
+        "name" : "49c77538",
+        "queries" : [ {
+          "name" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_event_date",
+          "query" : {
+            "datasetName" : "5bb653dd",
+            "fields" : [ {
+              "name" : "event_date",
+              "expression" : "`event_date`"
+            }, {
+              "name" : "event_date_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_event_date",
+          "query" : {
+            "datasetName" : "87b24525",
+            "fields" : [ {
+              "name" : "event_date",
+              "expression" : "`event_date`"
+            }, {
+              "name" : "event_date_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_usage_date",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "fields" : [ {
+              "name" : "usage_date",
+              "expression" : "`usage_date`"
+            }, {
+              "name" : "usage_date_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-date-range-picker",
+          "encodings" : {
+            "fields" : [ {
+              "fieldName" : "event_date",
+              "displayName" : "event_date",
+              "queryName" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_event_date"
+            }, {
+              "fieldName" : "event_date",
+              "displayName" : "event_date",
+              "queryName" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_event_date"
+            }, {
+              "fieldName" : "usage_date",
+              "displayName" : "usage_date",
+              "queryName" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_usage_date"
+            } ]
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Date Range"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 5,
+        "width" : 2,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "9ae0d140",
+        "queries" : [ {
+          "name" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_warehouse_id",
+          "query" : {
+            "datasetName" : "5bb653dd",
+            "fields" : [ {
+              "name" : "warehouse_id",
+              "expression" : "`warehouse_id`"
+            }, {
+              "name" : "warehouse_id_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_warehouse_id",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "fields" : [ {
+              "name" : "warehouse_id",
+              "expression" : "`warehouse_id`"
+            }, {
+              "name" : "warehouse_id_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_warehouse_id",
+          "query" : {
+            "datasetName" : "a809840e",
+            "fields" : [ {
+              "name" : "warehouse_id",
+              "expression" : "`warehouse_id`"
+            }, {
+              "name" : "warehouse_id_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-single-select",
+          "encodings" : {
+            "fields" : [ {
+              "fieldName" : "warehouse_id",
+              "displayName" : "warehouse_id",
+              "queryName" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_warehouse_id"
+            }, {
+              "fieldName" : "warehouse_id",
+              "displayName" : "warehouse_id",
+              "queryName" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_warehouse_id"
+            }, {
+              "fieldName" : "warehouse_id",
+              "displayName" : "warehouse_id",
+              "queryName" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_warehouse_id"
+            } ]
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Warehouse ID"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 7,
+        "width" : 2,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "4fb24b4e",
+        "queries" : [ {
+          "name" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_cluster_name",
+          "query" : {
+            "datasetName" : "87b24525",
+            "fields" : [ {
+              "name" : "cluster_name",
+              "expression" : "`cluster_name`"
+            }, {
+              "name" : "cluster_name_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_cluster_name",
+          "query" : {
+            "datasetName" : "1c8858d4",
+            "fields" : [ {
+              "name" : "cluster_name",
+              "expression" : "`cluster_name`"
+            }, {
+              "name" : "cluster_name_associativity",
+              "expression" : "COUNT_IF(`associative_filter_predicate_group`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-single-select",
+          "encodings" : {
+            "fields" : [ {
+              "fieldName" : "cluster_name",
+              "displayName" : "cluster_name",
+              "queryName" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_cluster_name"
+            }, {
+              "fieldName" : "cluster_name",
+              "displayName" : "cluster_name",
+              "queryName" : "dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_cluster_name"
+            } ]
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Cluster Name"
+          }
+        }
+      },
+      "position" : {
+        "x" : 2,
+        "y" : 7,
+        "width" : 2,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "67cb1622",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "5bb653dd",
+            "fields" : [ {
+              "name" : "workspace_id",
+              "expression" : "`workspace_id`"
+            }, {
+              "name" : "executed_by",
+              "expression" : "`executed_by`"
+            }, {
+              "name" : "warehouse_id",
+              "expression" : "`warehouse_id`"
+            }, {
+              "name" : "event_date",
+              "expression" : "`event_date`"
+            }, {
+              "name" : "hour",
+              "expression" : "`hour`"
+            }, {
+              "name" : "cost_by_hour",
+              "expression" : "`cost_by_hour`"
+            }, {
+              "name" : "dbus_by_hour",
+              "expression" : "`dbus_by_hour`"
+            }, {
+              "name" : "total_duration_by_user_in_hour",
+              "expression" : "`total_duration_by_user_in_hour`"
+            }, {
+              "name" : "total_duration_by_hour",
+              "expression" : "`total_duration_by_hour`"
+            }, {
+              "name" : "percent_consumption_by_user_in_hour",
+              "expression" : "`percent_consumption_by_user_in_hour`"
+            }, {
+              "name" : "custom_tags",
+              "expression" : "`custom_tags`"
+            }, {
+              "name" : "cost_by_user_in_hour",
+              "expression" : "`cost_by_user_in_hour`"
+            } ],
+            "disaggregated" : true
+          }
+        } ],
+        "spec" : {
+          "version" : 1,
+          "widgetType" : "table",
+          "encodings" : {
+            "columns" : [ {
+              "fieldName" : "workspace_id",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 0,
+              "title" : "workspace_id",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "workspace_id"
+            }, {
+              "fieldName" : "executed_by",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 1,
+              "title" : "executed_by",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "executed_by"
+            }, {
+              "fieldName" : "warehouse_id",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 2,
+              "title" : "warehouse_id",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "warehouse_id"
+            }, {
+              "fieldName" : "event_date",
+              "dateTimeFormat" : "YYYY-MM-DD",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "date",
+              "displayAs" : "datetime",
+              "visible" : true,
+              "order" : 3,
+              "title" : "event_date",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "event_date"
+            }, {
+              "fieldName" : "hour",
+              "numberFormat" : "0",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "integer",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 4,
+              "title" : "hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "hour"
+            }, {
+              "fieldName" : "cost_by_hour",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "decimal",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 5,
+              "title" : "cost_by_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cost_by_hour"
+            }, {
+              "fieldName" : "dbus_by_hour",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "decimal",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 6,
+              "title" : "dbus_by_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "dbus_by_hour"
+            }, {
+              "fieldName" : "total_duration_by_user_in_hour",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 7,
+              "title" : "total_duration_by_user_in_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "total_duration_by_user_in_hour"
+            }, {
+              "fieldName" : "total_duration_by_hour",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 8,
+              "title" : "total_duration_by_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "total_duration_by_hour"
+            }, {
+              "fieldName" : "percent_consumption_by_user_in_hour",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 9,
+              "title" : "percent_consumption_by_user_in_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "percent_consumption_by_user_in_hour"
+            }, {
+              "fieldName" : "custom_tags",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 10,
+              "title" : "custom_tags",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "custom_tags"
+            }, {
+              "fieldName" : "cost_by_user_in_hour",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 11,
+              "title" : "cost_by_user_in_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cost_by_user_in_hour"
+            } ]
+          },
+          "invisibleColumns" : [ ],
+          "allowHTMLByDefault" : false,
+          "itemsPerPage" : 25,
+          "paginationSize" : "default",
+          "condensed" : true,
+          "withRowNumber" : false,
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Warehouse Insights"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 48,
+        "width" : 6,
+        "height" : 6
+      }
+    }, {
+      "widget" : {
+        "name" : "4b3b94f9",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "87b24525",
+            "fields" : [ {
+              "name" : "workspace_id",
+              "expression" : "`workspace_id`"
+            }, {
+              "name" : "executed_by",
+              "expression" : "`executed_by`"
+            }, {
+              "name" : "cluster_id",
+              "expression" : "`cluster_id`"
+            }, {
+              "name" : "cluster_name",
+              "expression" : "`cluster_name`"
+            }, {
+              "name" : "event_date",
+              "expression" : "`event_date`"
+            }, {
+              "name" : "hour",
+              "expression" : "`hour`"
+            }, {
+              "name" : "cost_by_hour",
+              "expression" : "`cost_by_hour`"
+            }, {
+              "name" : "dbus_by_hour",
+              "expression" : "`dbus_by_hour`"
+            }, {
+              "name" : "total_duration_by_user_in_hour",
+              "expression" : "`total_duration_by_user_in_hour`"
+            }, {
+              "name" : "total_duration_by_hour",
+              "expression" : "`total_duration_by_hour`"
+            }, {
+              "name" : "percent_consumption_by_user_in_hour",
+              "expression" : "`percent_consumption_by_user_in_hour`"
+            }, {
+              "name" : "cost_by_user_in_hour",
+              "expression" : "`cost_by_user_in_hour`"
+            }, {
+              "name" : "custom_tags",
+              "expression" : "`custom_tags`"
+            } ],
+            "disaggregated" : true
+          }
+        } ],
+        "spec" : {
+          "version" : 1,
+          "widgetType" : "table",
+          "encodings" : {
+            "columns" : [ {
+              "fieldName" : "workspace_id",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 0,
+              "title" : "workspace_id",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "workspace_id"
+            }, {
+              "fieldName" : "executed_by",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 1,
+              "title" : "executed_by",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "executed_by"
+            }, {
+              "fieldName" : "cluster_id",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 2,
+              "title" : "cluster_id",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cluster_id"
+            }, {
+              "fieldName" : "cluster_name",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 3,
+              "title" : "cluster_name",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cluster_name"
+            }, {
+              "fieldName" : "event_date",
+              "dateTimeFormat" : "YYYY-MM-DD",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "date",
+              "displayAs" : "datetime",
+              "visible" : true,
+              "order" : 4,
+              "title" : "event_date",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "event_date"
+            }, {
+              "fieldName" : "hour",
+              "numberFormat" : "0",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "integer",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 5,
+              "title" : "hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "hour"
+            }, {
+              "fieldName" : "cost_by_hour",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "decimal",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 6,
+              "title" : "cost_by_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cost_by_hour"
+            }, {
+              "fieldName" : "dbus_by_hour",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "decimal",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 7,
+              "title" : "dbus_by_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "dbus_by_hour"
+            }, {
+              "fieldName" : "total_duration_by_user_in_hour",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 8,
+              "title" : "total_duration_by_user_in_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "total_duration_by_user_in_hour"
+            }, {
+              "fieldName" : "total_duration_by_hour",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 9,
+              "title" : "total_duration_by_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "total_duration_by_hour"
+            }, {
+              "fieldName" : "percent_consumption_by_user_in_hour",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 10,
+              "title" : "percent_consumption_by_user_in_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "percent_consumption_by_user_in_hour"
+            }, {
+              "fieldName" : "cost_by_user_in_hour",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 11,
+              "title" : "cost_by_user_in_hour",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cost_by_user_in_hour"
+            }, {
+              "fieldName" : "custom_tags",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 12,
+              "title" : "custom_tags",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "custom_tags"
+            } ]
+          },
+          "invisibleColumns" : [ ],
+          "allowHTMLByDefault" : false,
+          "itemsPerPage" : 25,
+          "paginationSize" : "default",
+          "condensed" : true,
+          "withRowNumber" : false,
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Cluster Insights"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 68,
+        "width" : 6,
+        "height" : 6
+      }
+    }, {
+      "widget" : {
+        "name" : "29575a49",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "5bb653dd",
+            "fields" : [ {
+              "name" : "warehouse_id",
+              "expression" : "`warehouse_id`"
+            }, {
+              "name" : "weekly(event_date)",
+              "expression" : "DATE_TRUNC(\"WEEK\", `event_date`)"
+            }, {
+              "name" : "sum(cost_by_hour)",
+              "expression" : "SUM(`cost_by_hour`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "bar",
+          "encodings" : {
+            "x" : {
+              "fieldName" : "weekly(event_date)",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "event_date"
+            },
+            "y" : {
+              "fieldName" : "sum(cost_by_hour)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "Total Cost"
+            },
+            "color" : {
+              "fieldName" : "warehouse_id",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "warehouse_id"
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Warehouse Cost over Period"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 26,
+        "width" : 6,
+        "height" : 8
+      }
+    }, {
+      "widget" : {
+        "name" : "03d37454",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "87b24525",
+            "fields" : [ {
+              "name" : "cluster_name",
+              "expression" : "`cluster_name`"
+            }, {
+              "name" : "weekly(event_date)",
+              "expression" : "DATE_TRUNC(\"WEEK\", `event_date`)"
+            }, {
+              "name" : "sum(cost_by_hour)",
+              "expression" : "SUM(`cost_by_hour`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "bar",
+          "encodings" : {
+            "x" : {
+              "fieldName" : "weekly(event_date)",
+              "scale" : {
+                "type" : "temporal"
+              },
+              "displayName" : "event_date"
+            },
+            "y" : {
+              "fieldName" : "sum(cost_by_hour)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "Sum of cost_by_hour"
+            },
+            "color" : {
+              "fieldName" : "cluster_name",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "cluster_name"
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Cluster Cost over Period"
+          }
+        }
+      },
+      "position" : {
+        "x" : 3,
+        "y" : 18,
+        "width" : 3,
+        "height" : 8
+      }
+    }, {
+      "widget" : {
+        "name" : "d71c6323",
+        "queries" : [ {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775271535ae05964958721f50_workspace_id",
+          "query" : {
+            "datasetName" : "82bf8b8b",
+            "parameters" : [ {
+              "name" : "workspace_id",
+              "keyword" : "workspace_id"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_workspace_id",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "parameters" : [ {
+              "name" : "workspace_id",
+              "keyword" : "workspace_id"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_workspace_id",
+          "query" : {
+            "datasetName" : "87b24525",
+            "parameters" : [ {
+              "name" : "workspace_id",
+              "keyword" : "workspace_id"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_workspace_id",
+          "query" : {
+            "datasetName" : "5bb653dd",
+            "parameters" : [ {
+              "name" : "workspace_id",
+              "keyword" : "workspace_id"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_workspace_id",
+          "query" : {
+            "datasetName" : "a809840e",
+            "parameters" : [ {
+              "name" : "workspace_id",
+              "keyword" : "workspace_id"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_workspace_id",
+          "query" : {
+            "datasetName" : "1c8858d4",
+            "parameters" : [ {
+              "name" : "workspace_id",
+              "keyword" : "workspace_id"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-single-select",
+          "encodings" : {
+            "fields" : [ {
+              "parameterName" : "workspace_id",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775271535ae05964958721f50_workspace_id"
+            }, {
+              "parameterName" : "workspace_id",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_workspace_id"
+            }, {
+              "parameterName" : "workspace_id",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_workspace_id"
+            }, {
+              "parameterName" : "workspace_id",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_workspace_id"
+            }, {
+              "parameterName" : "workspace_id",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_workspace_id"
+            }, {
+              "parameterName" : "workspace_id",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_workspace_id"
+            } ]
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Workspace ID"
+          }
+        }
+      },
+      "position" : {
+        "x" : 2,
+        "y" : 5,
+        "width" : 2,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "168518cd",
+        "queries" : [ {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_duration_in_weeks",
+          "query" : {
+            "datasetName" : "5bb653dd",
+            "parameters" : [ {
+              "name" : "duration_in_weeks",
+              "keyword" : "duration_in_weeks"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_duration_in_weeks",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "parameters" : [ {
+              "name" : "duration_in_weeks",
+              "keyword" : "duration_in_weeks"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_duration_in_weeks",
+          "query" : {
+            "datasetName" : "87b24525",
+            "parameters" : [ {
+              "name" : "duration_in_weeks",
+              "keyword" : "duration_in_weeks"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_duration_in_weeks",
+          "query" : {
+            "datasetName" : "a809840e",
+            "parameters" : [ {
+              "name" : "duration_in_weeks",
+              "keyword" : "duration_in_weeks"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_duration_in_weeks",
+          "query" : {
+            "datasetName" : "1c8858d4",
+            "parameters" : [ {
+              "name" : "duration_in_weeks",
+              "keyword" : "duration_in_weeks"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-single-select",
+          "encodings" : {
+            "fields" : [ {
+              "parameterName" : "duration_in_weeks",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_duration_in_weeks"
+            }, {
+              "parameterName" : "duration_in_weeks",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_duration_in_weeks"
+            }, {
+              "parameterName" : "duration_in_weeks",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_duration_in_weeks"
+            }, {
+              "parameterName" : "duration_in_weeks",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_duration_in_weeks"
+            }, {
+              "parameterName" : "duration_in_weeks",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_duration_in_weeks"
+            } ]
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Duration in Weeks"
+          }
+        }
+      },
+      "position" : {
+        "x" : 4,
+        "y" : 5,
+        "width" : 2,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "0d42a385",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "fields" : [ {
+              "name" : "monthly(usage_date)",
+              "expression" : "DATE_TRUNC(\"MONTH\", `usage_date`)"
+            }, {
+              "name" : "sum(dbus)",
+              "expression" : "SUM(`dbus`)"
+            }, {
+              "name" : "sum($dbus)",
+              "expression" : "SUM(`$dbus`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 1,
+          "widgetType" : "combo",
+          "encodings" : {
+            "x" : {
+              "fieldName" : "monthly(usage_date)",
+              "scale" : {
+                "type" : "temporal"
+              },
+              "displayName" : "usage_date"
+            },
+            "y" : {
+              "primary" : {
+                "fields" : [ {
+                  "fieldName" : "sum(dbus)",
+                  "displayName" : "Sum of dbus"
+                } ]
+              },
+              "secondary" : {
+                "fields" : [ {
+                  "fieldName" : "sum($dbus)",
+                  "displayName" : "Sum of $dbus"
+                } ]
+              },
+              "scale" : {
+                "type" : "quantitative"
+              }
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Account Trends dbus & $dbus"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 9,
+        "width" : 3,
+        "height" : 7
+      }
+    }, {
+      "widget" : {
+        "name" : "c86ecbc8",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "fields" : [ {
+              "name" : "workspace_id",
+              "expression" : "`workspace_id`"
+            }, {
+              "name" : "monthly(usage_date)",
+              "expression" : "DATE_TRUNC(\"MONTH\", `usage_date`)"
+            }, {
+              "name" : "sum($dbus)",
+              "expression" : "SUM(`$dbus`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "bar",
+          "encodings" : {
+            "x" : {
+              "fieldName" : "monthly(usage_date)",
+              "scale" : {
+                "type" : "temporal"
+              },
+              "displayName" : "usage_date"
+            },
+            "y" : {
+              "fieldName" : "sum($dbus)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "Sum of $dbus"
+            },
+            "color" : {
+              "fieldName" : "workspace_id",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "workspace_id"
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Workspace ID Trends by Month"
+          }
+        }
+      },
+      "position" : {
+        "x" : 3,
+        "y" : 11,
+        "width" : 3,
+        "height" : 7
+      }
+    }, {
+      "widget" : {
+        "name" : "14376d4b",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "fields" : [ {
+              "name" : "sku",
+              "expression" : "`sku`"
+            }, {
+              "name" : "monthly(usage_date)",
+              "expression" : "DATE_TRUNC(\"MONTH\", `usage_date`)"
+            }, {
+              "name" : "sum($dbus)",
+              "expression" : "SUM(`$dbus`)"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "bar",
+          "encodings" : {
+            "x" : {
+              "fieldName" : "monthly(usage_date)",
+              "scale" : {
+                "type" : "temporal"
+              },
+              "displayName" : "usage_date"
+            },
+            "y" : {
+              "fieldName" : "sum($dbus)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "Sum of $dbus"
+            },
+            "color" : {
+              "fieldName" : "sku",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "sku"
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Sku Trends by Month"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 16,
+        "width" : 3,
+        "height" : 8
+      }
+    }, {
+      "widget" : {
+        "name" : "a295f1c1",
+        "queries" : [ {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_tag_name",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "parameters" : [ {
+              "name" : "tag_name",
+              "keyword" : "tag_name"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_tag_name",
+          "query" : {
+            "datasetName" : "5bb653dd",
+            "parameters" : [ {
+              "name" : "tag_name",
+              "keyword" : "tag_name"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_tag_name",
+          "query" : {
+            "datasetName" : "87b24525",
+            "parameters" : [ {
+              "name" : "tag_name",
+              "keyword" : "tag_name"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-single-select",
+          "encodings" : {
+            "fields" : [ {
+              "parameterName" : "tag_name",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_tag_name"
+            }, {
+              "parameterName" : "tag_name",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_tag_name"
+            }, {
+              "parameterName" : "tag_name",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_tag_name"
+            } ]
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Tag Name"
+          }
+        }
+      },
+      "position" : {
+        "x" : 4,
+        "y" : 7,
+        "width" : 2,
+        "height" : 1
+      }
+    }, {
+      "widget" : {
+        "name" : "c56ecbb7",
+        "queries" : [ {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_tag_value",
+          "query" : {
+            "datasetName" : "5bb653dd",
+            "parameters" : [ {
+              "name" : "tag_value",
+              "keyword" : "tag_value"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_tag_value",
+          "query" : {
+            "datasetName" : "6d6983d4",
+            "parameters" : [ {
+              "name" : "tag_value",
+              "keyword" : "tag_value"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_tag_value",
+          "query" : {
+            "datasetName" : "87b24525",
+            "parameters" : [ {
+              "name" : "tag_value",
+              "keyword" : "tag_value"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-single-select",
+          "encodings" : {
+            "fields" : [ {
+              "parameterName" : "tag_value",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a7751f1b028c495ba1a30f04d9_tag_value"
+            }, {
+              "parameterName" : "tag_value",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775241cf3bae706eda3458e6d_tag_value"
+            }, {
+              "parameterName" : "tag_value",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef17a775221477b74295ec443dd319_tag_value"
+            } ]
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Tag Value"
+          }
+        }
+      },
+      "position" : {
+        "x" : 4,
+        "y" : 8,
+        "width" : 2,
+        "height" : 1
+      }
+    }, {
+      "widget" : {
+        "name" : "74c56bf0",
+        "textbox_spec" : "## Cost Attribution Dashboard:\nThe cost attribution dashboard seeks to provide a common view of Account trends and drill down into Workspaces, Skus, Tags, and Users.\n\n### Filters & Parameters:\n* Date Range: An additional filter on top of Duration can be used to get a more granular view on top of the default duration\n* Workspace ID: Based on Dataset, Dynamic list of Workspaces associated with Queries\n* Duration in Weeks: This is used to help improve performance, as some of the data is sourced from very verbose audit logs. The default is one Week, but it can be extended.\n* Warehouse ID: Based on Dataset, Dynamic list of Warehouse IDs associated with Queries\n* Cluster Name:: Based on Dataset, Dynamic list of Cluster Names associated with Queries\n* Tag Name & Value: defaults to all tags.  Filter requires Tag Name and Value to see costs associated with tagged workloads.\n* Consumer Rank: defaults to 5, but it can be extended.\n\n\nLast Updated: 8/9/2024"
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 0,
+        "width" : 6,
+        "height" : 5
+      }
+    }, {
+      "widget" : {
+        "name" : "86d22ad5",
+        "textbox_spec" : "### Tabular view of Warehouse Costs at the granularity of an hour and user.\n\n* Leverages usage, list_prices, and query history tables to source the percent of queries attributed to the user for each billable hour.\n\nAs a disclaimer, the estimates below depict the duration of the query relative to the Usage tables billing for that hour. Other factors may be needed for appropriate chargeback, but this gives a reasonable view of what users are contributing to costs based on query time."
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 46,
+        "width" : 6,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "e10557b5",
+        "textbox_spec" : "### Tabular view of Cluster Costs at the granularity of an hour and user.\n\n* Leverages usage, list_prices, and cluster tables to source the percent of queries attributed to the user for each billable hour.\n* Note that sourcing the duration of queries for Clusters requires the Audit Log tables and is dependent on the Notebook service_name and runCommand action_name, which requires verbose logging enabled."
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 66,
+        "width" : 6,
+        "height" : 2
+      }
+    }, {
+      "widget" : {
+        "name" : "80d2b5d6",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "a809840e",
+            "fields" : [ {
+              "name" : "sum(cost_per_user_per_day)",
+              "expression" : "SUM(`cost_per_user_per_day`)"
+            }, {
+              "name" : "executed_by",
+              "expression" : "`executed_by`"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "pie",
+          "encodings" : {
+            "angle" : {
+              "fieldName" : "sum(cost_per_user_per_day)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "cost per user"
+            },
+            "color" : {
+              "fieldName" : "executed_by",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "executed_by"
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Top warehouse consumer"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 34,
+        "width" : 3,
+        "height" : 6
+      }
+    }, {
+      "widget" : {
+        "name" : "5fca8ad9",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "a809840e",
+            "fields" : [ {
+              "name" : "workspace_id",
+              "expression" : "`workspace_id`"
+            }, {
+              "name" : "warehouse_id",
+              "expression" : "`warehouse_id`"
+            }, {
+              "name" : "event_date",
+              "expression" : "`event_date`"
+            }, {
+              "name" : "executed_by",
+              "expression" : "`executed_by`"
+            }, {
+              "name" : "cost_per_user_per_day",
+              "expression" : "`cost_per_user_per_day`"
+            }, {
+              "name" : "rnk",
+              "expression" : "`rnk`"
+            } ],
+            "disaggregated" : true
+          }
+        } ],
+        "spec" : {
+          "version" : 1,
+          "widgetType" : "table",
+          "encodings" : {
+            "columns" : [ {
+              "fieldName" : "workspace_id",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 100000,
+              "title" : "workspace_id",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "workspace_id"
+            }, {
+              "fieldName" : "warehouse_id",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 100001,
+              "title" : "warehouse_id",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "warehouse_id"
+            }, {
+              "fieldName" : "event_date",
+              "dateTimeFormat" : "YYYY-MM-DD",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "date",
+              "displayAs" : "datetime",
+              "visible" : true,
+              "order" : 100002,
+              "title" : "event_date",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "event_date"
+            }, {
+              "fieldName" : "executed_by",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 100003,
+              "title" : "executed_by",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "executed_by"
+            }, {
+              "fieldName" : "cost_per_user_per_day",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 100004,
+              "title" : "cost_per_user_per_day",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cost_per_user_per_day"
+            }, {
+              "fieldName" : "rnk",
+              "numberFormat" : "0",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "integer",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 100005,
+              "title" : "consumer_rank",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "rnk"
+            } ]
+          },
+          "invisibleColumns" : [ ],
+          "allowHTMLByDefault" : false,
+          "itemsPerPage" : 25,
+          "paginationSize" : "default",
+          "condensed" : true,
+          "withRowNumber" : false
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 40,
+        "width" : 6,
+        "height" : 6
+      }
+    }, {
+      "widget" : {
+        "name" : "0bda86af",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "a809840e",
+            "fields" : [ {
+              "name" : "executed_by",
+              "expression" : "`executed_by`"
+            }, {
+              "name" : "daily(event_date)",
+              "expression" : "DATE_TRUNC(\"DAY\", `event_date`)"
+            }, {
+              "name" : "cost_per_user_per_day",
+              "expression" : "`cost_per_user_per_day`"
+            } ],
+            "disaggregated" : true
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "bar",
+          "encodings" : {
+            "x" : {
+              "fieldName" : "daily(event_date)",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "event_date"
+            },
+            "y" : {
+              "fieldName" : "cost_per_user_per_day",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "cost_per_user_per_day"
+            },
+            "color" : {
+              "fieldName" : "executed_by",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "executed_by"
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Top warehouse consumer daily view"
+          }
+        }
+      },
+      "position" : {
+        "x" : 3,
+        "y" : 34,
+        "width" : 3,
+        "height" : 6
+      }
+    }, {
+      "widget" : {
+        "name" : "48b45103",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "1c8858d4",
+            "fields" : [ {
+              "name" : "sum(cost_per_user_per_day)",
+              "expression" : "SUM(`cost_per_user_per_day`)"
+            }, {
+              "name" : "executed_by",
+              "expression" : "`executed_by`"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "pie",
+          "encodings" : {
+            "angle" : {
+              "fieldName" : "sum(cost_per_user_per_day)",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "cost per user"
+            },
+            "color" : {
+              "fieldName" : "executed_by",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "executed_by"
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Top cluster consumer"
+          }
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 54,
+        "width" : 3,
+        "height" : 6
+      }
+    }, {
+      "widget" : {
+        "name" : "d3e234da",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "1c8858d4",
+            "fields" : [ {
+              "name" : "executed_by",
+              "expression" : "`executed_by`"
+            }, {
+              "name" : "daily(event_date)",
+              "expression" : "DATE_TRUNC(\"DAY\", `event_date`)"
+            }, {
+              "name" : "cost_per_user_per_day",
+              "expression" : "`cost_per_user_per_day`"
+            } ],
+            "disaggregated" : true
+          }
+        } ],
+        "spec" : {
+          "version" : 3,
+          "widgetType" : "bar",
+          "encodings" : {
+            "x" : {
+              "fieldName" : "daily(event_date)",
+              "scale" : {
+                "type" : "temporal"
+              },
+              "displayName" : "event_date"
+            },
+            "y" : {
+              "fieldName" : "cost_per_user_per_day",
+              "scale" : {
+                "type" : "quantitative"
+              },
+              "displayName" : "cost_per_user_per_day"
+            },
+            "color" : {
+              "fieldName" : "executed_by",
+              "scale" : {
+                "type" : "categorical"
+              },
+              "displayName" : "executed_by"
+            },
+            "label" : {
+              "show" : true
+            }
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Top cluster consumer daily view"
+          }
+        }
+      },
+      "position" : {
+        "x" : 3,
+        "y" : 54,
+        "width" : 3,
+        "height" : 6
+      }
+    }, {
+      "widget" : {
+        "name" : "3e1a8bd1",
+        "queries" : [ {
+          "name" : "main_query",
+          "query" : {
+            "datasetName" : "1c8858d4",
+            "fields" : [ {
+              "name" : "workspace_id",
+              "expression" : "`workspace_id`"
+            }, {
+              "name" : "cluster_id",
+              "expression" : "`cluster_id`"
+            }, {
+              "name" : "event_date",
+              "expression" : "`event_date`"
+            }, {
+              "name" : "cluster_name",
+              "expression" : "`cluster_name`"
+            }, {
+              "name" : "executed_by",
+              "expression" : "`executed_by`"
+            }, {
+              "name" : "cost_per_user_per_day",
+              "expression" : "`cost_per_user_per_day`"
+            }, {
+              "name" : "rnk",
+              "expression" : "`rnk`"
+            } ],
+            "disaggregated" : true
+          }
+        } ],
+        "spec" : {
+          "version" : 1,
+          "widgetType" : "table",
+          "encodings" : {
+            "columns" : [ {
+              "fieldName" : "workspace_id",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 0,
+              "title" : "workspace_id",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "workspace_id"
+            }, {
+              "fieldName" : "cluster_id",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 1,
+              "title" : "cluster_id",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cluster_id"
+            }, {
+              "fieldName" : "event_date",
+              "dateTimeFormat" : "YYYY-MM-DD",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "date",
+              "displayAs" : "datetime",
+              "visible" : true,
+              "order" : 2,
+              "title" : "event_date",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "event_date"
+            }, {
+              "fieldName" : "cluster_name",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 3,
+              "title" : "cluster_name",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cluster_name"
+            }, {
+              "fieldName" : "executed_by",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "string",
+              "displayAs" : "string",
+              "visible" : true,
+              "order" : 4,
+              "title" : "executed_by",
+              "allowSearch" : false,
+              "alignContent" : "left",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "executed_by"
+            }, {
+              "fieldName" : "cost_per_user_per_day",
+              "numberFormat" : "0.00",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "float",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 5,
+              "title" : "cost_per_user_per_day",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "cost_per_user_per_day"
+            }, {
+              "fieldName" : "rnk",
+              "numberFormat" : "0",
+              "booleanValues" : [ "false", "true" ],
+              "imageUrlTemplate" : "{{ @ }}",
+              "imageTitleTemplate" : "{{ @ }}",
+              "imageWidth" : "",
+              "imageHeight" : "",
+              "linkUrlTemplate" : "{{ @ }}",
+              "linkTextTemplate" : "{{ @ }}",
+              "linkTitleTemplate" : "{{ @ }}",
+              "linkOpenInNewTab" : true,
+              "type" : "integer",
+              "displayAs" : "number",
+              "visible" : true,
+              "order" : 6,
+              "title" : "consumer_rank",
+              "allowSearch" : false,
+              "alignContent" : "right",
+              "allowHTML" : false,
+              "highlightLinks" : false,
+              "useMonospaceFont" : false,
+              "preserveWhitespace" : false,
+              "displayName" : "rnk"
+            } ]
+          },
+          "invisibleColumns" : [ ],
+          "allowHTMLByDefault" : false,
+          "itemsPerPage" : 25,
+          "paginationSize" : "default",
+          "condensed" : true,
+          "withRowNumber" : false
+        }
+      },
+      "position" : {
+        "x" : 0,
+        "y" : 60,
+        "width" : 6,
+        "height" : 6
+      }
+    }, {
+      "widget" : {
+        "name" : "779123f2",
+        "queries" : [ {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_rank",
+          "query" : {
+            "datasetName" : "a809840e",
+            "parameters" : [ {
+              "name" : "rank",
+              "keyword" : "rank"
+            } ],
+            "disaggregated" : false
+          }
+        }, {
+          "name" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_rank",
+          "query" : {
+            "datasetName" : "1c8858d4",
+            "parameters" : [ {
+              "name" : "rank",
+              "keyword" : "rank"
+            } ],
+            "disaggregated" : false
+          }
+        } ],
+        "spec" : {
+          "version" : 2,
+          "widgetType" : "filter-single-select",
+          "encodings" : {
+            "fields" : [ {
+              "parameterName" : "rank",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef58c526ba1e39ab740a8f2428c87d_rank"
+            }, {
+              "parameterName" : "rank",
+              "queryName" : "parameter_dashboards/01ef17a7751715708bcf61372e202138/datasets/01ef59b5708f196fbf129373d2fa8b7d_rank"
+            } ]
+          },
+          "frame" : {
+            "showTitle" : true,
+            "title" : "Consumer Rank"
+          }
+        }
+      },
+      "position" : {
+        "x" : 3,
+        "y" : 9,
+        "width" : 3,
+        "height" : 2
+      }
+    } ]
+  } ]
+}
