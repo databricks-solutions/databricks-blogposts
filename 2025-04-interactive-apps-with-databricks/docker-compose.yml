@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend  # Path to your frontend directory
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./backend  # Path to your backend directory
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"  # Adjust port based on your backend
+    environment:
+      - ENV=development
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
