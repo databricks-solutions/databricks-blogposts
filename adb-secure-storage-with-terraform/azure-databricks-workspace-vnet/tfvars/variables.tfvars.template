@@ -1,0 +1,68 @@
+# Azure region where resources will be deployed
+azure_region = ""
+
+# Name of the resource group to create
+rg_name = ""
+
+# Prefix for naming resources
+name_prefix = ""
+
+# Name of the storage account for DBFS
+dbfs_storage_account = ""
+
+# Azure tenant ID for authentication
+azure_tenant_id = ""
+
+# Azure subscription ID for authentication
+azure_subscription_id = ""
+
+# Client ID for Azure authentication
+azure_client_id = ""
+
+# Client secret for Azure authentication
+azure_client_secret = ""
+
+# CIDR block for the virtual network
+cidr_block = "10.20.0.0/23"
+
+# CIDR block for the private subnet
+private_subnets_cidr = "10.20.0.0/25"
+
+# CIDR block for the public subnet
+public_subnets_cidr = "10.20.0.128/25"
+
+# Service endpoints to enable for the subnets
+subnet_service_endpoints = ["Microsoft.Sql", "Microsoft.EventHub", "Microsoft.Storage"]
+
+# Policy for network security group rules
+network_security_group_rules_required = "NoAzureServiceRules" 
+# Options: 
+#   - "NoAzureServiceRules" 
+#   - "NoAzureDatabricksRules" (use with private link)
+#   - "AllRules"
+
+# Enable or disable default storage firewall
+default_storage_firewall_enabled = true
+
+# Enable or disable public network access to the Databricks workspace
+public_network_access_enabled = true
+
+# Host URL for the Databricks workspace or account
+databricks_host = ""
+
+# Databricks account ID for authentication
+databricks_account_id = ""
+
+# Client ID for Databricks authentication
+databricks_client_id = ""
+
+# Client secret for Databricks authentication
+databricks_client_secret = ""
+
+# Name of the Databricks metastore to use
+databricks_metastore = ""
+
+# Tags to apply to resources for organization and billing
+tags = { 
+  Owner = "" 
+}
