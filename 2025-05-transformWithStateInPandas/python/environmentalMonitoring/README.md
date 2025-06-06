@@ -153,6 +153,6 @@ From these examples, we can derive these best practices:
 
 ## References
 
-- [Apache Spark Structured Streaming Programming Guide](https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html)
-- [Databricks Documentation on Stateful Stream Processing](https://docs.databricks.com/en/structured-streaming/stateful-stream-processing.html)
-- [PySpark API Reference - StatefulProcessor](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.streaming.StatefulProcessor.html)
+- [Apache Spark Structured Streaming Programming Guide](https://spark.apache.org/docs/latest/streaming/index.html)
+- [Databricks Documentation on Stateful Stream Processing](https://docs.databricks.com/aws/en/structured-streaming/stateful-streaming)
+- [transformWithState Components](https://spark.apache.org/docs/4.0.0/streaming/structured-streaming-transform-with-state.html#components-of-a-transformwithstate-query)
