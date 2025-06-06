@@ -1,0 +1,43 @@
+resources:
+  jobs:
+    automated_claims_processing_etl_customer_demo:
+      name: automated-claims-processing-etl-customer-demo
+      trigger:
+        pause_status: UNPAUSED
+        file_arrival:
+          url: /Volumes/samantha_wise/ai_claims_processing_customer_demo/audio_recordings/raw_recordings/
+      tasks:
+        - task_key: bronze
+          notebook_task:
+            notebook_path: /Workspace/Users/samantha.wise@databricks.com/Git
+              Folders/databricks-blogposts/automated-claims-processing/demo/00
+              ETL Bronze Layer
+            source: WORKSPACE
+          existing_cluster_id: 0303-174911-y2vzz2du
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          notebook_task:
+            notebook_path: /Workspace/Users/samantha.wise@databricks.com/Git
+              Folders/databricks-blogposts/automated-claims-processing/demo/01
+              ETL Silver Layer
+            source: WORKSPACE
+          existing_cluster_id: 0303-174911-y2vzz2du
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          notebook_task:
+            notebook_path: /Workspace/Users/samantha.wise@databricks.com/Git
+              Folders/databricks-blogposts/automated-claims-processing/demo/02
+              ETL Gold Layer
+            source: WORKSPACE
+          existing_cluster_id: 0303-174911-y2vzz2du
+        - task_key: dashboard
+          depends_on:
+            - task_key: gold
+          dashboard_task:
+            subscription: {}
+            warehouse_id: 30d6e63b35f828c5
+            dashboard_id: 01f004e6ca4f16c7b557048b68cdcba1
+      queue:
+        enabled: true
