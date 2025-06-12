@@ -1,0 +1,40 @@
+resources:
+  jobs:
+    automated_claims_processing_etl:
+      name: automated-claims-processing-etl
+      trigger:
+        pause_status: UNPAUSED
+        file_arrival:
+          url: /Volumes/<CATALOG>/<SCHEMA>/<VOLUME>/raw_recordings/
+      tasks:
+        - task_key: bronze
+          notebook_task:
+            notebook_path: /Workspace/Users/<USERNAME>/Git Folders/<PATH_TO_PROJECT>/customer/00 ETL Bronze Layer
+            source: WORKSPACE
+          existing_cluster_id: <CLUSTER_ID>
+          
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          notebook_task:
+            notebook_path: /Workspace/Users/<USERNAME>/Git Folders/<PATH_TO_PROJECT>/customer/01 ETL Silver Layer
+            source: WORKSPACE
+          existing_cluster_id: <CLUSTER_ID>
+          
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          notebook_task:
+            notebook_path: /Workspace/Users/<USERNAME>/Git Folders/<PATH_TO_PROJECT>/customer/02 ETL Gold Layer
+            source: WORKSPACE
+          existing_cluster_id: <CLUSTER_ID>
+
+        - task_key: dashboard
+          depends_on:
+            - task_key: gold
+          dashboard_task:
+            subscription: {}
+            warehouse_id: <SQL_WAREHOUSE_ID>
+            dashboard_id: <DASHBOARD_ID>
+      queue:
+        enabled: true

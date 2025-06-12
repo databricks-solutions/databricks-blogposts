@@ -17,4 +17,8 @@
 /dabs-gitflow/* @ajalisatgi @pritishpai
 /2025-04-investment-assistant-with-databricks-agent-framework/* @sarbaniAi
 /managing_ml_library_dependency_on_databricks/* @hengrumay
+<<<<<<< ai-claims-processing-final
+/automated-claims-processing/* @samanthawise @antondusak
+=======
 /2025-05-transformWithStateInPandas/* @jpdatabricks
+>>>>>>> main
