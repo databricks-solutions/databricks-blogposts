@@ -1,11 +1,17 @@
-region = ""
-credentials_name = ""
-cross_account_role_arn = ""
 databricks_account_id = ""
+workspace_name = ""
+workspace_id = ""
+region = ""
 network_name = ""
-security_group_ids = [ "" ]
+network_id = ""
 vpc_id = ""
-vpc_private_subnets = [ "" ]
+vpc_private_subnets = [ "", "" ]
+security_group_ids = [ "" ]
+cross_account_role_arn = ""
+credentials_name = ""
+credentials_id = ""
+
+
 root_storage_bucket = ""
 storage_configuration_name = ""
-workspace_name = ""
+storage_configuration_id = ""

@@ -1,8 +1,13 @@
 variable "workspace_name" {
   type        = string
-  default     = ""
-  description = "(Required) Workspace Name for this module - if none are provided, the prefix will be used to name the workspace via coalesce()"
+  description = "(Required) Workspace Name"
 }
+
+variable "workspace_id" {
+  type        = string
+  description = "(Required) Workspace ID from the URL"
+}
+
 
 variable "private_subnet_name" {
   type        = string
@@ -56,4 +61,10 @@ variable "resource_group_name" {
 variable "managed_resource_group_name" {
   type        = string
   description = "(Required) Databricks managed resource group name from Azure Portal"
+}
+
+
+variable "subscription_id" {
+  type        = string
+  description = "(Required) subscription ID from Azure Portal"
 }

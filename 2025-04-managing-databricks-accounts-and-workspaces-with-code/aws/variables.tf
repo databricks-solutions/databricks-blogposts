@@ -3,6 +3,11 @@ variable "workspace_name" {
   description = "(Required) Workspace name"
 }
 
+variable "workspace_id" {
+  type        = string
+  description = "(Required) Workspace ID"
+}
+
 variable "region" {
   type        = string
   description = "(Required) AWS region where the assets will be deployed"
@@ -43,12 +48,27 @@ variable "credentials_name" {
   description = "(Required) Credentials name from Databricks account console"
 }
 
+variable "credentials_id" {
+  type        = string
+  description = "(Required) Credentials ID from Databricks account console"
+}
+
 variable "network_name" {
   type        = string
   description = "(Required) Network name from Databricks account console"
 }
 
+variable "network_id" {
+  type        = string
+  description = "(Required) Network configuration ID from Databricks account console"
+}
+
 variable "storage_configuration_name" {
   type        = string
   description = "(Required) Storage name from Databricks account console"
+}
+
+variable "storage_configuration_id" {
+  type        = string
+  description = "(Required) Storage configuration name from Databricks account console"
 }

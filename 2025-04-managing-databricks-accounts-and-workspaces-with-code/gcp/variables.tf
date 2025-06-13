@@ -3,6 +3,11 @@ variable "workspace_name" {
   description = "(Required) Workspace name"
 }
 
+variable "workspace_id" {
+  type        = string
+  description = "(Required) Workspace ID from URL"
+}
+
 variable "subnet_region" {
   type        = string
   description = "(Required) GCP region where the assets will be deployed"
@@ -26,6 +31,11 @@ variable "databricks_account_id" {
 variable "network_name" {
   type        = string
   description = "(Required) Network name from Databricks account console"
+}
+
+variable "network_id" {
+  type        = string
+  description = "(Required) Network ID from Databricks account console"
 }
 
 variable "workspace_google_project" {

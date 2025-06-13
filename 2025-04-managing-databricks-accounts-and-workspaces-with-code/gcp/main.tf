@@ -1,4 +1,3 @@
-// register VPC
 resource "databricks_mws_networks" "this" {
   account_id   = var.databricks_account_id
   network_name = var.network_name
@@ -10,7 +9,6 @@ resource "databricks_mws_networks" "this" {
   }
 }
 
-// create workspace in given VPC
 resource "databricks_mws_workspaces" "this" {
   account_id     = var.databricks_account_id
   workspace_name = var.workspace_name
