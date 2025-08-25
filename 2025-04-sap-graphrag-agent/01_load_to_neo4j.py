@@ -61,10 +61,35 @@ def execute_cypher_query(cypher_query):
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC password = 'phF_Pa5CRjl1X2RT2bPk8uN-nftgYibGkfB3AMMeJDM'
+# MAGIC username = 'neo4j'
+# MAGIC
+# MAGIC host = 'https://console-preview.neo4j.io/projects/b87565a8-3f7a-422c-9f90-82e2e47761cc/instances'
+# MAGIC host_uri = 'neo4j+s://ca4bfd0c.databases.neo4j.io'
+# MAGIC
+# MAGIC databricks secrets put-secret --json '{
+# MAGIC   "scope": "secrets",
+# MAGIC   "key": "neo4j-key",
+# MAGIC   "string_value": "phF_Pa5CRjl1X2RT2bPk8uN-nftgYibGkfB3AMMeJDM"
+# MAGIC }'
+# MAGIC
+# MAGIC databricks secrets put-secret --json '{
+# MAGIC   "scope": "secrets",
+# MAGIC   "key": "neo4j-host",
+# MAGIC   "string_value": "neo4j+s://ca4bfd0c.databases.neo4j.io"
+# MAGIC }'
+
+# COMMAND ----------
+
 import os
 
 file_path=os.getcwd() + "/_resources/load_sap_sample_data.cypher"
 execute_cypher_query(read_cypher_query(file_path))
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 

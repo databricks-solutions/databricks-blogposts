@@ -78,13 +78,15 @@ tools = (
 
 # # Uncomment for testing (if deploying this code as a model, then serving will fail because of dbutils usage)
 
-# import os
+import os
 
 # host = dbutils.secrets.get(scope=config.get("secret_scope"), key="neo4j-host")
 # secret = dbutils.secrets.get(scope=config.get("secret_scope"), key="neo4j-key")
 
-# os.environ["NEO4J_HOST"] = host
-# os.environ["NEO4J_KEY"] = secret
+host = 'neo4j+s://ca4bfd0c.databases.neo4j.io'
+secret = 'phF_Pa5CRjl1X2RT2bPk8uN-nftgYibGkfB3AMMeJDM'
+os.environ["NEO4J_HOST"] = host
+os.environ["NEO4J_KEY"] = secret
 
 # COMMAND ----------
 
