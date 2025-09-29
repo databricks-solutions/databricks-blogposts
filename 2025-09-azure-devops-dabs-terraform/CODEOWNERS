@@ -1,0 +1,6 @@
+# CODEOWNERS file for Azure DevOps DABs Terraform Project
+# This file defines code ownership for the Azure DevOps CI/CD solution for Databricks Asset Bundles
+
+# Global ownership - all files require review from platform team
+* zach.jacobson@databricks.com
+
