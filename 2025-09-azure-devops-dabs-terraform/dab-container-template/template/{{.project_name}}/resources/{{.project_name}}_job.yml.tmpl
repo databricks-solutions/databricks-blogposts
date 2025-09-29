@@ -1,0 +1,21 @@
+  # The main job for {{.project_name}}
+  resources:
+    jobs:
+      {{.project_name}}_job:
+        name: {{.project_name}}_job
+        tasks:
+        - task_key: dlt_pipeline_task
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.{{.project_name}}_pipeline.id}
+            full_refresh: false
+        environments:
+          - environment_key: default
+            spec:
+              client: "3"
+              dependencies:
+                - -r ../src/requirements.txt
+
+
+                                
+
+                          
