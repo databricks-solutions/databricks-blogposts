@@ -1,0 +1,36 @@
+  # The main job for dabs-demo
+  resources:
+    jobs:
+      dabs-demo_job:
+        name: dabs-demo_job
+        tasks:
+        - task_key: dlt_pipeline_task
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.dabs-demo_pipeline.id}
+            full_refresh: false
+        # Task 2: Lakebase operations (runs after DLT pipeline)
+        - task_key: lakebase_task
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/lakebase.py
+          depends_on:
+            - task_key: dlt_pipeline_task
+
+        # Task 3: Database operations (runs after Lakebase)
+        - task_key: database_operations_task
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/database_operations.py
+          depends_on:
+            - task_key: lakebase_task
+        environments:
+          - environment_key: default
+            spec:
+              client: "3"
+              dependencies:
+                - -r ../src/requirements.txt
+
+
+                                
+
+                          
