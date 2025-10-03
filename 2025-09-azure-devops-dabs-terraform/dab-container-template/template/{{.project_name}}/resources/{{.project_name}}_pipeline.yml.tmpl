@@ -1,0 +1,50 @@
+# DLT Pipeline for {{.project_name}}
+resources:
+  pipelines:
+    {{.project_name}}_pipeline:
+      name: {{.project_name}}_pipeline
+      
+      # Pipeline configuration
+      configuration:
+        # Set the catalog and schema for the pipeline
+        catalog: ${var.catalog}
+        schema: ${var.schema}
+        
+        # Additional pipeline configuration
+        bundle.sourcePath: ${workspace.file_path}/{{.project_name}}/src/
+        
+      # Pipeline libraries (notebooks or Python files)
+      libraries:
+        - notebook:
+            path: ../src/dlt_pipeline.py
+            
+      # Target catalog and schema
+      catalog: ${var.catalog}
+      target: ${var.schema}
+      
+      # Development configuration
+      development: true
+      
+      # Pipeline mode - can be TRIGGERED or CONTINUOUS
+      continuous: false
+      
+      # Photon acceleration
+      photon: true
+      
+      # Serverless compute (if available in your workspace)
+      serverless: true
+      
+      # Channel for DBR version (current, preview, etc.)
+      channel: current
+          
+      # Edition - CORE, PRO, or ADVANCED
+      edition: ADVANCED
+      
+      # Pipeline clusters (if not using serverless)
+      # clusters:
+      #   - label: default
+      #     num_workers: 1
+      #     node_type_id: i3.xlarge
+      #     spark_version: 13.3.x-scala2.12
+      #     custom_tags:
+      #       project: {{.project_name}}

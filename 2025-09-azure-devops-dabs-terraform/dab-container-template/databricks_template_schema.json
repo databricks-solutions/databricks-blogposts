@@ -1,0 +1,22 @@
+{
+    "properties": {
+      "project_name": {
+        "type": "string",
+        "default": "project_name",
+        "description": "Project name",
+        "order": 1
+      },
+      "catalog": {
+        "type": "string",
+        "default": "main",
+        "description": "Default catalog to use for this project",
+        "order": 2
+      },
+      "schema": {
+        "type": "string",
+        "default": "default",
+        "description": "Default schema to use for this project",
+        "order": 3
+      }
+    }
+  }

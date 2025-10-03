@@ -1,0 +1,11 @@
+dash==2.16.1
+dash-bootstrap-components==1.5.0
+pandas==2.1.4
+plotly==5.17.0
+gunicorn==21.2.0
+psycopg[binary]==3.1.8
+openai>=1.0.0
+flask>=2.3.0
+databricks-sql-connector>=3.0.0
+pydantic>=2.0.0
+databricks-sdk>=0.62.0
