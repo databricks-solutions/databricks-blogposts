@@ -1,10 +1,15 @@
 
-import functools
+import warnings
 import os
+os.environ["DATABRICKS_DISABLE_NOTICE"] = "true"
+warnings.filterwarnings("ignore", message=".*notebook authentication token.*")
+
+import functools
 from typing import Any, Generator, Literal, Optional
 
 import mlflow
 from databricks.sdk import WorkspaceClient
+from databricks.vector_search.client import VectorSearchClient
 from databricks_langchain import ChatDatabricks, VectorSearchRetrieverTool
 from databricks_langchain.genie import GenieAgent
 from langchain_core.runnables import RunnableLambda
@@ -27,11 +32,11 @@ w = WorkspaceClient()
 token = w.tokens.create(comment=f"sdk-{time.time_ns()}").token_value
 
 # Get catalog and schema from environment or config
-CATALOG_NAME = 'smriti_sridhar'
+CATALOG_NAME = 'andrea_tardif'
 SCHEMA_NAME = 'workday_demos'
-GENIE_SPACE_ID = '01f0adf367e51085a8a1ed562fe6a9e8'
+GENIE_SPACE_ID = '01f0c0291e6f1feabc4a8a46085cebd1'
 MLFLOW_EXPERIMENT_NAME = f'multiagent_genie_{CATALOG_NAME}'
-host='https://e2-demo-field-eng.cloud.databricks.com/'
+host='https://dbc-d079f94e-4181.cloud.databricks.com/'
 
 ###################################################
 ## Configure LLM
@@ -42,7 +47,7 @@ llm = ChatDatabricks(endpoint="databricks-claude-3-7-sonnet")
 ## Create RAG Agent with Vector Search Tools
 ###################################################
 
-# Create retriever tools for each document type
+# Create retriever tools for each document type with disable_notice
 email_retriever = VectorSearchRetrieverTool(
     index_name=f"{CATALOG_NAME}.{SCHEMA_NAME}.email_communications_index",
     columns=["content", "doc_uri"],
@@ -52,6 +57,7 @@ email_retriever = VectorSearchRetrieverTool(
         "Use this to find information about: pricing discussions, objections, "
         "follow-ups, proposal details, and customer email correspondence."
     ),
+    disable_notice=True,
 )
 
 meeting_notes_retriever = VectorSearchRetrieverTool(
@@ -63,6 +69,7 @@ meeting_notes_retriever = VectorSearchRetrieverTool(
         "Use this to find information about: customer meetings, demos, "
         "discovery calls, requirements discussions, and decision-maker feedback."
     ),
+    disable_notice=True,
 )
 
 feedback_retriever = VectorSearchRetrieverTool(
@@ -74,6 +81,7 @@ feedback_retriever = VectorSearchRetrieverTool(
         "Use this to find information about: customer satisfaction, "
         "product impressions, concerns raised, and post-demo feedback."
     ),
+    disable_notice=True,
 )
 
 # Combine all RAG tools
@@ -204,7 +212,6 @@ def supervisor_agent(state):
 
 def agent_node(state, agent, name):
     """Execute agent and return results"""
-    # result = agent.invoke(state)
     result = agent.invoke({"messages": state["messages"]})
     return {
         "messages": [
