@@ -1,0 +1,249 @@
+{
+  "space_id": "01f0bea9e6f11ec695cf24e4680f22e8",
+  "title": "Blog Demo",
+  "warehouse_id": "4b9b953939869799",
+  "serialized_space": {
+    "version": 1,
+    "data_sources": {
+      "tables": [
+        {
+          "identifier": "andrea_tardif.workday_demos.customer_accounts",
+          "column_configs": [
+            {
+              "column_name": "AccountID",
+              "get_example_values": true
+            },
+            {
+              "column_name": "AccountStatus",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "AnnualRevenue",
+              "get_example_values": true
+            },
+            {
+              "column_name": "City",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "CompanyName",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "CompanySize",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "CreatedDate",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "EmployeeCount",
+              "get_example_values": true
+            },
+            {
+              "column_name": "Industry",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "LastActivityDate",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "PrimaryContactTitle",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "State",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "ZipCode",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            }
+          ]
+        },
+        {
+          "identifier": "andrea_tardif.workday_demos.sales_activities",
+          "column_configs": [
+            {
+              "column_name": "ActivityDate",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "ActivityID",
+              "get_example_values": true
+            },
+            {
+              "column_name": "ActivityType",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "Description",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "Duration",
+              "get_example_values": true
+            },
+            {
+              "column_name": "OpportunityID",
+              "get_example_values": true
+            },
+            {
+              "column_name": "Outcome",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            }
+          ]
+        },
+        {
+          "identifier": "andrea_tardif.workday_demos.sales_opportunities",
+          "column_configs": [
+            {
+              "column_name": "AccountID",
+              "get_example_values": true
+            },
+            {
+              "column_name": "CreateDate",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "DealSource",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "ExpectedCloseDate",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "IsActive",
+              "get_example_values": true
+            },
+            {
+              "column_name": "LastActivityDate",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "OpportunityID",
+              "get_example_values": true
+            },
+            {
+              "column_name": "OpportunityName",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "OpportunityValue",
+              "get_example_values": true
+            },
+            {
+              "column_name": "PrimaryCompetitor",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "Probability",
+              "get_example_values": true
+            },
+            {
+              "column_name": "ProductCategory",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "RepID",
+              "get_example_values": true
+            },
+            {
+              "column_name": "SalesStage",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            }
+          ]
+        },
+        {
+          "identifier": "andrea_tardif.workday_demos.sales_reps",
+          "column_configs": [
+            {
+              "column_name": "Age",
+              "get_example_values": true
+            },
+            {
+              "column_name": "AnnualQuota",
+              "get_example_values": true
+            },
+            {
+              "column_name": "ExperienceYears",
+              "get_example_values": true
+            },
+            {
+              "column_name": "FirstName",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "Gender",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "HireDate",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "IsActive",
+              "get_example_values": true
+            },
+            {
+              "column_name": "LastName",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "Manager",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "QuotaAttainmentPercent",
+              "get_example_values": true
+            },
+            {
+              "column_name": "RepID",
+              "get_example_values": true
+            },
+            {
+              "column_name": "Role",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            },
+            {
+              "column_name": "Territory",
+              "get_example_values": true,
+              "build_value_dictionary": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

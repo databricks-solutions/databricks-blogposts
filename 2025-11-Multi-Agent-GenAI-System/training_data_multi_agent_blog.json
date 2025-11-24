@@ -1,0 +1,165 @@
+[
+  {
+    "inputs": {
+      "question": "How many opportunities closed last quarter for the Enterprise segment?"
+    },
+    "expectations": {
+      "expected_response": "There were 12 closed opportunities in the Enterprise segment last quarter."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Provide the total revenue from closed-won deals for the Commercial segment last month."
+    },
+    "expectations": {
+      "expected_response": "Closed-won revenue for the Commercial segment last month totaled approximately $13.3 million."
+    }
+  },
+  {
+    "inputs": {
+      "question": "How many active deals have a probability above 70%?"
+    },
+    "expectations": {
+      "expected_response": "There are 160 active opportunities with a probability greater than 70%."
+    }
+  },
+  {
+    "inputs": {
+      "question": "What is the average deal cycle length for won opportunities this year?"
+    },
+    "expectations": {
+      "expected_response": "The average deal cycle for won opportunities this year is 99.65 days."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Which region had the highest number of closed-won deals last quarter?"
+    },
+    "expectations": {
+      "expected_response": "The West region had the highest number of closed-won deals last quarter."
+    }
+  },
+
+  {
+    "inputs": {
+      "question": "Summarize the main concerns raised by the customer in recent emails about pricing."
+    },
+    "expectations": {
+      "expected_response": "The customer expressed concerns about Overall budget/affordability of implementation, Timing and certainty of ROI, and Cash flow and payment structure."
+    }
+  },
+  {
+    "inputs": {
+      "question": "What did the customer say in their last email about pricing?"
+    },
+    "expectations": {
+      "expected_response": "You understand their budget considerations and that this is an investment that must make financial sense."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Summarize the sentiment from the last five customer support emails."
+    },
+    "expectations": {
+      "expected_response": "The last five support emails show frustration about response times but appreciation for the technical guidance provided."
+    }
+  },
+  {
+    "inputs": {
+      "question": "What technical issues did the user report in their most recent email?"
+    },
+    "expectations": {
+      "expected_response": "They reported intermittent login failures and slow dashboard load times."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Provide a short summary of the customer's feedback regarding onboarding."
+    },
+    "expectations": {
+      "expected_response": "The customer felt onboarding was helpful but noted delays with environment provisioning and unclear documentation."
+    }
+  },
+
+  {
+    "inputs": {
+      "question": "Compare last quarter's closed-won revenue to the concerns the customer raised in recent emails."
+    },
+    "expectations": {
+      "expected_response": "Last quarter's closed-won revenue increased, while recent emails show customer concerns focused on pricing transparency and long-term cost justification."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Did the customer mention anything related to their contract renewal timeline, and how does that align with their usage metrics?"
+    },
+    "expectations": {
+      "expected_response": "Yes, the customer referenced an upcoming renewal window. Their usage metrics show steady month-over-month growth consistent with renewal readiness."
+    }
+  },
+  {
+    "inputs": {
+      "question": "How does the customer’s recent feedback align with their declining opportunity score?"
+    },
+    "expectations": {
+      "expected_response": "Recent feedback about pricing concerns aligns with the decline in opportunity score, indicating increased hesitation to proceed."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Analyze whether the customer’s usage trends support the concerns they raised in email about performance."
+    },
+    "expectations": {
+      "expected_response": "Yes, usage logs show spikes in workload concurrency that match the performance issues described in their emails."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Based on recent emails and structured data, does the customer appear ready for expansion?"
+    },
+    "expectations": {
+      "expected_response": "Structured metrics show increased adoption, but emails reflect uncertainty around pricing, suggesting they are not ready for expansion yet."
+    }
+  },
+
+  {
+    "inputs": {
+      "question": "What is the customer’s current active user count and do their recent emails mention onboarding more users?"
+    },
+    "expectations": {
+      "expected_response": "They currently have 142 active users, and recent emails confirm they plan to onboard an additional team next quarter."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Does email feedback support the drop in the customer's health score seen this month?"
+    },
+    "expectations": {
+      "expected_response": "Yes, emails indicate dissatisfaction with pricing and response times, consistent with the observed drop in health score."
+    }
+  },
+  {
+    "inputs": {
+      "question": "What is the customer’s top workload by DBU consumption, and has it been mentioned in support emails?"
+    },
+    "expectations": {
+      "expected_response": "Their ETL pipeline is the top consumer of DBUs, and recent support emails reference failures related to that pipeline."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Summarize how the customer's recent ticket activity aligns with their declining usage over the past two weeks."
+    },
+    "expectations": {
+      "expected_response": "Recent tickets report workspace instability and job failures, which align with a drop in usage during the same period."
+    }
+  },
+  {
+    "inputs": {
+      "question": "Is the customer’s renewal risk consistent with the concerns documented in their recent emails?"
+    },
+    "expectations": {
+      "expected_response": "Yes, their emails express hesitation about costs and long-term commitment, consistent with elevated renewal risk."
+    }
+  }
+]
