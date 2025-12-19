@@ -1,0 +1,11 @@
+bundle:
+  name: postgres-data-viewer
+
+targets:
+  development:
+    default: true
+    resources:
+      apps:
+        postgres-data-viewer:
+          name: postgres-data-viewer
+          source_code_path: .

@@ -1,0 +1,28 @@
+# Python virtual environment
+.venv/
+venv/
+uv.lock
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS-specific files
+.DS_Store
+
+# Databricks deployment artifacts
+.databricks/bundle/*/terraform/
+.databricks/bundle/*/sync-snapshots/
+
+# Development and testing files
+test_*.py
+*_test.py
+
+
+# Database management scripts (not needed for app)
+
+
+# Old gradio artifacts
+.gradio/ 

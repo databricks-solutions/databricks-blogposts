@@ -1,0 +1,12 @@
+[project]
+name = "postgres-data-viewer"
+version = "0.1.0"
+description = "PostgreSQL Data Viewer - A Streamlit app for viewing PostgreSQL synced tables in Databricks."
+authors = [
+    {name = "Sylvia Schumacher"}
+]
+requires-python = ">=3.11,<3.12" # Specify Python 3.11 explicitly
+dependencies = [
+    "databricks-sdk",
+    "databricks-connect"
+] 

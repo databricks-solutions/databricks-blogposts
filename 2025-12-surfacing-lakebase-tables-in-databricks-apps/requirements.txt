@@ -1,0 +1,4 @@
+streamlit
+psycopg[binary]
+sqlalchemy
+databricks-sdk 
