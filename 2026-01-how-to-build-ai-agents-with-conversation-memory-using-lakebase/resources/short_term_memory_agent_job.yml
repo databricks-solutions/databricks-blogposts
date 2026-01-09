@@ -1,0 +1,24 @@
+# resources:
+#   jobs:
+#     bo_lakebase_agent:
+#       name: lakebase_checkpointer_agent
+#       tasks:
+#         - task_key: 02_lakebase_langgraph_checkpointer_agent
+#           notebook_task:
+#             notebook_path: ../02-lakebase-langgraph-checkpointer-agent.ipynb
+#             base_parameters:
+#               catalog: catalog
+#               model: memory_agent
+#               schema: schema
+#               secret_scope: dbdemos
+#             source: WORKSPACE
+#           environment_key: env1
+#       tags:
+#         Bundle: short-term-memory
+#         DeployedBy: DAB
+#         Environment: Test
+#       environments:
+#         - environment_key: env1
+#           spec:
+#             environment_version: "2"
+#       performance_target: PERFORMANCE_OPTIMIZED

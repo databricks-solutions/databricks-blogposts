@@ -1,0 +1,12 @@
+# resources:
+#   apps:
+#     short_term_memory_example:
+#       name: "bo-cheng-lakebase-agent-app"
+#       description: "A short term memory agent app"
+#       # The location of the source code for the app
+#       source_code_path: "../databricks_apps/streamlit-chatbot-app"
+#       user_api_scopes:
+#         - serving.serving-endpoints
+# sync:
+#   include:
+#     - "../databricks_apps/streamlit-chatbot-app/*"
