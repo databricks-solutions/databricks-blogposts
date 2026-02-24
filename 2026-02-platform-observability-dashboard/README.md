@@ -423,12 +423,6 @@ Contributions are welcome! Please:
 - Integration with external BI tools
 - Anomaly detection and alerting
 
-## 📄 License
-
-This project is provided as-is and is not officially supported by Databricks.
-
-**Disclaimer:** This is a Field Engineering-contributed project and is not an official Databricks product.
-
 ## 🛟 Project Support
 
 This project is a Field Engineering effort and is **not officially supported by Databricks**.
