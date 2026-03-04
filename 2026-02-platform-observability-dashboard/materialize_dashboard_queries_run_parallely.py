@@ -143,11 +143,11 @@ SELECT
     case 
     when t1.sku_name like '%SERVERLESS%' then 'ALL_PURPOSE_SERVERLESS' 
       else 
-        case when c.cluster_id is null then 'UNKONWN' else c.cluster_id end
+        case when c.cluster_id is null then 'UNKNOWN' else c.cluster_id end
     end as cluster_id,
     case when t1.sku_name like '%SERVERLESS%' then 'ALL_PURPOSE_SERVERLESS' 
       else 
-        case when c.cluster_name is null then 'UNKONWN' else c.cluster_name end 
+        case when c.cluster_name is null then 'UNKNOWN' else c.cluster_name end 
     end as cluster_name,
     c.driver_node_type,
     c.worker_node_type,
