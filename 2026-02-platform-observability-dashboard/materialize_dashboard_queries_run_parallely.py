@@ -12,8 +12,8 @@
 # MAGIC
 # MAGIC - **currency_conversion** (`String`): The conversion rate from Dollar to X currency.
 # MAGIC - **discount** (`String`): The discount percentage to be applied.
-# MAGIC - **destination_catalog** (`String`): The target catalog where dashboard tables will be created. Default: `landscape_info`.
-# MAGIC - **destination_schema** (`String`): The schema within the catalog for materializing dashboard tables. Default: `materializing_dashboard`.
+# MAGIC - **destination_catalog** (`String`): The target catalog where dashboard tables will be created. Default: `main`.
+# MAGIC - **destination_schema** (`String`): The schema within the catalog for materializing dashboard tables. Default: `default`.
 # MAGIC
 # MAGIC These parameters make the notebook flexible and reusable for different scenarios and regions.
 
