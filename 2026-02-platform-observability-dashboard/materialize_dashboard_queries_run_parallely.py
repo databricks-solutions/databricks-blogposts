@@ -2098,7 +2098,7 @@ vaccum_queries_to_be_executed_parallely.append(query_vaccum)
 query = f"""
 CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.idle_warehouse
 AS 
-with latest_warehouse(
+WITH latest_warehouse AS (
     SELECT *
     FROM (
         SELECT *,
