@@ -26,16 +26,16 @@
 
 
 # You need to create widgets before you can see or use them in the UI.
-dbutils.widgets.text('discount', '')
-dbutils.widgets.text('currency_conversion', '')
-dbutils.widgets.text('destination_catalog','')
-dbutils.widgets.text('destination_schema','')
+dbutils.widgets.text('discount', '33')
+dbutils.widgets.text('currency_conversion', '0')
+dbutils.widgets.text('destination_catalog', 'main')
+dbutils.widgets.text('destination_schema', 'default')
 
 params = dbutils.widgets.getAll()
-discount = params.get('discount', '33')
-currency_conversion = params.get('currency_conversion','0')
-destination_catalog = params.get('destination_catalog','main')
-destination_schema = params.get('destination_schema','default')
+discount = params.get('discount') or '33'
+currency_conversion = params.get('currency_conversion') or '0'
+destination_catalog = params.get('destination_catalog') or 'main'
+destination_schema = params.get('destination_schema') or 'default'
 
 
 # COMMAND ----------
