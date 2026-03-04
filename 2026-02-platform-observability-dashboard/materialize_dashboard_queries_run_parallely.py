@@ -1913,13 +1913,20 @@ WITH serverless_usage_cost AS (
       -------------------------------------------------------------------
       SUM(u.usage_quantity) AS total_dbu,
       ROUND(
-      SUM(
-        u.usage_quantity
-        * lp.pricing.effective_list.default
-        * (1 - (0 / 100.0))
-      ),
-      2
-    ) AS total_cost
+        SUM(
+          u.usage_quantity
+          * lp.pricing.effective_list.default
+          * (1 - ({discount} / 100.0))
+          * (
+              CASE
+                  WHEN '{currency_conversion}' = '' OR '{currency_conversion}' = '0'
+                      THEN 1
+                  ELSE CAST('{currency_conversion}' AS DOUBLE)
+              END
+            )
+        ),
+        2
+      ) AS total_cost
 
   FROM system.billing.usage u
 
