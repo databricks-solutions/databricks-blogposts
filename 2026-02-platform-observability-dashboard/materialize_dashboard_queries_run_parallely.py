@@ -41,15 +41,13 @@ destination_schema = params.get('destination_schema','default')
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #####This organizes all SQL statements into four separate lists:
+# MAGIC #####This organizes all SQL statements into three separate lists:
 # MAGIC
-# MAGIC - **union_queries_to_be_executed_parallelly**: for preparing temporary union views,
 # MAGIC - **queries_to_be_executed_parallely**: for creating materialized dashboard tables,
 # MAGIC - **optimize_queries_to_be_executed_parallely**: for optimizing those tables,
 # MAGIC - **vaccum_queries_to_be_executed_parallely**: for vacuuming (cleaning up) the tables.
 # MAGIC
 # MAGIC ###### Each list is executed in parallel to speed up the overall dashboard materialization process.
-
 # COMMAND ----------
 
 queries_to_be_executed_parallely = []
