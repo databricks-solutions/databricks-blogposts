@@ -363,51 +363,7 @@
         "  t.*\r\n",
         "FROM \r\n",
         "  base t\r\n",
-        "LIMIT CAST(:limit AS INT);\r\n",
-        "\r\n",
-        "\r\n",
-        "-- Source of truth :\r\n",
-        "--select sum(total_cost) from\r\n",
-        "-- (WITH run_details AS (\r\n",
-        "--     SELECT\r\n",
-        "--         workspace_id,\r\n",
-        "--         job_id,\r\n",
-        "--         run_id,\r\n",
-        "--         run_name,\r\n",
-        "--         run_type,\r\n",
-        "--         result_state,\r\n",
-        "--         ROW_NUMBER() OVER (PARTITION BY workspace_id, job_id, run_id ORDER BY period_start_time DESC) AS rn\r\n",
-        "--     FROM system.lakeflow.job_run_timeline\r\n",
-        "--     --WHERE period_end_time BETWEEN '2025-06-01' AND '2025-06-30' and run_type is not null\r\n",
-        "--     QUALIFY rn = 1\r\n",
-        "-- )\r\n",
-        "\r\n",
-        "-- SELECT\r\n",
-        "--     ROUND(SUM(t1.usage_quantity), 2) AS total_usage_quantity_dbu,\r\n",
-        "--     ROUND(SUM(t1.usage_quantity * list_prices.pricing.effective_list.default * 0.6 * 0.866), 2) AS total_cost\r\n",
-        "-- FROM\r\n",
-        "--     system.billing.usage t1\r\n",
-        "--   INNER JOIN\r\n",
-        "--     system.billing.list_prices list_prices\r\n",
-        "--     ON t1.cloud = list_prices.cloud\r\n",
-        "--     AND t1.sku_name = list_prices.sku_name\r\n",
-        "--     AND t1.usage_start_time >= list_prices.price_start_time\r\n",
-        "--     AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)\r\n",
-        "--   INNER JOIN\r\n",
-        "--     sl_landscape_info.resourcesdata.adb_workspaceinfo_vw wsinfo\r\n",
-        "--     ON t1.workspace_id = wsinfo.workspaceid\r\n",
-        "--   INNER JOIN run_details runs\r\n",
-        "--     on t1.usage_metadata.job_id = runs.job_id and t1.usage_metadata.job_run_id = runs.run_id\r\n",
-        "-- WHERE\r\n",
-        "--     t1.sku_name LIKE '%JOB%'\r\n",
-        "--     AND t1.usage_unit = 'DBU'\r\n",
-        "--     AND t1.usage_metadata.job_id IS NOT NULL\r\n",
-        "--     AND t1.usage_date between '2025-06-01' AND '2025-06-30'\r\n",
-        "--     AND LOWER(REPLACE(wsinfo.location, ' ', '')) = 'northeurope'\r\n",
-        "-- GROUP BY\r\n",
-        "--     ALL\r\n",
-        "-- ORDER BY\r\n",
-        "--     total_cost DESC);"
+        "LIMIT CAST(:limit AS INT);"
       ],
       "parameters": [
         {
@@ -483,48 +439,7 @@
         "  t.*\r\n",
         "FROM \r\n",
         "  base t\r\n",
-        "LIMIT CAST(:limit AS INT);\r\n",
-        "\r\n",
-        "-- Source of truth :\r\n",
-        "-- WITH run_details AS (\r\n",
-        "--     SELECT\r\n",
-        "--         workspace_id,\r\n",
-        "--         job_id,\r\n",
-        "--         run_id,\r\n",
-        "--         run_name,\r\n",
-        "--         run_type,\r\n",
-        "--         result_state,\r\n",
-        "--         ROW_NUMBER() OVER (PARTITION BY workspace_id, job_id, run_id ORDER BY period_start_time DESC) AS rn\r\n",
-        "--     FROM system.lakeflow.job_run_timeline\r\n",
-        "--     WHERE period_end_time BETWEEN '2025-06-01' AND '2025-06-30' and run_type is not null\r\n",
-        "--     QUALIFY rn = 1\r\n",
-        "-- )\r\n",
-        "\r\n",
-        "-- SELECT\r\n",
-        "--     ROUND(SUM(t1.usage_quantity), 2) AS total_usage_quantity_dbu,\r\n",
-        "--     ROUND(SUM(t1.usage_quantity * list_prices.pricing.effective_list.default * 0.6 * 0.866), 2) AS total_cost\r\n",
-        "-- FROM\r\n",
-        "--     system.billing.usage t1\r\n",
-        "--   INNER JOIN\r\n",
-        "--     system.billing.list_prices list_prices\r\n",
-        "--     ON t1.cloud = list_prices.cloud\r\n",
-        "--     AND t1.sku_name = list_prices.sku_name\r\n",
-        "--     AND t1.usage_start_time >= list_prices.price_start_time\r\n",
-        "--     AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)\r\n",
-        "--   INNER JOIN\r\n",
-        "--     sl_landscape_info.resourcesdata.adb_workspaceinfo_vw wsinfo\r\n",
-        "--     ON t1.workspace_id = wsinfo.workspaceid\r\n",
-        "--   INNER JOIN run_details runs\r\n",
-        "--     on t1.usage_metadata.job_id = runs.job_id and t1.usage_metadata.job_run_id = runs.run_id\r\n",
-        "-- WHERE\r\n",
-        "--     t1.sku_name LIKE '%JOB%'\r\n",
-        "--     AND t1.usage_unit = 'DBU'\r\n",
-        "--     AND t1.usage_metadata.job_id IS NOT NULL\r\n",
-        "--     AND LOWER(REPLACE(wsinfo.location, ' ', '')) = 'northeurope'\r\n",
-        "-- GROUP BY\r\n",
-        "--     ALL\r\n",
-        "-- ORDER BY\r\n",
-        "--     total_cost DESC;"
+        "LIMIT CAST(:limit AS INT);"
       ],
       "parameters": [
         {
@@ -570,125 +485,7 @@
         "        WHEN :period = 'monthly' THEN CAST(DATE_FORMAT(job_date, 'yyyy-MM-01') AS DATE)\r\n",
         "        WHEN :period = 'daily' THEN CAST(DATE_FORMAT(job_date, 'yyyy-MM-dd') AS DATE)\r\n",
         "    END AS job_date_new from main.default.total_job_run_and_result_status\r\n",
-        "where job_date between :date_range.min and :date_range.max;\r\n",
-        "\r\n",
-        "\r\n",
-        "--old query:\r\n",
-        "-- WITH run_details AS (\r\n",
-        "--     SELECT\r\n",
-        "--         workspace_id,\r\n",
-        "--         job_id,\r\n",
-        "--         run_id,\r\n",
-        "--         run_name,\r\n",
-        "--         run_type,\r\n",
-        "--         period_start_time,\r\n",
-        "--         result_state,\r\n",
-        "--         ROW_NUMBER() OVER (PARTITION BY workspace_id, job_id, run_id ORDER BY period_start_time DESC) AS rn\r\n",
-        "--     FROM system.lakeflow.job_run_timeline jt\r\n",
-        "--     WHERE period_end_time BETWEEN :date_range.min AND :date_range.max\r\n",
-        "--     AND run_type IS NOT NULL\r\n",
-        "--     AND result_state IS NOT NULL AND result_state != 'SKIPPED'\r\n",
-        "--     QUALIFY rn = 1\r\n",
-        "-- ),\r\n",
-        "-- job_details AS (\r\n",
-        "--     SELECT\r\n",
-        "--         job_id,\r\n",
-        "--         name,\r\n",
-        "--         change_time,\r\n",
-        "--         ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY change_time DESC) AS rn\r\n",
-        "--     FROM system.lakeflow.jobs\r\n",
-        "--     QUALIFY rn = 1\r\n",
-        "-- ),\r\n",
-        "-- job_run_details AS (\r\n",
-        "--     SELECT DISTINCT\r\n",
-        "--         runs.workspace_id,\r\n",
-        "--         runs.job_id,\r\n",
-        "--         runs.run_id,\r\n",
-        "--         COALESCE(jobs.name, runs.run_name) AS job_or_pipeline_name,\r\n",
-        "--         runs.run_type,\r\n",
-        "--         runs.period_start_time,\r\n",
-        "--         runs.result_state\r\n",
-        "--     FROM run_details runs\r\n",
-        "--     LEFT JOIN job_details jobs ON runs.job_id = jobs.job_id\r\n",
-        "-- )\r\n",
-        "\r\n",
-        "\r\n",
-        "-- SELECT\r\n",
-        "--     rg.SubscriptionName as subscription_name,\r\n",
-        "--     wsinfo.Location as region,\r\n",
-        "--     rg.Application as service_name,\r\n",
-        "--        CASE\r\n",
-        "--       WHEN rg.Director is null then \"Unknown\"\r\n",
-        "--       ELSE rg.Director\r\n",
-        "--       END as delivery_director,\r\n",
-        "--     -- rg.CostCentre as cost_centre,\r\n",
-        "--     -- rg.Icc as icc,\r\n",
-        "--     rg.ITSG as itsg,\r\n",
-        "--     CASE\r\n",
-        "--         WHEN :period = 'monthly' THEN CAST(DATE_FORMAT(DATE(period_start_time), 'yyyy-MM-01') AS DATE)\r\n",
-        "--         WHEN :period = 'daily' THEN CAST(DATE_FORMAT(DATE(period_start_time), 'yyyy-MM-dd') AS DATE)\r\n",
-        "--     END AS job_date,\r\n",
-        "--     CASE \r\n",
-        "--         WHEN jt.run_type != 'SUBMIT_RUN' THEN jt.job_id\r\n",
-        "--         ELSE LEFT(\r\n",
-        "--             job_or_pipeline_name, \r\n",
-        "--             LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))\r\n",
-        "--     END AS job_id,\r\n",
-        "--     CASE \r\n",
-        "--         WHEN jt.run_type != 'SUBMIT_RUN' THEN jt.job_or_pipeline_name\r\n",
-        "--         ELSE LEFT(\r\n",
-        "--             job_or_pipeline_name, \r\n",
-        "--             LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))\r\n",
-        "--     END AS job_or_pipeline_name,\r\n",
-        "--     CASE \r\n",
-        "--         WHEN jt.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' \r\n",
-        "--         ELSE 'WORKFLOW_RUN' \r\n",
-        "--     END AS run_type,\r\n",
-        "\r\n",
-        "--     wsinfo.workspaceId AS workspace_id,\r\n",
-        "--     wsinfo.adbname AS workspace_name,\r\n",
-        "--     wsinfo.ResourceGroupName AS resource_group_name,\r\n",
-        "--     CASE\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-d-%' THEN 'Development'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-u-%' THEN 'Pre-Prod'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-q-%' THEN 'QA'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-p-%' THEN 'Production'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-b-%' THEN 'UAT'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-r-%' THEN 'Disaster Recovery'\r\n",
-        "--         ELSE wsinfo.ResourceGroupName\r\n",
-        "--     END AS environment,\r\n",
-        "--     u.sku_name,\r\n",
-        "--     COUNT(DISTINCT run_id) AS total_job_runs,\r\n",
-        "--     COUNT(DISTINCT CASE WHEN result_state = 'SUCCEEDED' THEN run_id END) AS success_count,\r\n",
-        "--     COUNT(DISTINCT CASE WHEN result_state != 'SUCCEEDED' THEN run_id END) AS not_successful_count,\r\n",
-        "--     COUNT(DISTINCT CASE WHEN result_state = 'FAILED' THEN run_id END) AS failure_count,\r\n",
-        "--     COUNT(DISTINCT CASE WHEN result_state = 'TIMED_OUT' THEN run_id END) AS timeout_count,\r\n",
-        "--     COUNT(DISTINCT CASE WHEN result_state = 'ERROR' THEN run_id END) AS error_count,\r\n",
-        "--     COUNT(DISTINCT CASE WHEN result_state = 'CANCELLED' THEN run_id END) AS cancelled_count,\r\n",
-        "--     ROUND((COUNT(DISTINCT CASE WHEN result_state != 'SUCCEEDED' THEN run_id END) / COUNT(*)) * 100, 2) AS failure_rate_percent,\r\n",
-        "--     ROUND((COUNT(DISTINCT CASE WHEN result_state = 'SUCCEEDED' THEN run_id END) / COUNT(*)) * 100, 2) AS success_rate_percent,\r\n",
-        "--     SUM(u.usage_quantity) AS total_usage_quantity_dbu,\r\n",
-        "--     ROUND(SUM(u.usage_quantity\r\n",
-        "--     * list_prices.pricing.effective_list.default\r\n",
-        "--     * (1 - (:discount / 100.0)) \r\n",
-        "--     * :euro_conversion),2) AS total_cost,\r\n",
-        "\r\n",
-        "--     SUM(case when result_state = 'SUCCEEDED' THEN u.usage_quantity * list_prices.pricing.effective_list.default * (1 - (:discount / 100.0)) * :euro_conversion end) AS total_success_cost,\r\n",
-        "--     SUM(case when result_state != 'SUCCEEDED' THEN u.usage_quantity * list_prices.pricing.effective_list.default * (1 - (:discount / 100.0)) * :euro_conversion end) AS total_unsuccess_cost\r\n",
-        "-- FROM job_run_details jt\r\n",
-        "-- LEFT JOIN system.billing.usage u on u.usage_metadata.job_id = jt.job_id and u.usage_metadata.job_run_id = jt.run_id\r\n",
-        "-- LEFT JOIN system.billing.list_prices list_prices\r\n",
-        "--     ON u.cloud = list_prices.cloud\r\n",
-        "--     AND u.sku_name = list_prices.sku_name\r\n",
-        "--     AND u.usage_start_time >= list_prices.price_start_time\r\n",
-        "--     AND (u.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)\r\n",
-        "-- INNER JOIN sl_landscape_info.resourcesdata.adb_workspaceinfo_vw wsinfo \r\n",
-        "--     ON jt.workspace_id = wsinfo.workspaceid\r\n",
-        "-- INNER JOIN sl_landscape_info.mastersheet.kec_master_sheet_vw rg \r\n",
-        "--     ON LOWER(TRIM(wsinfo.ResourceGroupName)) = LOWER(TRIM(rg.ResourceGroup))\r\n",
-        "--     AND LOWER(TRIM(wsinfo.SubscriptionName)) = LOWER(TRIM(rg.SubscriptionName))\r\n",
-        "-- WHERE LOWER(REPLACE(wsinfo.location, ' ', '')) = :region and u.usage_date BETWEEN :date_range.min AND :date_range.max\r\n",
-        "-- GROUP BY all"
+        "where job_date between :date_range.min and :date_range.max;"
       ],
       "parameters": [
         {
@@ -815,105 +612,7 @@
         "  t.*\r\n",
         "FROM \r\n",
         "  base t\r\n",
-        "LIMIT CAST(:limit AS INT);\r\n",
-        "\r\n",
-        "-- Old query\r\n",
-        "-- WITH latest_clusters AS (\r\n",
-        "--   SELECT *\r\n",
-        "--   FROM (\r\n",
-        "--     SELECT *,\r\n",
-        "--            ROW_NUMBER() OVER(PARTITION BY workspace_id, cluster_id ORDER BY change_time DESC) AS rn\r\n",
-        "--     FROM system.compute.clusters\r\n",
-        "--     WHERE cluster_source in ('UI', 'API')\r\n",
-        "--   ) AS subquery\r\n",
-        "--   WHERE rn = 1\r\n",
-        "-- ),\r\n",
-        "-- temp as\r\n",
-        "-- (SELECT\r\n",
-        "--     wsinfo.SubscriptionName as subscription_name,\r\n",
-        "--     wsinfo.Location as region,\r\n",
-        "--     rg.Application as service_name,\r\n",
-        "--      CASE\r\n",
-        "--       WHEN rg.Director is null then \"Unknown\"\r\n",
-        "--       ELSE rg.Director\r\n",
-        "--       END as delivery_director,\r\n",
-        "--     -- rg.Icc as icc,\r\n",
-        "--     rg.ITSG as itsg,\r\n",
-        "--     t1.cluster_id,\r\n",
-        "--     t1.cluster_name,\r\n",
-        "\r\n",
-        "--     CASE\r\n",
-        "--         WHEN t1.auto_termination_minutes IS NULL OR t1.auto_termination_minutes = 0 THEN \"Not Set\"\r\n",
-        "--         WHEN t1.auto_termination_minutes > 30 THEN t1.auto_termination_minutes\r\n",
-        "--         ELSE\r\n",
-        "--             t1.auto_termination_minutes\r\n",
-        "--     END AS auto_termination_minutes,\r\n",
-        "--     -- Highlight indicator for auto_termination_minutes - \r\n",
-        "--     CASE\r\n",
-        "--         WHEN t1.auto_termination_minutes IS NULL OR t1.auto_termination_minutes = 0 THEN\r\n",
-        "--             -- Amber/Orange for 'No Auto-Termination' - Potential cost issue/non-standard\r\n",
-        "--             CONCAT('<span style=\"color:#f39c12; font-weight:bold;\">&#9888; Not Set (No Auto-Termination)</span>')\r\n",
-        "--         WHEN t1.auto_termination_minutes > 30 THEN\r\n",
-        "--             -- Red for 'High Auto-Termination' - Clear warning/critical\r\n",
-        "--             CONCAT('<span style=\"color:#e74c3c; font-weight:bold;\">&#9888; High (', t1.auto_termination_minutes, ' min)</span>')\r\n",
-        "--         -- Based on your WHERE clause, this ELSE case should theoretically not be hit.\r\n",
-        "--         -- If the WHERE clause were different and allowed 1-30 min, this would be the 'good' state.\r\n",
-        "--         ELSE\r\n",
-        "--             CONCAT('<span style=\"color:#34495e;\">', t1.auto_termination_minutes, ' min</span>')\r\n",
-        "--     END AS auto_termination_minutes_html,\r\n",
-        "--     t1.owned_by,\r\n",
-        "--     t1.cluster_source,\r\n",
-        "--     t1.create_time,\r\n",
-        "--     t1.dbr_version,\r\n",
-        "--     t1.azure_attributes.availability,\r\n",
-        "--     -- Workspace details\r\n",
-        "--     t1.workspace_id,\r\n",
-        "--     wsinfo.adbname AS workspace_name,\r\n",
-        "--     wsinfo.ResourceGroupName AS resource_group,\r\n",
-        "--     CASE\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-d-%' THEN 'Development'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-u-%' THEN 'Pre-Prod'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-q-%' THEN 'QA'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-p-%' THEN 'Production'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-b-%' THEN 'UAT'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-r-%' THEN 'Disaster Recovery'\r\n",
-        "--         ELSE wsinfo.ResourceGroupName\r\n",
-        "--     END AS environment\r\n",
-        "-- FROM\r\n",
-        "--     latest_clusters AS t1\r\n",
-        "-- INNER JOIN\r\n",
-        "--     sl_landscape_info.resourcesdata.adb_workspaceinfo_vw AS wsinfo\r\n",
-        "--     ON t1.workspace_id = wsinfo.workspaceid\r\n",
-        "-- INNER JOIN sl_landscape_info.mastersheet.kec_master_sheet_vw rg \r\n",
-        "--     ON LOWER(TRIM(wsinfo.ResourceGroupName)) = LOWER(TRIM(rg.ResourceGroup))\r\n",
-        "--     AND LOWER(TRIM(wsinfo.SubscriptionName)) = LOWER(TRIM(rg.SubscriptionName))\r\n",
-        "-- WHERE\r\n",
-        "-- t1.delete_time IS NULL\r\n",
-        "-- AND (\r\n",
-        "--     t1.auto_termination_minutes IS NULL\r\n",
-        "--     OR t1.auto_termination_minutes = 0\r\n",
-        "--     OR t1.auto_termination_minutes > 30\r\n",
-        "-- )\r\n",
-        "-- AND LOWER(REPLACE(wsinfo.location, ' ', '')) = :region \r\n",
-        "-- AND t1.create_time BETWEEN :date_range.min and :date_range.max  \r\n",
-        "-- order by t1.auto_termination_minutes DESC)\r\n",
-        "\r\n",
-        "-- SELECT \r\n",
-        "--   t.*,\r\n",
-        "--   svc_counts.rank\r\n",
-        "-- FROM \r\n",
-        "--   temp t\r\n",
-        "-- JOIN (\r\n",
-        "--   SELECT\r\n",
-        "--     service_name,\r\n",
-        "--     COUNT(*) as count,\r\n",
-        "--     DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) as rank\r\n",
-        "--   FROM\r\n",
-        "--     temp\r\n",
-        "--   GROUP BY\r\n",
-        "--     service_name\r\n",
-        "-- ) svc_counts\r\n",
-        "-- ON t.service_name = svc_counts.service_name;"
+        "LIMIT CAST(:limit AS INT);"
       ],
       "parameters": [
         {
@@ -962,85 +661,7 @@
         "  t.*\r\n",
         "FROM \r\n",
         "  base t\r\n",
-        "LIMIT CAST(:limit AS INT);\r\n",
-        "\r\n",
-        "-- old query\r\n",
-        "-- WITH latest_clusters AS (\r\n",
-        "--   SELECT *\r\n",
-        "--   FROM (\r\n",
-        "--     SELECT *,\r\n",
-        "--            ROW_NUMBER() OVER(PARTITION BY workspace_id, cluster_id ORDER BY change_time DESC) AS rn\r\n",
-        "--     FROM system.compute.clusters\r\n",
-        "--   ) AS subquery\r\n",
-        "--   WHERE rn = 1 and azure_attributes.availability = 'ON_DEMAND_AZURE'\r\n",
-        "-- ),\r\n",
-        "-- temp as\r\n",
-        "-- (SELECT\r\n",
-        "--     wsinfo.SubscriptionName as subscription_name,\r\n",
-        "--     wsinfo.Location as region,\r\n",
-        "--     rg.Application as service_name,\r\n",
-        "--      CASE\r\n",
-        "--       WHEN rg.Director is null then \"Unknown\"\r\n",
-        "--       ELSE rg.Director\r\n",
-        "--       END as delivery_director,\r\n",
-        "--     -- rg.Icc as icc,\r\n",
-        "--     rg.ITSG as itsg,\r\n",
-        "--     t1.cluster_id,\r\n",
-        "--     t1.cluster_name,\r\n",
-        "--     t1.owned_by,\r\n",
-        "--     t1.cluster_source,\r\n",
-        "--     t1.create_time,\r\n",
-        "--     t1.azure_attributes.availability,\r\n",
-        "    \r\n",
-        "--     CONCAT('<span style=\"color:#7E9BF3;font-weight:600;\">⚠️ ',\r\n",
-        "--          t1.azure_attributes.availability,\r\n",
-        "--          '</span>') AS availability_html,\r\n",
-        "\r\n",
-        "--     -- Workspace details\r\n",
-        "--     t1.workspace_id,\r\n",
-        "--     wsinfo.adbname AS workspace_name,\r\n",
-        "--     wsinfo.ResourceGroupName AS resource_group,\r\n",
-        "--     CASE\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-d-%' THEN 'Development'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-u-%' THEN 'Pre-Prod'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-q-%' THEN 'QA'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-p-%' THEN 'Production'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-b-%' THEN 'UAT'\r\n",
-        "--         WHEN wsinfo.ResourceGroupName LIKE '%-r-%' THEN 'Disaster Recovery'\r\n",
-        "--         ELSE wsinfo.ResourceGroupName\r\n",
-        "--     END AS environment,\r\n",
-        "--     :date_range.min,\r\n",
-        "--     :date_range.max\r\n",
-        "-- FROM\r\n",
-        "--     latest_clusters AS t1\r\n",
-        "-- INNER JOIN\r\n",
-        "--     sl_landscape_info.resourcesdata.adb_workspaceinfo_vw AS wsinfo\r\n",
-        "--     ON t1.workspace_id = wsinfo.workspaceid\r\n",
-        "-- INNER JOIN sl_landscape_info.mastersheet.kec_master_sheet_vw rg \r\n",
-        "--     ON LOWER(TRIM(wsinfo.ResourceGroupName)) = LOWER(TRIM(rg.ResourceGroup))\r\n",
-        "--     AND LOWER(TRIM(wsinfo.SubscriptionName)) = LOWER(TRIM(rg.SubscriptionName))\r\n",
-        "-- WHERE \r\n",
-        "--     LOWER(REPLACE(wsinfo.location, ' ', '')) = :region \r\n",
-        "--     AND t1.create_time BETWEEN :date_range.min and :date_range.max\r\n",
-        "--     and wsinfo.ResourceGroupName not like '%-p-%'\r\n",
-        "-- group by all)\r\n",
-        "\r\n",
-        "-- SELECT \r\n",
-        "--   t.*,\r\n",
-        "--   svc_counts.rank\r\n",
-        "-- FROM \r\n",
-        "--   temp t\r\n",
-        "-- JOIN (\r\n",
-        "--   SELECT\r\n",
-        "--     service_name,\r\n",
-        "--     COUNT(*) as count,\r\n",
-        "--     DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) as rank\r\n",
-        "--   FROM\r\n",
-        "--     temp\r\n",
-        "--   GROUP BY\r\n",
-        "--     service_name\r\n",
-        "-- ) svc_counts\r\n",
-        "-- ON t.service_name = svc_counts.service_name;"
+        "LIMIT CAST(:limit AS INT);"
       ],
       "parameters": [
         {
@@ -1171,10 +792,7 @@
         "    END AS usage_date_new\n",
         "FROM main.default.serverless_usage_metrics\n",
         "WHERE usage_date BETWEEN :date_range.min AND :date_range.max\n",
-        "ORDER BY total_cost DESC;\n",
-        "\n",
-        "\n",
-        "-- select * from system.billing.usage where product_features.is_serverless limit 10"
+        "ORDER BY total_cost DESC;"
       ],
       "parameters": [
         {
@@ -7242,6 +6860,642 @@
       "pageType": "PAGE_TYPE_CANVAS"
     },
     {
+      "name": "fabdc50e",
+      "displayName": "Unfollowed Best Practices",
+      "layout": [
+        {
+          "widget": {
+            "name": "182b397f",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d2f17553",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "countdistinct(cluster_id)",
+                      "expression": "COUNT(DISTINCT `cluster_id`)"
+                    }
+                  ],
+                  "parameterValues": [
+                    {
+                      "keyword": "limit",
+                      "selection": {
+                        "values": {
+                          "dataType": "STRING",
+                          "values": [
+                            {
+                              "value": "10"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "countdistinct(cluster_id)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  },
+                  "displayName": "Cluster Count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "workspace_name",
+                  "axis": {
+                    "title": "Workspace Name"
+                  },
+                  "displayName": "Service Name",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "workspace_name",
+                  "legend": {
+                    "position": "bottom"
+                  },
+                  "displayName": "Workspace Name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Workspaces with Fixed number of workers for Jobs/All purpose clusters",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "b98d7b13",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "6d6450fc",
+                  "fields": [
+                    {
+                      "name": "countdistinct(cluster_id)",
+                      "expression": "COUNT(DISTINCT `cluster_id`)"
+                    },
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`rank` IN (`rank`) OR TRUE"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "countdistinct(cluster_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count of Auto Termination Minutes"
+                },
+                "color": {
+                  "fieldName": "workspace_name",
+                  "legend": {
+                    "position": "bottom"
+                  },
+                  "displayName": "Workspace Name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Top Workspaces with Missing or High Auto-Termination Settings for All purpose clusters",
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "175fcdcf",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "726951cf",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "dbr_version",
+                      "expression": "`dbr_version`"
+                    },
+                    {
+                      "name": "count(dbr_version)",
+                      "expression": "COUNT(`dbr_version`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "count(dbr_version)",
+                  "displayName": "No. of DBR versions",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "workspace_name",
+                  "axis": {
+                    "title": "Workspace Name"
+                  },
+                  "displayName": "Service Name",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "workspace_name",
+                  "legend": {
+                    "position": "bottom"
+                  },
+                  "displayName": "Workspace Name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                },
+                "extra": [
+                  {
+                    "fieldName": "dbr_version",
+                    "displayName": "DBR Version"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Top Workspaces with Outdated DBR Versions and Upgrade Guidance",
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "dfda1c35",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "82221dae",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "parameterValues": [
+                    {
+                      "keyword": "limit",
+                      "selection": {
+                        "values": {
+                          "dataType": "STRING",
+                          "values": [
+                            {
+                              "value": "10"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "count(*)",
+                  "axis": {
+                    "hideLabels": false,
+                    "hideTitle": false
+                  },
+                  "displayName": "On-demand instance count",
+                  "scale": {
+                    "type": "quantitative",
+                    "reverse": false
+                  }
+                },
+                "y": {
+                  "fieldName": "workspace_name",
+                  "displayName": "Workspace Name",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "workspace_name",
+                  "legend": {
+                    "position": "bottom"
+                  },
+                  "displayName": "Workspace Name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": "Top Workspaces not using spot instances",
+                "description": "Note: This excludes Production environment"
+              },
+              "mark": {
+                "layout": "stack"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 4,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "8966a51c",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a09a2eae",
+                  "fields": [
+                    {
+                      "name": "countdistinct(warehouse_id)",
+                      "expression": "COUNT(DISTINCT `warehouse_id`)"
+                    },
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "countdistinct(warehouse_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "workspace_name",
+                  "axis": {
+                    "title": "Workspace"
+                  },
+                  "displayName": "Service Name",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "type": "number-of-categories",
+                      "number": 10
+                    },
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Workspaces with Idle Warehouses (Unused for 30+ Days)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "018eea75",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "93a0cafc",
+                  "fields": [
+                    {
+                      "name": "count(workspace_id)",
+                      "expression": "COUNT(`workspace_id`)"
+                    },
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "count(workspace_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count of warehouse id"
+                },
+                "color": {
+                  "fieldName": "workspace_name",
+                  "legend": {
+                    "title": "Workspace"
+                  },
+                  "displayName": "Service Name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                },
+                "extra": [
+                  {
+                    "fieldName": "count(*)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Workspace with Missing or High Auto-Stop Settings for SQL Warehouse"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 10,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "7605e732",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "b9f5af51",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "countdistinct(warehouse_id)",
+                      "expression": "COUNT(DISTINCT `warehouse_id`)"
+                    },
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "countdistinct(warehouse_id)",
+                  "displayName": "Count warehouse id",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "workspace_name",
+                  "axis": {
+                    "title": "Workspace"
+                  },
+                  "displayName": "Service Name",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "type": "number-of-categories",
+                      "number": 10
+                    },
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "label": {
+                  "show": true
+                },
+                "extra": [
+                  {
+                    "fieldName": "count(*)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Workspaces not using current channel",
+                "showDescription": true,
+                "description": "This will display all the warehouses that are not using current channel"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "top-workspaces-untagged-resources",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8725e3f6",
+                  "fields": [
+                    {
+                      "name": "object_type",
+                      "expression": "`object_type`"
+                    },
+                    {
+                      "name": "countdistinct(object_id)",
+                      "expression": "COUNT(DISTINCT `object_id`)"
+                    },
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "countdistinct(object_id)",
+                  "axis": {
+                    "title": "Count of Untagged resources"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "workspace_name",
+                  "axis": {
+                    "title": "Workspace"
+                  },
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "color": {
+                  "fieldName": "object_type",
+                  "legend": {
+                    "title": "Resource Type"
+                  },
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Workspaces with Untagged resources"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 15,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
       "name": "d199f5f7",
       "displayName": "SQL Warehouse Analysis",
       "layout": [
@@ -7996,642 +8250,6 @@
             "x": 0,
             "y": 21,
             "width": 6,
-            "height": 5
-          }
-        }
-      ],
-      "pageType": "PAGE_TYPE_CANVAS"
-    },
-    {
-      "name": "fabdc50e",
-      "displayName": "Unfollowed Best Practices",
-      "layout": [
-        {
-          "widget": {
-            "name": "182b397f",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "d2f17553",
-                  "fields": [
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    },
-                    {
-                      "name": "countdistinct(cluster_id)",
-                      "expression": "COUNT(DISTINCT `cluster_id`)"
-                    }
-                  ],
-                  "parameterValues": [
-                    {
-                      "keyword": "limit",
-                      "selection": {
-                        "values": {
-                          "dataType": "STRING",
-                          "values": [
-                            {
-                              "value": "10"
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "countdistinct(cluster_id)",
-                  "format": {
-                    "type": "number-plain",
-                    "abbreviation": "none",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 2
-                    }
-                  },
-                  "displayName": "Cluster Count",
-                  "scale": {
-                    "type": "quantitative"
-                  }
-                },
-                "y": {
-                  "fieldName": "workspace_name",
-                  "axis": {
-                    "title": "Workspace Name"
-                  },
-                  "displayName": "Service Name",
-                  "scale": {
-                    "type": "categorical",
-                    "sort": {
-                      "by": "x-reversed"
-                    }
-                  }
-                },
-                "color": {
-                  "fieldName": "workspace_name",
-                  "legend": {
-                    "position": "bottom"
-                  },
-                  "displayName": "Workspace Name",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "label": {
-                  "show": true
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Top Workspaces with Fixed number of workers for Jobs/All purpose clusters",
-                "showDescription": false,
-                "description": ""
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 4,
-            "width": 3,
-            "height": 6
-          }
-        },
-        {
-          "widget": {
-            "name": "b98d7b13",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "6d6450fc",
-                  "fields": [
-                    {
-                      "name": "countdistinct(cluster_id)",
-                      "expression": "COUNT(DISTINCT `cluster_id`)"
-                    },
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    }
-                  ],
-                  "filters": [
-                    {
-                      "expression": "`rank` IN (`rank`) OR TRUE"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "pie",
-              "encodings": {
-                "angle": {
-                  "fieldName": "countdistinct(cluster_id)",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Count of Auto Termination Minutes"
-                },
-                "color": {
-                  "fieldName": "workspace_name",
-                  "legend": {
-                    "position": "bottom"
-                  },
-                  "displayName": "Workspace Name",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "label": {
-                  "show": true
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "showDescription": false,
-                "title": "Top Workspaces with Missing or High Auto-Termination Settings for All purpose clusters",
-                "description": ""
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 0,
-            "width": 3,
-            "height": 4
-          }
-        },
-        {
-          "widget": {
-            "name": "175fcdcf",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "726951cf",
-                  "fields": [
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    },
-                    {
-                      "name": "dbr_version",
-                      "expression": "`dbr_version`"
-                    },
-                    {
-                      "name": "count(dbr_version)",
-                      "expression": "COUNT(`dbr_version`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "count(dbr_version)",
-                  "displayName": "No. of DBR versions",
-                  "scale": {
-                    "type": "quantitative"
-                  }
-                },
-                "y": {
-                  "fieldName": "workspace_name",
-                  "axis": {
-                    "title": "Workspace Name"
-                  },
-                  "displayName": "Service Name",
-                  "scale": {
-                    "type": "categorical",
-                    "sort": {
-                      "by": "x-reversed"
-                    }
-                  }
-                },
-                "color": {
-                  "fieldName": "workspace_name",
-                  "legend": {
-                    "position": "bottom"
-                  },
-                  "displayName": "Workspace Name",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "label": {
-                  "show": true
-                },
-                "extra": [
-                  {
-                    "fieldName": "dbr_version",
-                    "displayName": "DBR Version"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "showDescription": false,
-                "title": "Top Workspaces with Outdated DBR Versions and Upgrade Guidance",
-                "description": ""
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 0,
-            "width": 3,
-            "height": 4
-          }
-        },
-        {
-          "widget": {
-            "name": "dfda1c35",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "82221dae",
-                  "fields": [
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    },
-                    {
-                      "name": "count(*)",
-                      "expression": "COUNT(`*`)"
-                    }
-                  ],
-                  "parameterValues": [
-                    {
-                      "keyword": "limit",
-                      "selection": {
-                        "values": {
-                          "dataType": "STRING",
-                          "values": [
-                            {
-                              "value": "10"
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "count(*)",
-                  "axis": {
-                    "hideLabels": false,
-                    "hideTitle": false
-                  },
-                  "displayName": "On-demand instance count",
-                  "scale": {
-                    "type": "quantitative",
-                    "reverse": false
-                  }
-                },
-                "y": {
-                  "fieldName": "workspace_name",
-                  "displayName": "Workspace Name",
-                  "scale": {
-                    "type": "categorical",
-                    "sort": {
-                      "by": "x-reversed"
-                    }
-                  }
-                },
-                "color": {
-                  "fieldName": "workspace_name",
-                  "legend": {
-                    "position": "bottom"
-                  },
-                  "displayName": "Workspace Name",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "label": {
-                  "show": true
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "showDescription": true,
-                "title": "Top Workspaces not using spot instances",
-                "description": "Note: This excludes Production environment"
-              },
-              "mark": {
-                "layout": "stack"
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 4,
-            "width": 3,
-            "height": 6
-          }
-        },
-        {
-          "widget": {
-            "name": "8966a51c",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "a09a2eae",
-                  "fields": [
-                    {
-                      "name": "countdistinct(warehouse_id)",
-                      "expression": "COUNT(DISTINCT `warehouse_id`)"
-                    },
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "countdistinct(warehouse_id)",
-                  "scale": {
-                    "type": "quantitative"
-                  }
-                },
-                "y": {
-                  "fieldName": "workspace_name",
-                  "axis": {
-                    "title": "Workspace"
-                  },
-                  "displayName": "Service Name",
-                  "scale": {
-                    "type": "categorical",
-                    "categorySize": {
-                      "type": "number-of-categories",
-                      "number": 10
-                    },
-                    "sort": {
-                      "by": "x-reversed"
-                    }
-                  }
-                },
-                "label": {
-                  "show": true
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Top Workspaces with Idle Warehouses (Unused for 30+ Days)"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 10,
-            "width": 3,
-            "height": 5
-          }
-        },
-        {
-          "widget": {
-            "name": "018eea75",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "93a0cafc",
-                  "fields": [
-                    {
-                      "name": "count(workspace_id)",
-                      "expression": "COUNT(`workspace_id`)"
-                    },
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    },
-                    {
-                      "name": "count(*)",
-                      "expression": "COUNT(`*`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "pie",
-              "encodings": {
-                "angle": {
-                  "fieldName": "count(workspace_id)",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Count of warehouse id"
-                },
-                "color": {
-                  "fieldName": "workspace_name",
-                  "legend": {
-                    "title": "Workspace"
-                  },
-                  "displayName": "Service Name",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "label": {
-                  "show": true
-                },
-                "extra": [
-                  {
-                    "fieldName": "count(*)"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Top Workspace with Missing or High Auto-Stop Settings for SQL Warehouse"
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 10,
-            "width": 3,
-            "height": 5
-          }
-        },
-        {
-          "widget": {
-            "name": "7605e732",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "b9f5af51",
-                  "fields": [
-                    {
-                      "name": "count(*)",
-                      "expression": "COUNT(`*`)"
-                    },
-                    {
-                      "name": "countdistinct(warehouse_id)",
-                      "expression": "COUNT(DISTINCT `warehouse_id`)"
-                    },
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "countdistinct(warehouse_id)",
-                  "displayName": "Count warehouse id",
-                  "scale": {
-                    "type": "quantitative"
-                  }
-                },
-                "y": {
-                  "fieldName": "workspace_name",
-                  "axis": {
-                    "title": "Workspace"
-                  },
-                  "displayName": "Service Name",
-                  "scale": {
-                    "type": "categorical",
-                    "categorySize": {
-                      "type": "number-of-categories",
-                      "number": 10
-                    },
-                    "sort": {
-                      "by": "x-reversed"
-                    }
-                  }
-                },
-                "label": {
-                  "show": true
-                },
-                "extra": [
-                  {
-                    "fieldName": "count(*)"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Top Workspaces not using current channel",
-                "showDescription": true,
-                "description": "This will display all the warehouses that are not using current channel"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 15,
-            "width": 3,
-            "height": 5
-          }
-        },
-        {
-          "widget": {
-            "name": "top-workspaces-untagged-resources",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "8725e3f6",
-                  "fields": [
-                    {
-                      "name": "object_type",
-                      "expression": "`object_type`"
-                    },
-                    {
-                      "name": "countdistinct(object_id)",
-                      "expression": "COUNT(DISTINCT `object_id`)"
-                    },
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "countdistinct(object_id)",
-                  "axis": {
-                    "title": "Count of Untagged resources"
-                  },
-                  "scale": {
-                    "type": "quantitative"
-                  }
-                },
-                "y": {
-                  "fieldName": "workspace_name",
-                  "axis": {
-                    "title": "Workspace"
-                  },
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "color": {
-                  "fieldName": "object_type",
-                  "legend": {
-                    "title": "Resource Type"
-                  },
-                  "scale": {
-                    "type": "categorical"
-                  }
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Top Workspaces with Untagged resources"
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 15,
-            "width": 3,
             "height": 5
           }
         }
@@ -19071,8 +18689,8 @@
       "widgetHeaderAlignment": "LEFT"
     },
     "genieSpace": {
-      "isEnabled": false,
-      "enablementMode": "ENABLEMENT_MODE_UNSPECIFIED"
+      "isEnabled": true,
+      "enablementMode": "ENABLED"
     },
     "applyModeEnabled": false
   }
