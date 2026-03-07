@@ -2506,28 +2506,50 @@ else:
 
 # DBTITLE 1,Execute Optimize Spark SQL Queries in Parallel
 # # Run all OPTIMIZE commands in parallel to compact files and improve performance for each materialized dashboard table.
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def run_query(query):
-    return spark.sql(query)
+if execute_flag and not failed_list:
+    def run_optimize_query(query):
+        return spark.sql(query)
 
-with ThreadPoolExecutor() as executor:
-    futures = [executor.submit(run_query, q) for q in optimize_queries_to_be_executed_parallely]
-    results = [f.result() for f in futures]
+    optimize_failed = []
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(run_optimize_query, q): q for q in optimize_queries_to_be_executed_parallely}
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                optimize_failed.append({"query": futures[future], "error": str(e)})
+
+    if optimize_failed:
+        print(f"OPTIMIZE: {len(optimize_failed)} query(ies) failed: {optimize_failed}")
+else:
+    print("Skipping OPTIMIZE due to prior materialization failures.")
 
 # COMMAND ----------
 
 # DBTITLE 1,Execute Vaccum Spark SQL Queries in Parallel
 # Runs all VACUUM commands in paralle to quickly clean up old files from the dashboard tables.
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def run_query(query):
-    return spark.sql(query)
+if execute_flag and not failed_list:
+    def run_vacuum_query(query):
+        return spark.sql(query)
 
-with ThreadPoolExecutor() as executor:
-    futures = [executor.submit(run_query, q) for q in vacuum_queries_to_be_executed_parallely]
-    results = [f.result() for f in futures]
+    vacuum_failed = []
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(run_vacuum_query, q): q for q in vacuum_queries_to_be_executed_parallely}
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                vacuum_failed.append({"query": futures[future], "error": str(e)})
+
+    if vacuum_failed:
+        print(f"VACUUM: {len(vacuum_failed)} query(ies) failed: {vacuum_failed}")
+else:
+    print("Skipping VACUUM due to prior materialization failures.")
 
 # COMMAND ----------
 
