@@ -26,16 +26,37 @@
 
 
 # You need to create widgets before you can see or use them in the UI.
-dbutils.widgets.text('discount', '33')
+dbutils.widgets.text('discount', '0')
 dbutils.widgets.text('currency_conversion', '0')
 dbutils.widgets.text('destination_catalog', 'main')
 dbutils.widgets.text('destination_schema', 'default')
 
 params = dbutils.widgets.getAll()
-discount = params.get('discount') or '33'
+discount = params.get('discount') or '0'
 currency_conversion = params.get('currency_conversion') or '0'
 destination_catalog = params.get('destination_catalog') or 'main'
 destination_schema = params.get('destination_schema') or 'default'
+
+# Calculate the AP-to-Job savings ratio per SKU from list_prices
+spark.sql("""
+  CREATE OR REPLACE TEMP VIEW ap_to_job_savings_ratio AS
+  SELECT
+    ap.cloud,
+    ap.sku_name AS ap_sku_name,
+    ap.pricing.effective_list.default AS ap_rate,
+    job.pricing.effective_list.default AS job_rate,
+    ROUND(
+      1 - (job.pricing.effective_list.default / ap.pricing.effective_list.default),
+      4
+    ) AS savings_ratio
+  FROM system.billing.list_prices ap
+  INNER JOIN system.billing.list_prices job
+    ON job.cloud = ap.cloud
+    AND job.sku_name = REPLACE(ap.sku_name, 'ALL_PURPOSE_COMPUTE', 'JOBS_COMPUTE')
+    AND job.price_start_time = ap.price_start_time
+  WHERE ap.sku_name LIKE '%ALL_PURPOSE_COMPUTE%'
+    AND ap.price_end_time IS NULL
+""")
 
 
 # COMMAND ----------
@@ -45,14 +66,14 @@ destination_schema = params.get('destination_schema') or 'default'
 # MAGIC
 # MAGIC - **queries_to_be_executed_parallely**: for creating materialized dashboard tables,
 # MAGIC - **optimize_queries_to_be_executed_parallely**: for optimizing those tables,
-# MAGIC - **vaccum_queries_to_be_executed_parallely**: for vacuuming (cleaning up) the tables.
+# MAGIC - **vacuum_queries_to_be_executed_parallely**: for vacuuming (cleaning up) the tables.
 # MAGIC
 # MAGIC ###### Each list is executed in parallel to speed up the overall dashboard materialization process.
 # COMMAND ----------
 
 queries_to_be_executed_parallely = []
 optimize_queries_to_be_executed_parallely= []
-vaccum_queries_to_be_executed_parallely=[]
+vacuum_queries_to_be_executed_parallely=[]
 
 # COMMAND ----------
 
@@ -108,12 +129,12 @@ GROUP BY all
 order by total_list_cost desc;"""
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_workload;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_workload;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_workload;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 # COMMAND ----------
 
@@ -187,12 +208,12 @@ WHERE
  GROUP BY all;"""
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.total_cost_and_quantity_interactive_cluster;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.total_cost_and_quantity_interactive_cluster;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.total_cost_and_quantity_interactive_cluster;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -224,11 +245,11 @@ temp as
       case 
     when u.sku_name like '%SERVERLESS%' then 'ALL_PURPOSE_SERVERLESS' 
       else 
-        case when c.cluster_id is null then 'UNKONWN' else c.cluster_id end
+        case when c.cluster_id is null then 'UNKNOWN' else c.cluster_id end
     end as cluster_id,
     case when u.sku_name like '%SERVERLESS%' then 'ALL_PURPOSE_SERVERLESS' 
       else 
-        case when c.cluster_name is null then 'UNKONWN' else c.cluster_name end 
+        case when c.cluster_name is null then 'UNKNOWN' else c.cluster_name end 
     end as cluster_name,
     u.sku_name,
     c.driver_node_type,
@@ -276,12 +297,12 @@ where usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_time
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.all_purpose_cost_by_tags;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.all_purpose_cost_by_tags;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.all_purpose_cost_by_tags;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -353,12 +374,12 @@ SELECT * FROM total_job_runs;
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs_total_job_runs;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs_total_job_runs;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs_total_job_runs;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -416,15 +437,13 @@ WITH usage_cost AS (
 
 SELECT * FROM usage_cost;"""
 
-spark.sql(query)
-
-query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs_total_job_runs;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs_total_job_runs;"
+query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs_usage_cost;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs_usage_cost;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -520,12 +539,12 @@ ORDER BY workspace_name, object_type, object_name;
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.objects_without_tags_best_practices;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.objects_without_tags_best_practices;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.objects_without_tags_best_practices;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 # COMMAND ----------
 
@@ -575,8 +594,8 @@ temp as
 (
   SELECT
     j.usage_date,
-    case when c.cluster_id is null then 'UNKONWN' else c.cluster_id end as cluster_id,
-    case when c.cluster_name is null then 'UNKONWN' else c.cluster_name end as cluster_name,
+    case when c.cluster_id is null then 'UNKNOWN' else c.cluster_id end as cluster_id,
+    case when c.cluster_name is null then 'UNKNOWN' else c.cluster_name end as cluster_name,
     wsinfo.workspace_id as workspace_id,
     wsinfo.workspace_name as workspace_name,
     COUNT(DISTINCT j.run_id) AS total_job_runs,
@@ -590,8 +609,8 @@ INNER JOIN system.access.workspaces_latest wsinfo
 INNER JOIN latest_clusters c ON c.cluster_id = j.cluster_id
 GROUP BY 
     j.usage_date,
-    case when c.cluster_id is null then 'UNKONWN' else c.cluster_id end,
-    case when c.cluster_name is null then 'UNKONWN' else c.cluster_name end,
+    case when c.cluster_id is null then 'UNKNOWN' else c.cluster_id end,
+    case when c.cluster_name is null then 'UNKNOWN' else c.cluster_name end,
     wsinfo.workspace_id,
     wsinfo.workspace_name
 )
@@ -599,12 +618,12 @@ GROUP BY
 select * from temp"""
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.total_ap_job_run_state_analysis;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.total_ap_job_run_state_analysis;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.total_ap_job_run_state_analysis;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 # COMMAND ----------
 
@@ -655,12 +674,12 @@ GROUP BY all;
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.total_cost_and_quantity_YTD;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.total_cost_and_quantity_YTD;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.total_cost_and_quantity_YTD;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -850,12 +869,12 @@ FROM
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.total_cost_and_quantity_job;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.total_cost_and_quantity_job;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.total_cost_and_quantity_job;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 # COMMAND ----------
@@ -1069,6 +1088,7 @@ usage_cost AS (
     t2.workspace_id AS workspace_id,
     t2.workspace_name AS workspace_name,
     CONCAT('https://', t2.workspace_url) AS workspace_url,
+    usage.cloud,
     usage.usage_metadata.cluster_id AS cluster_id,
     usage.usage_metadata.job_id,
     usage.sku_name,
@@ -1145,11 +1165,15 @@ ap_detail AS (
   SELECT 
     usage.workspace_id,
     usage.workspace_name,
-    usage.usage_date,SUM(usage.total_cost) * 0.454 AS potential_saving_eur
+    usage.usage_date,
+    SUM(usage.total_cost * sr.savings_ratio) AS potential_saving_eur
   FROM total_job_runs j
   INNER JOIN usage_cost usage
     ON usage.workspace_id = j.workspace_id
    AND usage.cluster_id   = j.cluster_id
+  INNER JOIN ap_to_job_savings_ratio sr
+    ON usage.cloud = sr.cloud
+   AND usage.sku_name = sr.ap_sku_name
   GROUP BY all
 ),
 
@@ -1170,12 +1194,12 @@ combined AS (
 select * from combined;"""
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.mom_potential_saving_trend;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.mom_potential_saving_trend;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.mom_potential_saving_trend;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -1308,12 +1332,12 @@ WHERE u.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_ti
 GROUP BY all;"""
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.total_job_run_and_result_status;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.total_job_run_and_result_status;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.total_job_run_and_result_status;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 # COMMAND ----------
 
@@ -1448,12 +1472,12 @@ FROM
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.jobs_no_scaling;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.jobs_no_scaling;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.jobs_no_scaling;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 # COMMAND ----------
@@ -1575,12 +1599,12 @@ WHERE
 ORDER BY t1.create_time DESC;"""
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.jobs_using_outdated_dbr_version;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.jobs_using_outdated_dbr_version;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.jobs_using_outdated_dbr_version;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -1655,12 +1679,12 @@ FROM
 
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.active_clusters_wo_auto_termination;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.active_clusters_wo_auto_termination;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.active_clusters_wo_auto_termination;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -1710,12 +1734,12 @@ FROM
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.cluster_with_no_spot_instances;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.cluster_with_no_spot_instances;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.cluster_with_no_spot_instances;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 # COMMAND ----------
@@ -1728,6 +1752,7 @@ with usage_cost AS (
     t2.workspace_id AS workspace_id,
     t2.workspace_name AS workspace_name,
     CONCAT('https://', t2.workspace_url) AS workspace_url,
+    usage.cloud,
     usage.usage_metadata.cluster_id AS cluster_id,
     usage.usage_metadata.job_id,
     usage.sku_name,
@@ -1824,12 +1849,15 @@ temp AS (
     usage.usage_date,
     SUM(j.total_job_runs) AS total_job_runs,
     SUM(usage.total_cost) AS total_cost,
-    SUM(usage.total_cost)*0.454 AS potential_saving,  --list price is different
+    SUM(usage.total_cost * sr.savings_ratio) AS potential_saving,
     MAX(j.last_used_date) AS last_used_date
   FROM total_job_runs j
   INNER JOIN usage_cost usage
     ON usage.workspace_id = j.workspace_id
    AND usage.cluster_id   = j.cluster_id
+  INNER JOIN ap_to_job_savings_ratio sr
+    ON usage.cloud = sr.cloud
+   AND usage.sku_name = sr.ap_sku_name
   GROUP BY all
 )
 
@@ -1840,12 +1868,12 @@ FROM
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.ap_cluster_by_job_runs;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 # COMMAND ----------
@@ -1915,13 +1943,10 @@ WITH serverless_usage_cost AS (
           u.usage_quantity
           * lp.pricing.effective_list.default
           * (1 - ({discount} / 100.0))
-          * (
-              CASE
-                  WHEN '{currency_conversion}' = '' OR '{currency_conversion}' = '0'
-                      THEN 1
-                  ELSE CAST('{currency_conversion}' AS DOUBLE)
-              END
-            )
+          * CASE
+              WHEN {currency_conversion} = 0 THEN 1
+              ELSE {currency_conversion}
+            END
         ),
         2
       ) AS total_cost
@@ -1987,12 +2012,12 @@ SELECT * FROM serverless_usage_cost;
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.serverless_usage_metrics;"
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.serverless_usage_metrics;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.serverless_usage_metrics;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 # COMMAND ----------
@@ -2031,11 +2056,11 @@ SELECT
     ws.workspace_name as workspace_name,  
 
     CASE 
-      WHEN c.warehouse_id IS NULL THEN 'UNKONWN' ELSE c.warehouse_id
+      WHEN c.warehouse_id IS NULL THEN 'UNKNOWN' ELSE c.warehouse_id
     END as warehouse_id,
 
     CASE 
-      WHEN c.warehouse_name IS NULL THEN 'UNKONWN' ELSE c.warehouse_name  
+      WHEN c.warehouse_name IS NULL THEN 'UNKNOWN' ELSE c.warehouse_name  
     END as warehouse_name,
     c.warehouse_status,
     c.warehouse_type,
@@ -2083,12 +2108,12 @@ GROUP BY ALL
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_warehouse;"
 
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_warehouse;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_warehouse;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 # COMMAND ----------
@@ -2136,12 +2161,12 @@ where we.event_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_t
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.idle_warehouse;"
 
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.idle_warehouse;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.idle_warehouse;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -2150,7 +2175,7 @@ vaccum_queries_to_be_executed_parallely.append(query_vaccum)
 # DBTITLE 1,auto_stop_minutes_warehouse
 ## Explain the query: This query provides the information who has higher than 30 mins auto-stop for SQL warehouse.
 
-query = f"""CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.auto_stop_minutes_warehouse
+query = f"""CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.auto_stop_minutes_warehouse AS
 WITH latest_warehouses AS (
   SELECT *
   FROM (
@@ -2210,12 +2235,12 @@ order by t1.auto_stop_minutes DESC
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.auto_stop_minutes_warehouse;"
 
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.auto_stop_minutes_warehouse;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.auto_stop_minutes_warehouse;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 
@@ -2225,7 +2250,7 @@ vaccum_queries_to_be_executed_parallely.append(query_vaccum)
 # DBTITLE 1,warehouse_channel_preview
 ## Explain the query: This query return the row that has been set "Preview" channel for SQL warehouse.
 
-query = f"""CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.warehouse_channel_preview
+query = f"""CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.warehouse_channel_preview AS
 WITH latest_warehouses AS (
   SELECT *
   FROM (
@@ -2246,11 +2271,11 @@ SELECT
     ws.workspace_name as workspace_name,  
 
     CASE 
-      WHEN c.warehouse_id IS NULL THEN 'UNKONWN' ELSE c.warehouse_id
+      WHEN c.warehouse_id IS NULL THEN 'UNKNOWN' ELSE c.warehouse_id
     END as warehouse_id,
 
     CASE 
-      WHEN c.warehouse_name IS NULL THEN 'UNKONWN' ELSE c.warehouse_name  
+      WHEN c.warehouse_name IS NULL THEN 'UNKNOWN' ELSE c.warehouse_name  
     END as warehouse_name,
     c.warehouse_status,
     c.change_time,
@@ -2276,12 +2301,12 @@ WHERE
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.warehouse_channel_preview;"
 
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.warehouse_channel_preview;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.warehouse_channel_preview;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 
 # COMMAND ----------
@@ -2289,7 +2314,7 @@ vaccum_queries_to_be_executed_parallely.append(query_vaccum)
 # DBTITLE 1,warehouse_most_uptime
 ## Explain the query: This query calculates warehouse uptime based on event logs and configuration data, returning a list of all warehouses ordered by total uptime.
 
-query=f"""CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.warehouse_most_uptime
+query=f"""CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.warehouse_most_uptime AS
 WITH latest_warehouses AS (
   SELECT *
   FROM (
@@ -2387,12 +2412,12 @@ ORDER BY
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.warehouse_most_uptime;"
 
-query_vaccum=f"VACUUM {destination_catalog}.{destination_schema}.warehouse_most_uptime;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.warehouse_most_uptime;"
 
 
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
-vaccum_queries_to_be_executed_parallely.append(query_vaccum)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 # COMMAND ----------
 
@@ -2501,10 +2526,10 @@ def run_query(query):
     return spark.sql(query)
 
 with ThreadPoolExecutor() as executor:
-    futures = [executor.submit(run_query, q) for q in vaccum_queries_to_be_executed_parallely]
+    futures = [executor.submit(run_query, q) for q in vacuum_queries_to_be_executed_parallely]
     results = [f.result() for f in futures]
 
 # COMMAND ----------
 
-if final_df_status.filter(final_df_status.status != "success").count() > 0:
+if execute_flag and final_df_status.filter(final_df_status.status != "success").count() > 0:
     raise Exception("One or more queries did not succeed. Check final_df_status for details.")
