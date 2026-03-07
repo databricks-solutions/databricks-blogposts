@@ -1279,8 +1279,8 @@ SELECT
     COUNT(DISTINCT CASE WHEN result_state = 'TIMED_OUT' THEN run_id END) AS timeout_count,
     COUNT(DISTINCT CASE WHEN result_state = 'ERROR' THEN run_id END) AS error_count,
     COUNT(DISTINCT CASE WHEN result_state = 'CANCELLED' THEN run_id END) AS cancelled_count,
-    ROUND((COUNT(DISTINCT CASE WHEN result_state != 'SUCCEEDED' THEN run_id END) / COUNT(*)) * 100, 2) AS failure_rate_percent,
-    ROUND((COUNT(DISTINCT CASE WHEN result_state = 'SUCCEEDED' THEN run_id END) / COUNT(*)) * 100, 2) AS success_rate_percent,
+    ROUND((COUNT(DISTINCT CASE WHEN result_state != 'SUCCEEDED' THEN run_id END) / COUNT(DISTINCT run_id)) * 100, 2) AS failure_rate_percent,
+    ROUND((COUNT(DISTINCT CASE WHEN result_state = 'SUCCEEDED' THEN run_id END) / COUNT(DISTINCT run_id)) * 100, 2) AS success_rate_percent,
     SUM(u.usage_quantity) AS total_usage_quantity_dbu,
     ROUND(
         SUM(
