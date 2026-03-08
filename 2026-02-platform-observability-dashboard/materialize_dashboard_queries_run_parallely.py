@@ -340,6 +340,7 @@ job_runs AS (
   INNER JOIN system.access.workspaces_latest t2
     ON j.account_id = t2.account_id
     AND j.workspace_id = t2.workspace_id
+  WHERE j.period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
   QUALIFY rn = 1
 ),
 total_job_runs AS (
@@ -353,16 +354,15 @@ total_job_runs AS (
     COUNT(DISTINCT CASE WHEN j.result_state = 'SUCCEEDED' THEN j.run_id END) AS successful_runs,
     COUNT(DISTINCT CASE WHEN j.result_state != 'SUCCEEDED' THEN j.run_id END) AS failed_runs,
     ROUND(
-      CAST(COUNT(DISTINCT CASE WHEN j.result_state != 'SUCCEEDED' THEN j.run_id END) AS DOUBLE) 
+      CAST(COUNT(DISTINCT CASE WHEN j.result_state != 'SUCCEEDED' THEN j.run_id END) AS DOUBLE)
       / COUNT(DISTINCT j.run_id) * 100, 2
     ) AS failure_rate_percent,
     ROUND(
-      CAST(COUNT(DISTINCT CASE WHEN j.result_state = 'SUCCEEDED' THEN j.run_id END) AS DOUBLE) 
+      CAST(COUNT(DISTINCT CASE WHEN j.result_state = 'SUCCEEDED' THEN j.run_id END) AS DOUBLE)
       / COUNT(DISTINCT j.run_id) * 100, 2
     ) AS success_rate_percent
   FROM job_runs j
   LEFT JOIN latest_clusters c ON c.cluster_id = j.cluster_id
-  AND j.period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
   GROUP BY 
     c.cluster_id,
     c.cluster_name,
