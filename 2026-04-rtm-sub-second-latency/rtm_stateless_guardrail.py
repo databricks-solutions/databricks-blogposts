@@ -32,7 +32,7 @@
 # MAGIC - Kafka cluster with input/output topics
 # MAGIC
 # MAGIC **Features:**
-# MAGIC - Sub-second latency (~5ms to ~300ms depending on workload complexity) with RTM trigger
+# MAGIC - Sub-second latency (~5ms to ~100ms depending on workload complexity) with RTM trigger
 # MAGIC - Sensitive data detection (PII, credentials)
 # MAGIC - Validation rules for transaction guardrails
 # MAGIC - Dynamic topic routing (ALLOW/QUARANTINE)
@@ -843,7 +843,7 @@ df_output = df_with_topic.select(
 # MAGIC
 # MAGIC | Metric | Micro-Batch | Real-Time Mode |
 # MAGIC |--------|-------------|----------------|
-# MAGIC | Latency | 1-10 seconds | ~5ms to ~300ms (p99 latencies typically range from a few milliseconds to ~300ms based on transformation complexity) |
+# MAGIC | Latency | 1-10 seconds | ~5ms to ~100ms (p99 latencies typically range typically under 100ms based on transformation complexity) |
 # MAGIC | Checkpoint Frequency | Every micro-batch | Every 5+ minutes |
 # MAGIC | State Management | Process-then-checkpoint | Continuous within long-running batch |
 # MAGIC | Use Cases | ETL, analytics, medallion architecture | Fraud detection, real-time routing, operational decisions |
@@ -873,7 +873,7 @@ df_output = df_with_topic.select(
 # MAGIC
 # MAGIC **Expected Behavior:**
 # MAGIC - Query starts immediately and runs continuously
-# MAGIC - Events processed with ~5ms to ~300ms latency depending on workload complexity (RTM)
+# MAGIC - Events processed with ~5ms to ~100ms latency depending on workload complexity (RTM)
 # MAGIC - Checkpoints written every 5 minutes (durability)
 # MAGIC - Output split across two topics: `-allowed` and `-quarantine`
 # MAGIC
@@ -925,7 +925,7 @@ print(f"  Checkpoint Interval: {RTM_CHECKPOINT_INTERVAL}")
 print(f"  Output Topics:")
 print(f"    - ALLOW: {OUTPUT_TOPIC}-allowed")
 print(f"    - QUARANTINE: {OUTPUT_TOPIC}-quarantine")
-print(f"  Expected Latency: ~5ms to ~300ms depending on workload complexity (end-to-end)")
+print(f"  Expected Latency: ~5ms to ~100ms depending on workload complexity (end-to-end)")
 print("=" * 80)
 print("\nMonitoring:")
 print("  - Spark UI → Streaming tab for metrics")
