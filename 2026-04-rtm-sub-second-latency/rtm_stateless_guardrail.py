@@ -25,10 +25,10 @@
 # MAGIC
 # MAGIC ### What Makes This RTM-Compatible?
 # MAGIC
-# MAGIC - **Stateless operations**: No windowing, watermarks, or joins that require state management
+# MAGIC - **Stateless by design**: This pipeline uses simple transformations for maximum throughput. RTM also supports windowing, aggregations, and stream-table joins.
 # MAGIC - **Native Spark SQL**: Uses built-in functions instead of Python UDFs
 # MAGIC - **Efficient checkpointing**: 5-minute intervals (not per-micro-batch)
-# MAGIC - **Update output mode**: Required for RTM (no aggregations or appends)
+# MAGIC - **Update output mode**: Required for RTM. Aggregations are supported; append mode is not.
 # MAGIC
 # MAGIC **Requirements:**
 # MAGIC - Databricks Runtime 16.4 LTS or later
@@ -36,7 +36,7 @@
 # MAGIC - Kafka cluster with input/output topics
 # MAGIC
 # MAGIC **Features:**
-# MAGIC - Sub-second latency (5-50ms) with RTM trigger
+# MAGIC - Sub-second latency (~5ms to ~300ms depending on workload complexity) with RTM trigger
 # MAGIC - Sensitive data detection (PII, credentials)
 # MAGIC - Validation rules for transaction guardrails
 # MAGIC - Dynamic topic routing (ALLOW/QUARANTINE)
@@ -116,12 +116,14 @@ SCHEMA = "default"
 
 # CRITICAL: Use stable checkpoint path for production recovery
 # DO NOT use UUID in checkpoint path - breaks recovery after restart
-# Checkpoints store streaming state and offset tracking for exactly-once processing
+# Checkpoints store streaming state and offset tracking for at-least-once delivery
 CHECKPOINT_LOCATION = f"/tmp/Volumes/{CATALOG}/{SCHEMA}/checkpoints/rtm_guardrail_ethereum_blocks"
 
 # RTM checkpointing frequency - minimum 5 minutes recommended for stateless pipelines
-# Why 5 minutes? RTM processes data in real-time (micro-batches), but only checkpoints
-# periodically to reduce I/O overhead. For stateless pipelines, 5-10 minutes is optimal.
+# Why 5 minutes? RTM executes long-running batches (default 5 minutes) that continuously
+# process data as it arrives, with streaming shuffle passing data between stages immediately
+# - NOT micro-batching. Checkpointing periodically reduces I/O overhead. For stateless
+# pipelines, 5-10 minutes is optimal.
 RTM_CHECKPOINT_INTERVAL = "5 minutes"
 
 # COMMAND ----------
@@ -135,12 +137,13 @@ RTM_CHECKPOINT_INTERVAL = "5 minutes"
 # MAGIC
 # MAGIC **Key Configurations:**
 # MAGIC
-# MAGIC 1. **RocksDB State Store**: Even for "stateless" pipelines, this is a best practice
+# MAGIC 1. **RocksDB State Store**: Note: This truly stateless pipeline (no aggregations, no dedup, no state) doesn't use a state store.
+# MAGIC    These settings are included for future-proofing if stateful operations are added later.
 # MAGIC    - Faster state recovery if pipeline restarts
 # MAGIC    - Better handling of checkpoint metadata
 # MAGIC    - Production-grade durability
 # MAGIC
-# MAGIC 2. **Changelog Checkpointing**: Reduces checkpoint latency by writing incremental changes
+# MAGIC 2. **Changelog Checkpointing**: Reduces checkpoint latency by writing incremental changes (when state is present)
 # MAGIC    - Without: Full state snapshot on every checkpoint (slow)
 # MAGIC    - With: Only delta changes written (fast)
 # MAGIC
@@ -163,14 +166,15 @@ RTM_CHECKPOINT_INTERVAL = "5 minutes"
 spark = SparkSession.builder.getOrCreate()
 
 # RocksDB State Store - Required for production stateful operations
-# Even for "stateless" pipelines, set this as a production best practice
-# RocksDB provides fast, reliable state management with checkpoint recovery
+# Note: This truly stateless pipeline (no aggregations, no dedup, no state) doesn't use
+# a state store. These settings are included for future-proofing if stateful operations
+# are added later. RocksDB provides fast, reliable state management with checkpoint recovery.
 spark.conf.set(
     "spark.sql.streaming.stateStore.providerClass",
     "com.databricks.sql.streaming.state.RocksDBStateStoreProvider"
 )
 
-# Enable changelog checkpointing for faster recovery
+# Enable changelog checkpointing for faster recovery (when state is present)
 # Instead of writing full state snapshots, only writes incremental changes
 # This dramatically reduces checkpoint I/O and improves recovery time
 spark.conf.set(
@@ -219,7 +223,7 @@ print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}
 # MAGIC    - Email: `user@example.com`
 # MAGIC
 # MAGIC **Why Native Spark SQL Instead of UDF?**
-# MAGIC - **RTM Requirement**: UDFs break RTM's optimizations
+# MAGIC - **Performance best practice**: Native Spark SQL functions avoid Python serialization overhead and are faster than UDFs. Python UDFs are supported in RTM but have higher latency.
 # MAGIC - **Performance**: Native functions execute in JVM, UDFs require Python serialization
 # MAGIC - **Scalability**: Native functions auto-vectorize across partitions
 # MAGIC
@@ -347,7 +351,7 @@ ethereum_block_schema = StructType([
 # MAGIC **Consumer Group ID:**
 # MAGIC - `rtm-guardrail-ethereum`: Unique identifier for this application
 # MAGIC - Used for offset tracking and consumer coordination
-# MAGIC - Enables exactly-once processing semantics
+# MAGIC - At-least-once delivery semantics: RTM with Kafka sink provides at-least-once guarantees. Exactly-once output sinks are not supported in RTM.
 
 # COMMAND ----------
 
@@ -831,7 +835,7 @@ df_output = df_with_topic.select(
 # MAGIC
 # MAGIC | Metric | Micro-Batch | Real-Time Mode |
 # MAGIC |--------|-------------|----------------|
-# MAGIC | Latency | 1-10 seconds | 5-50 milliseconds |
+# MAGIC | Latency | 1-10 seconds | ~5ms to ~300ms (p99 latencies typically range from a few milliseconds to ~300ms based on transformation complexity) |
 # MAGIC | Checkpoint Frequency | Every micro-batch | Every 5+ minutes |
 # MAGIC | State Management | Per-batch | Continuous |
 # MAGIC | Use Cases | Batch analytics | Operational guardrails |
@@ -856,12 +860,12 @@ df_output = df_with_topic.select(
 # MAGIC
 # MAGIC 4. **Checkpoint Location**
 # MAGIC    - Stores streaming state and Kafka offsets
-# MAGIC    - Enables exactly-once processing semantics
+# MAGIC    - At-least-once delivery semantics: RTM with Kafka sink provides at-least-once guarantees. Exactly-once output sinks are not supported in RTM.
 # MAGIC    - Must be stable path (no UUIDs) for recovery after restart
 # MAGIC
 # MAGIC **Expected Behavior:**
 # MAGIC - Query starts immediately and runs continuously
-# MAGIC - Events processed with 5-50ms latency (RTM)
+# MAGIC - Events processed with ~5ms to ~300ms latency depending on workload complexity (RTM)
 # MAGIC - Checkpoints written every 5 minutes (durability)
 # MAGIC - Output split across two topics: `-allowed` and `-quarantine`
 # MAGIC
@@ -896,7 +900,7 @@ query = (
     .format("kafka")                                    # Use Kafka sink
     .options(**write_kafka_options)                     # Apply connection settings
     # Note: No .option("topic", ...) - using dynamic topic column
-    .option("checkpointLocation", CHECKPOINT_LOCATION)  # Enable exactly-once processing
+    .option("checkpointLocation", CHECKPOINT_LOCATION)  # Enable at-least-once delivery
     .option("queryName", "rtm-ethereum-guardrail")      # Named query for monitoring
     .outputMode("update")                               # Required for RTM
     .trigger(realTime=RTM_CHECKPOINT_INTERVAL)          # Enable RTM with 5-min checkpoints
@@ -913,7 +917,7 @@ print(f"  Checkpoint Interval: {RTM_CHECKPOINT_INTERVAL}")
 print(f"  Output Topics:")
 print(f"    - ALLOW: {OUTPUT_TOPIC}-allowed")
 print(f"    - QUARANTINE: {OUTPUT_TOPIC}-quarantine")
-print(f"  Expected Latency: 5-50ms (end-to-end)")
+print(f"  Expected Latency: ~5ms to ~300ms depending on workload complexity (end-to-end)")
 print("=" * 80)
 print("\nMonitoring:")
 print("  - Spark UI → Streaming tab for metrics")
