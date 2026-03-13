@@ -91,9 +91,9 @@ spark.conf.set(
 )
 
 # Real-Time Mode configuration
-# Note: These may also need to be set at cluster level (see cluster_config.json)
+# NOTE: spark.shuffle.manager MUST be set at cluster level (see cluster_config.json)
+# It cannot be modified at runtime - will throw CANNOT_MODIFY_CONFIG error
 spark.conf.set("spark.databricks.streaming.realTime.enabled", "true")
-spark.conf.set("spark.shuffle.manager", "org.apache.spark.shuffle.streaming.MultiShuffleManager")
 
 # Reduce shuffle partitions for lower latency
 spark.conf.set("spark.sql.shuffle.partitions", "8")
@@ -103,6 +103,7 @@ print("RTM Configuration Applied:")
 print(f"  - RocksDB Provider: {spark.conf.get('spark.sql.streaming.stateStore.providerClass')}")
 print(f"  - Changelog Checkpointing: {spark.conf.get('spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled')}")
 print(f"  - RTM Enabled: {spark.conf.get('spark.databricks.streaming.realTime.enabled')}")
+print(f"  - Shuffle Manager: {spark.conf.get('spark.shuffle.manager')} (set at cluster level)")
 print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}")
 
 # COMMAND ----------
