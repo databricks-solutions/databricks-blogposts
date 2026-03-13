@@ -62,7 +62,16 @@ RP_KAFKA_OPTIONS = {
     "kafka.ssl.endpoint.identification.algorithm": "https",
 }
 
-# Optimize shuffle partitions for streaming
+# =============================================================================
+# REAL-TIME MODE CONFIGURATION (Best Practices)
+# =============================================================================
+# Enable Real-Time Mode for sub-second latency
+spark.conf.set("spark.databricks.streaming.realTimeMode.enabled", "true")
+
+# Use streaming-optimized shuffle manager
+spark.conf.set("spark.shuffle.manager", "org.apache.spark.shuffle.streaming.MultiShuffleManager")
+
+# Optimize shuffle partitions for streaming (match cluster cores)
 spark.conf.set("spark.sql.shuffle.partitions", "8")
 
 # COMMAND ----------
