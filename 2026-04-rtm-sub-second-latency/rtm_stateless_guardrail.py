@@ -252,7 +252,7 @@ df_enriched = (
 # MAGIC ## 7. Write to Kafka with Real-Time Mode
 # MAGIC
 # MAGIC **Key Configuration**:
-# MAGIC - `.trigger(realTime="1 minutes")` - Enables Real-Time Mode with 1-minute timeout
+# MAGIC - `.trigger(realTime="5 minutes")` - Enables Real-Time Mode (5-minute minimum recommended)
 # MAGIC - `.outputMode("update")` - Required for RTM
 # MAGIC
 # MAGIC Real-Time Mode achieves sub-second latency (5-50ms) by:
@@ -270,7 +270,7 @@ query = (
     .option("checkpointLocation", CHECKPOINT_LOCATION)
     .option("queryName", f"rtm-stateless-guardrail-{OUTPUT_TOPIC}")
     .outputMode("update")  # Required for Real-Time Mode
-    .trigger(realTime="1 minutes")  # Enable RTM with 1-minute timeout
+    .trigger(realTime="5 minutes")  # Enable RTM (5-minute minimum recommended)
     .start()
 )
 
