@@ -1,87 +1,260 @@
-# Unlocking Sub-Second Latency with Spark Real-Time Mode
+# Real-Time Mode (RTM) Sub-Second Latency Demo
 
-This folder contains the companion code for the blog post:
-**[Unlocking Sub-Second Latency with Spark Structured Streaming Real-Time Mode](https://www.canadiandataguy.com/p/unlocking-sub-second-latency-with)**
+This demo showcases Databricks Real-Time Mode (RTM) for achieving sub-second latency (5-50ms) in streaming pipelines. It implements a stateless guardrail pipeline that validates Ethereum blockchain events in real-time.
+
+**Blog Post**: [Unlocking Sub-Second Latency with Spark Structured Streaming Real-Time Mode](https://www.canadiandataguy.com/p/unlocking-sub-second-latency-with)
 
 ## Overview
 
-Demonstrates how to use Spark Structured Streaming's **Real-Time Mode (RTM)** to achieve sub-second latency (as low as 5ms) for stateless streaming pipelines. The example implements an operational guardrail pattern that:
+Real-Time Mode eliminates micro-batch scheduling overhead by processing records as they arrive, achieving consistent 5-50ms latency versus 200ms+ with traditional micro-batch processing.
 
-- Reads Ethereum blockchain data from Kafka (Redpanda)
-- Validates payloads for sensitive data patterns (emails, JWT tokens, AWS keys)
-- Checks data quality rules (gas_used > gas_limit)
-- Routes events to ALLOW or QUARANTINE based on validation results
-- Writes enriched results back to Kafka with sub-second latency
+**Use Cases:**
+- Fraud detection
+- IoT alerting
+- Security signal processing
+- Operational guardrails
+- Blockchain event validation
 
 ## Requirements
 
-- Databricks Runtime 16.4 LTS or later
-- Real-Time Mode enabled on your cluster
-- Kafka-compatible message broker (Kafka, Redpanda, Confluent Cloud)
+- **Databricks Runtime**: 16.4 LTS or later
+- **Compute**: **Dedicated (single-user) clusters ONLY**
+  - Serverless NOT supported
+  - Shared access mode NOT supported
+  - DLT/Lakeflow Pipelines NOT supported
+- **Autoscaling**: **MUST be DISABLED** - RTM requires fixed cluster size
+- **Photon**: **NOT supported** - do not enable Photon acceleration
+- **Output Mode**: **`update` mode REQUIRED** - append/complete not supported
+- **Kafka**: Confluent Cloud, Redpanda, or self-managed Kafka cluster
+- **Permissions**: Access to create checkpoints in Unity Catalog Volumes
+
+> **Critical**: RTM has strict compute requirements. Use dedicated clusters with fixed worker count, no Photon, and `outputMode("update")`.
+
+## Supported Operations
+
+| Supported | NOT Supported |
+|-----------|---------------|
+| Stateless transformations | forEachBatch |
+| Aggregations (count, sum) | Stream-stream joins |
+| Tumbling/Sliding windows | Session windows |
+| Deduplication (dropDuplicates) | mapPartitions |
+| Stream-table joins (broadcast) | mapGroupsWithState |
+| transformWithState | Self-union (same source) |
+| Union of multiple streams | |
+| foreachWriter (custom sinks) | |
+
+## Supported Sources & Sinks
+
+**Sources:** Kafka, AWS MSK, Event Hubs (Kafka connector), Kinesis (EFO mode only)
+
+**Sinks:** Kafka, Event Hubs, Delta Lake, foreachWriter (for JDBC/custom)
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `rtm_stateless_guardrail.py` | Main streaming pipeline with Real-Time Mode |
-| `cluster_config.json` | Recommended cluster configuration for RTM |
+| `rtm_stateless_guardrail.py` | Main notebook - RTM guardrail pipeline (Kafka to Kafka) |
+| `cluster_config.json` | Cluster configuration with RTM settings |
+| `test_rtm_guardrail.py` | Local Python tests for regex patterns and validation logic |
+| `produce_test_data.py` | Test data producer for sending sample events |
+| `README.md` | This documentation |
 
-## Key Configuration
+## Quick Start
 
-### Real-Time Mode Trigger
+1. **Create Cluster**: Import `cluster_config.json` or apply the Spark configurations manually
+2. **Configure Secrets**: Set up Kafka credentials in Databricks secrets:
+   ```bash
+   databricks secrets create-scope rtm-demo
+   databricks secrets put-secret rtm-demo kafka-bootstrap-servers
+   databricks secrets put-secret rtm-demo kafka-username
+   databricks secrets put-secret rtm-demo kafka-password
+   ```
+3. **Create Topics**: Create input/output Kafka topics
+4. **Run**: Execute the notebook cells in order
+
+## Checkpoint Best Practices
+
+### Stable Checkpoint Paths
+
+**CRITICAL**: Never use dynamic values (UUIDs, timestamps) in checkpoint paths for production streams.
 
 ```python
-.trigger(realTime="1 minutes")  # Enables sub-second latency
+# BAD - breaks recovery after restart
+CHECKPOINT_LOCATION = f"/Volumes/.../rtm_guardrail_{uuid.uuid4()}"
+
+# GOOD - stable path enables recovery
+CHECKPOINT_LOCATION = "/Volumes/catalog/schema/checkpoints/rtm_guardrail_ethereum_blocks"
 ```
 
-### Output Mode Requirement
+**Why it matters:**
+- Checkpoints contain the query ID and offset tracking state
+- A new checkpoint path = new query ID = cannot resume from previous offsets
+- After restart, the stream would either miss data or reprocess everything
 
-When using Real-Time Mode, output must use `update` mode:
+### Checkpoint Naming Convention
+
+Follow a meaningful naming pattern:
+```
+/Volumes/{catalog}/{schema}/checkpoints/{pipeline_name}_{source_topic}
+```
+
+### Checkpoint Protection
+
+1. **Never delete checkpoints** in production without understanding the implications
+2. **Enable access logging** on the checkpoint volume for audit trails
+3. **Use Unity Catalog Volumes** with proper access controls
+4. **Document checkpoint ownership** - which job/team owns each checkpoint
+
+## Rate Limiting
+
+Use `maxOffsetsPerTrigger` to control backpressure and prevent overwhelming downstream systems:
 
 ```python
-.outputMode("update")
+.option("maxOffsetsPerTrigger", 100000)  # Process max 100k messages per trigger
 ```
 
-### Cluster Settings
+**Guidelines:**
+- Start with a conservative limit (e.g., 100,000)
+- Monitor `inputRowsPerSecond` vs `processedRowsPerSecond`
+- Increase limit if processing is consistently faster than input
+- Decrease limit if you see batch duration spikes
 
-Real-Time Mode requires specific cluster configurations. See `cluster_config.json` for recommended settings.
+## Compute Sizing for RTM
 
-## Architecture
+RTM requires all query stages to run simultaneously. Calculate required task slots:
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
-│   Kafka     │────▶│  RTM Pipeline    │────▶│   Kafka     │
-│   Source    │     │  (Guardrails)    │     │   Sink      │
-└─────────────┘     └──────────────────┘     └─────────────┘
-                           │
-                    ┌──────┴──────┐
-                    │ Validations │
-                    │ - PII scan  │
-                    │ - Data QA   │
-                    │ - Routing   │
-                    └─────────────┘
+Required slots = source_partitions + (shuffle_partitions x number_of_stages)
 ```
 
-## Usage
+| Pipeline Type | Configuration | Required Slots |
+|---------------|---------------|----------------|
+| Single-stage stateless | 8 Kafka partitions | 8 |
+| Two-stage stateful | 8 partitions + 20 shuffle | 28 |
+| Three-stage complex | 8 + 20 + 20 shuffle | 48 |
 
-1. Update the Kafka connection settings in `rtm_stateless_guardrail.py`
-2. Create the input and output Kafka topics
-3. Run the notebook on a DBR 16.4+ cluster with RTM enabled
-4. Monitor latency in the Spark UI streaming tab
+**Best Practices:**
+- Target ~50% cluster utilization for headroom
+- Set `maxPartitions` to consolidate Kafka partitions per task
+- Use `spark.sql.shuffle.partitions` = 8-20 (not default 200)
 
-## Performance
+## State Store Configuration
 
-With Real-Time Mode enabled:
-- **Latency**: 5-50ms (vs 200ms+ with micro-batch)
-- **Throughput**: Maintains high throughput while reducing latency
-- **Use Case**: Ideal for fraud detection, security signals, IoT alerting
+### RocksDB for All Streaming Jobs
+
+Even for "stateless" pipelines, configure RocksDB as the state store provider:
+
+```python
+spark.conf.set("spark.sql.streaming.stateStore.providerClass",
+    "com.databricks.sql.streaming.state.RocksDBStateStoreProvider")
+
+spark.conf.set("spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled",
+    "true")
+```
+
+**Why:**
+- Better performance for any stateful operations
+- Faster checkpoint recovery with changelog checkpointing
+- Required if you ever add stateful operations (aggregations, dedup, joins)
+- Consistent behavior across all streaming pipelines
+
+## Kafka Configuration
+
+### Timeout Settings
+
+Configure appropriate timeouts for production stability:
+
+```python
+kafka_options = {
+    "kafka.bootstrap.servers": bootstrap_servers,
+    "kafka.request.timeout.ms": "60000",  # 60 seconds
+    "kafka.session.timeout.ms": "30000",  # 30 seconds
+    "maxOffsetsPerTrigger": "100000",     # Rate limiting
+    "kafka.group.id": "rtm-guardrail-app" # Consumer group tracking
+}
+```
+
+### Consumer Group ID
+
+Always set `kafka.group.id` for:
+- Tracking consumer lag in Kafka monitoring tools
+- Identifying your application in broker logs
+- Proper offset management
+
+## Production Considerations
+
+### Secrets Management
+
+**Never hardcode credentials.** Use Databricks secrets:
+
+```python
+# Good - secrets manager
+KAFKA_USERNAME = dbutils.secrets.get(scope="rtm-demo", key="kafka-username")
+KAFKA_PASSWORD = dbutils.secrets.get(scope="rtm-demo", key="kafka-password")
+
+# Bad - hardcoded
+KAFKA_USERNAME = "my-username"  # NEVER DO THIS
+```
+
+### Monitoring Alerts
+
+Set up alerts for:
+
+| Metric | Alert Threshold | Action |
+|--------|-----------------|--------|
+| `inputRowsPerSecond` == 0 | > 5 minutes | Check Kafka connectivity |
+| `processedRowsPerSecond` < `inputRowsPerSecond` | Sustained | Scale cluster or increase partitions |
+| Batch duration | > 1 second for RTM | Check for data skew or resource contention |
+| Query status | Not active | Page on-call |
+
+### Dynamic Topic Routing
+
+Route ALLOW and QUARANTINE events to separate topics for different downstream processing:
+
+```python
+df_with_topic = df_enriched.withColumn(
+    "topic",
+    F.when(F.col("is_quarantined"), F.lit(f"{OUTPUT_TOPIC}-quarantine"))
+     .otherwise(F.lit(f"{OUTPUT_TOPIC}-allowed"))
+)
+```
+
+Benefits:
+- Quarantined events can be processed by a separate investigation pipeline
+- Allowed events flow directly to production consumers
+- Easier to monitor and alert on quarantine rate
+
+## Troubleshooting
+
+### Query Not Starting
+
+1. Verify RTM is enabled: `spark.conf.get("spark.databricks.streaming.realTime.enabled")`
+2. Check DBR version is 16.4+
+3. Ensure `outputMode("update")` is set (required for RTM)
+
+### High Latency
+
+1. Reduce `spark.sql.shuffle.partitions` (try 4-8 for RTM)
+2. Check for data skew in partition keys
+3. Verify cluster has sufficient resources
+4. Consider reducing `maxOffsetsPerTrigger`
+
+### Checkpoint Recovery Issues
+
+1. Verify checkpoint path hasn't changed
+2. Check checkpoint directory permissions
+3. Review checkpoint contents with `dbutils.fs.ls(checkpoint_path)`
+4. Look for corrupt metadata files
 
 ## References
 
-- [Canadian Data Guy Blog Post](https://www.canadiandataguy.com/p/unlocking-sub-second-latency-with)
-- [Databricks Real-Time Mode Documentation](https://docs.databricks.com/structured-streaming/real-time.html)
-- [Spark Structured Streaming Programming Guide](https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html)
+- [Unlocking Sub-Second Latency with RTM](https://www.canadiandataguy.com/p/unlocking-sub-second-latency-with) - Canadian Data Guy
+- [Databricks Structured Streaming Guide](https://docs.databricks.com/structured-streaming/)
 
 ## Author
 
 Jitesh Soni - [Canadian Data Guy](https://www.canadiandataguy.com)
+
+---
+
+*Last updated: March 2026*

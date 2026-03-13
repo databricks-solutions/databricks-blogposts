@@ -1,314 +1,503 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Real-Time Mode: Stateless Guardrail Pipeline
+# MAGIC # Real-Time Mode (RTM) Stateless Guardrail Pipeline
 # MAGIC
-# MAGIC This notebook demonstrates Spark Structured Streaming's **Real-Time Mode (RTM)**
-# MAGIC for achieving sub-second latency in stateless streaming pipelines.
+# MAGIC This notebook demonstrates sub-second latency streaming with Real-Time Mode (RTM)
+# MAGIC for operational guardrails. It processes Ethereum blockchain events and applies
+# MAGIC validation rules to detect suspicious transactions.
 # MAGIC
-# MAGIC **Use Case**: Operational guardrail that validates incoming Kafka events in real-time
-# MAGIC and routes them based on data quality and security rules.
-# MAGIC
-# MAGIC **Requirements**:
+# MAGIC **Requirements:**
 # MAGIC - Databricks Runtime 16.4 LTS or later
-# MAGIC - Real-Time Mode enabled on cluster
-# MAGIC - Kafka-compatible message broker
+# MAGIC - Real-Time Mode enabled cluster (see cluster_config.json)
+# MAGIC - Kafka cluster with input/output topics
 # MAGIC
-# MAGIC **Blog Post**: [Unlocking Sub-Second Latency with Spark Real-Time Mode](https://www.canadiandataguy.com/p/unlocking-sub-second-latency-with)
+# MAGIC **Features:**
+# MAGIC - Sub-second latency (5-50ms) with RTM trigger
+# MAGIC - Sensitive data detection (PII, credentials)
+# MAGIC - Validation rules for transaction guardrails
+# MAGIC - Dynamic topic routing (ALLOW/QUARANTINE)
+# MAGIC
+# MAGIC **References:**
+# MAGIC - [Sub-Second Latency with RTM](https://www.canadiandataguy.com/p/unlocking-sub-second-latency-with)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 1. Configuration
+# MAGIC ## Configuration
 
 # COMMAND ----------
 
-import json
 import re
-import uuid
+from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, StringType, LongType,
-    DoubleType, TimestampType, DateType
-)
+from pyspark.sql.types import StructType, StructField, StringType, LongType, DoubleType, TimestampType
 
 # COMMAND ----------
 
-# Kafka Connection Settings
-# Replace these with your actual Kafka/Redpanda connection details
+# =============================================================================
+# PRODUCTION CONFIGURATION - Using Databricks Secrets
+# =============================================================================
+# Setup secrets with Databricks CLI:
+#   databricks secrets create-scope rtm-demo
+#   databricks secrets put-secret rtm-demo kafka-bootstrap-servers
+#   databricks secrets put-secret rtm-demo kafka-username
+#   databricks secrets put-secret rtm-demo kafka-password
 
-BOOTSTRAP_SERVERS = "<your-bootstrap-servers>"  # e.g., "broker1:9092,broker2:9092"
-SASL_MECHANISM = "SCRAM-SHA-256"  # or "PLAIN" for standard SASL
-RP_USERNAME = dbutils.secrets.get(scope="kafka", key="username")  # Use secrets!
-RP_PASSWORD = dbutils.secrets.get(scope="kafka", key="password")
+KAFKA_BOOTSTRAP_SERVERS = dbutils.secrets.get(scope="rtm-demo", key="kafka-bootstrap-servers")
+KAFKA_USERNAME = dbutils.secrets.get(scope="rtm-demo", key="kafka-username")
+KAFKA_PASSWORD = dbutils.secrets.get(scope="rtm-demo", key="kafka-password")
 
 # Topics
-INPUT_TOPIC = "ethereum-blocks-ordered-global"  # Your input topic
-OUTPUT_TOPIC = "validated-blocks"  # Your output topic
+INPUT_TOPIC = "ethereum-blocks"
+OUTPUT_TOPIC = "ethereum-validated"
 
-# Checkpoint location - use a persistent location in production
-CHECKPOINT_LOCATION = f"/Volumes/your_catalog/your_schema/checkpoints/rtm_guardrail_{uuid.uuid4()}"
+# Catalog/Schema for checkpoints
+CATALOG = "main"
+SCHEMA = "default"
+
+# CRITICAL: Use stable checkpoint path for production recovery
+# DO NOT use UUID in checkpoint path - breaks recovery after restart
+CHECKPOINT_LOCATION = f"/Volumes/{CATALOG}/{SCHEMA}/checkpoints/rtm_guardrail_ethereum_blocks"
+
+# RTM timeout - minimum 5 minutes recommended for stability
+RTM_TIMEOUT = "5 minutes"
 
 # COMMAND ----------
 
-# Kafka options with SASL/SSL authentication
-RP_KAFKA_OPTIONS = {
-    "kafka.bootstrap.servers": BOOTSTRAP_SERVERS,
-    "kafka.security.protocol": "SASL_SSL",
-    "kafka.sasl.mechanism": SASL_MECHANISM,
-    "kafka.sasl.jaas.config": (
-        'kafkashaded.org.apache.kafka.common.security.scram.ScramLoginModule required '
-        f'username="{RP_USERNAME}" password="{RP_PASSWORD}";'
-    ),
-    "kafka.ssl.endpoint.identification.algorithm": "https",
-}
+# MAGIC %md
+# MAGIC ## Spark Configuration
+# MAGIC
+# MAGIC Apply production-grade configurations for Real-Time Mode streaming.
+
+# COMMAND ----------
 
 # =============================================================================
-# REAL-TIME MODE CONFIGURATION (Best Practices)
+# SPARK CONFIGURATION (Production Best Practices)
 # =============================================================================
-# Enable Real-Time Mode for sub-second latency
-spark.conf.set("spark.databricks.streaming.realTimeMode.enabled", "true")
 
-# Use streaming-optimized shuffle manager
+spark = SparkSession.builder.getOrCreate()
+
+# RocksDB State Store - Required for production stateful operations
+# Even for "stateless" pipelines, set this as a production best practice
+spark.conf.set(
+    "spark.sql.streaming.stateStore.providerClass",
+    "com.databricks.sql.streaming.state.RocksDBStateStoreProvider"
+)
+
+# Enable changelog checkpointing for faster recovery
+spark.conf.set(
+    "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled",
+    "true"
+)
+
+# Real-Time Mode configuration
+# Note: These may also need to be set at cluster level (see cluster_config.json)
+spark.conf.set("spark.databricks.streaming.realTime.enabled", "true")
 spark.conf.set("spark.shuffle.manager", "org.apache.spark.shuffle.streaming.MultiShuffleManager")
 
-# Optimize shuffle partitions for streaming (match cluster cores)
+# Reduce shuffle partitions for lower latency
 spark.conf.set("spark.sql.shuffle.partitions", "8")
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## 2. Schema Definition
-
-# COMMAND ----------
-
-# Schema for Ethereum block data
-# Adjust this schema to match your actual payload structure
-
-block_schema = StructType([
-    StructField("hash", StringType(), True),
-    StructField("miner", StringType(), True),
-    StructField("nonce", StringType(), True),
-    StructField("number", LongType(), True),
-    StructField("size", LongType(), True),
-    StructField("timestamp", TimestampType(), True),
-    StructField("total_difficulty", DoubleType(), True),
-    StructField("base_fee_per_gas", LongType(), True),
-    StructField("gas_limit", LongType(), True),
-    StructField("gas_used", LongType(), True),
-    StructField("extra_data", StringType(), True),
-    StructField("logs_bloom", StringType(), True),
-    StructField("parent_hash", StringType(), True),
-    StructField("state_root", StringType(), True),
-    StructField("receipts_root", StringType(), True),
-    StructField("transactions_root", StringType(), True),
-    StructField("sha3_uncles", StringType(), True),
-    StructField("transaction_count", LongType(), True),
-    StructField("date", DateType(), True),
-    StructField("last_modified", TimestampType(), True),
-])
+# Verify configurations
+print("RTM Configuration Applied:")
+print(f"  - RocksDB Provider: {spark.conf.get('spark.sql.streaming.stateStore.providerClass')}")
+print(f"  - Changelog Checkpointing: {spark.conf.get('spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled')}")
+print(f"  - RTM Enabled: {spark.conf.get('spark.databricks.streaming.realTime.enabled')}")
+print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 3. Validation Rules (UDFs)
+# MAGIC ## Sensitive Data Detection
+# MAGIC
+# MAGIC Define regex patterns for detecting PII and sensitive data in transaction payloads.
 
 # COMMAND ----------
 
-# Regex patterns for sensitive data detection
-EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)
-JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
-AWS_RE = re.compile(r"AKIA[0-9A-Z]{16}")
+# =============================================================================
+# SENSITIVE DATA PATTERNS
+# =============================================================================
+
+# Email addresses
+EMAIL_PATTERN = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)
+
+# JWT tokens (common in blockchain apps)
+JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+
+# AWS Access Keys
+AWS_KEY_PATTERN = re.compile(r"AKIA[0-9A-Z]{16}")
+
+# Social Security Numbers (US format)
+SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+
+# Credit Card Numbers (various formats with optional separators)
+CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")
+
+# Private keys (Ethereum-style hex)
+PRIVATE_KEY_PATTERN = re.compile(r"0x[a-fA-F0-9]{64}")
 
 
 @F.udf("string")
-def extra_data_reason_udf(extra_data: str) -> str:
+def detect_sensitive_data(text: str) -> str:
     """
-    Scans payload for sensitive patterns that should trigger quarantine.
+    Scan text for sensitive data patterns.
 
-    Detects:
-    - Email addresses
-    - JWT tokens
-    - AWS access keys
-
-    Returns the reason code if found, None otherwise.
+    Returns reason code if found, None otherwise.
+    Priority order: credentials > PII > other sensitive data.
     """
-    if extra_data is None:
+    if text is None:
         return None
-    if EMAIL_RE.search(extra_data):
-        return "EXTRA_DATA_EMAIL"
-    if JWT_RE.search(extra_data):
-        return "EXTRA_DATA_JWT"
-    if AWS_RE.search(extra_data):
-        return "EXTRA_DATA_AWS_KEY"
+
+    # Check for credentials first (highest severity)
+    if AWS_KEY_PATTERN.search(text):
+        return "CREDENTIAL_AWS_KEY"
+    if JWT_PATTERN.search(text):
+        return "CREDENTIAL_JWT"
+    if PRIVATE_KEY_PATTERN.search(text):
+        return "CREDENTIAL_PRIVATE_KEY"
+
+    # Check for PII
+    if SSN_PATTERN.search(text):
+        return "PII_SSN"
+    if CREDIT_CARD_PATTERN.search(text):
+        return "PII_CREDIT_CARD"
+    if EMAIL_PATTERN.search(text):
+        return "PII_EMAIL"
+
     return None
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Read from Kafka Source
+# MAGIC ## Schema Definition
 
 # COMMAND ----------
+
+# =============================================================================
+# ETHEREUM BLOCK SCHEMA
+# =============================================================================
+
+# Schema for Ethereum block events from Kafka
+ethereum_block_schema = StructType([
+    StructField("block_number", LongType(), True),
+    StructField("block_hash", StringType(), True),
+    StructField("parent_hash", StringType(), True),
+    StructField("miner", StringType(), True),
+    StructField("gas_used", LongType(), True),
+    StructField("gas_limit", LongType(), True),
+    StructField("transaction_count", LongType(), True),
+    StructField("timestamp", LongType(), True),
+    StructField("total_value_wei", StringType(), True),
+    StructField("extra_data", StringType(), True),  # May contain sensitive data
+])
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Kafka Configuration
+
+# COMMAND ----------
+
+# =============================================================================
+# KAFKA CONFIGURATION
+# =============================================================================
+# Works with Kafka, Confluent Cloud, Redpanda, Azure Event Hubs (Kafka protocol)
+#
+# For different authentication methods, update sasl_config:
+# - Confluent Cloud: PLAIN mechanism
+# - Redpanda Serverless: SCRAM-SHA-256 mechanism
+# - Self-managed Kafka: Various mechanisms
+
+# SASL/SSL configuration (SCRAM-SHA-256 - works with most cloud providers)
+sasl_config = (
+    "org.apache.kafka.common.security.scram.ScramLoginModule required "
+    f"username='{KAFKA_USERNAME}' password='{KAFKA_PASSWORD}';"
+)
+
+kafka_options = {
+    "kafka.bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
+    "kafka.security.protocol": "SASL_SSL",
+    "kafka.sasl.mechanism": "SCRAM-SHA-256",
+    "kafka.sasl.jaas.config": sasl_config,
+    # Rate limiting - prevents overwhelming the pipeline
+    "maxOffsetsPerTrigger": "100000",
+    # Timeout configs for production stability
+    "kafka.request.timeout.ms": "60000",
+    "kafka.session.timeout.ms": "30000",
+    # Consumer group ID for tracking
+    "kafka.group.id": "rtm-guardrail-ethereum",
+}
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Read from Kafka
+
+# COMMAND ----------
+
+# =============================================================================
+# READ FROM KAFKA
+# =============================================================================
 
 df_raw = (
     spark.readStream
     .format("kafka")
-    .options(**RP_KAFKA_OPTIONS)
+    .options(**kafka_options)
     .option("subscribe", INPUT_TOPIC)
-    .option("startingOffsets", "earliest")  # Use "latest" in production
+    .option("startingOffsets", "latest")
     .option("failOnDataLoss", "false")
     .load()
 )
 
-print(f"Reading from topic: {INPUT_TOPIC}")
+print(f"Reading from Kafka topic: {INPUT_TOPIC}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Parse JSON Payload
+# MAGIC ## Parse and Validate
 
 # COMMAND ----------
+
+# =============================================================================
+# PARSE KAFKA MESSAGES
+# =============================================================================
 
 df_parsed = (
     df_raw
     .select(
-        F.col("timestamp").alias("kafka_ts"),
+        F.col("timestamp").alias("kafka_timestamp"),
         F.col("key").cast("string").alias("kafka_key"),
-        F.col("value").cast("string").alias("value_str")
+        F.col("partition").alias("kafka_partition"),
+        F.col("offset").alias("kafka_offset"),
+        F.from_json(F.col("value").cast("string"), ethereum_block_schema).alias("data")
     )
-    .withColumn("parsed", F.from_json(F.col("value_str"), block_schema))
-    .where(F.col("parsed").isNotNull())  # Filter out malformed JSON
     .select(
-        "kafka_ts",
+        "kafka_timestamp",
         "kafka_key",
-        F.col("parsed.*")
+        "kafka_partition",
+        "kafka_offset",
+        "data.*"
     )
 )
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## 6. Apply Validation Rules & Enrichment
+# =============================================================================
+# VALIDATION RULES
+# =============================================================================
+
+# Define validation rules as (column, condition, reason)
+validation_rules = [
+    # High gas usage - potential DoS or complex transaction
+    ("gas_used", "gas_used > gas_limit * 0.95", "HIGH_GAS_USAGE"),
+
+    # Unusual transaction counts
+    ("transaction_count", "transaction_count > 500", "HIGH_TX_COUNT"),
+    ("transaction_count", "transaction_count = 0", "EMPTY_BLOCK"),
+
+    # Suspicious miner address (example: null or zero address)
+    ("miner", "miner = '0x0000000000000000000000000000000000000000'", "ZERO_MINER"),
+]
+
+# Columns to scan for sensitive data
+sensitive_columns = ["extra_data"]
 
 # COMMAND ----------
 
-# Data quality rule: gas_used should not exceed gas_limit
-condition_bad_gas = (
-    F.col("gas_used").isNotNull() &
-    F.col("gas_limit").isNotNull() &
-    (F.col("gas_used") > F.col("gas_limit"))
+# =============================================================================
+# APPLY VALIDATION RULES
+# =============================================================================
+
+df_validated = df_parsed
+reason_columns = []
+
+# Apply validation rules
+for col_name, condition, reason in validation_rules:
+    flag_col = f"_flag_{reason.lower()}"
+    df_validated = df_validated.withColumn(
+        flag_col,
+        F.when(F.expr(condition), F.lit(reason)).otherwise(F.lit(None))
+    )
+    reason_columns.append(flag_col)
+
+# Scan for sensitive data in specified columns
+for col_name in sensitive_columns:
+    flag_col = f"_sensitive_{col_name}"
+    df_validated = df_validated.withColumn(
+        flag_col,
+        detect_sensitive_data(F.col(col_name))
+    )
+    reason_columns.append(flag_col)
+
+# COMMAND ----------
+
+# =============================================================================
+# COLLECT VALIDATION RESULTS
+# =============================================================================
+
+# Collect all failure reasons into an array
+df_validated = df_validated.withColumn(
+    "validation_reasons",
+    F.expr(f"filter(array({','.join(reason_columns)}), x -> x is not null)")
 )
 
-# Sensitive data detection
-col_extra_reason = extra_data_reason_udf(F.col("extra_data"))
-
-# Apply all validations and build decision
+# Make routing decision
 df_enriched = (
-    df_parsed
-    # Apply validation checks
-    .withColumn("bad_gas", condition_bad_gas)
-    .withColumn("extra_reason", col_extra_reason)
-    # Collect all failure reasons
-    .withColumn(
-        "reasons",
-        F.expr("""
-            filter(
-                array(
-                    case when bad_gas then 'BAD_GAS_USED_GT_LIMIT' end,
-                    extra_reason
-                ),
-                x -> x is not null
-            )
-        """)
-    )
-    # Make routing decision
-    .withColumn("is_quarantined", F.size(F.col("reasons")) > 0)
+    df_validated
+    .withColumn("is_quarantined", F.size(F.col("validation_reasons")) > 0)
     .withColumn(
         "decision",
         F.when(F.col("is_quarantined"), F.lit("QUARANTINE"))
          .otherwise(F.lit("ALLOW"))
     )
-    # Format output for Kafka sink
-    .select(
-        F.col("kafka_key").cast("binary").alias("key"),
-        F.to_json(F.struct(
-            F.col("kafka_ts"),
-            F.col("number"),
-            F.col("hash"),
-            F.col("miner"),
-            F.col("timestamp").alias("block_ts"),
-            F.col("gas_used"),
-            F.col("gas_limit"),
-            F.col("decision"),
-            F.col("is_quarantined"),
-            F.col("reasons"),
-            F.col("extra_data")
-        )).alias("value")
-    )
+    .withColumn("processed_at", F.current_timestamp())
 )
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Write to Kafka with Real-Time Mode
+# MAGIC ## Dynamic Topic Routing (Optional)
 # MAGIC
-# MAGIC **Key Configuration**:
-# MAGIC - `.trigger(realTime="5 minutes")` - Enables Real-Time Mode (5-minute minimum recommended)
-# MAGIC - `.outputMode("update")` - Required for RTM
-# MAGIC
-# MAGIC Real-Time Mode achieves sub-second latency (5-50ms) by:
-# MAGIC - Processing records as soon as they arrive
-# MAGIC - Eliminating micro-batch scheduling overhead
-# MAGIC - Using optimized shuffle management
+# MAGIC Route ALLOW events to the main topic and QUARANTINE events to a separate topic
+# MAGIC for investigation. This uses Kafka's dynamic topic feature.
 
 # COMMAND ----------
 
+# =============================================================================
+# DYNAMIC TOPIC ROUTING
+# =============================================================================
+
+# Add topic column based on decision
+df_with_topic = df_enriched.withColumn(
+    "topic",
+    F.when(F.col("is_quarantined"), F.lit(f"{OUTPUT_TOPIC}-quarantine"))
+     .otherwise(F.lit(f"{OUTPUT_TOPIC}-allowed"))
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Prepare Output
+
+# COMMAND ----------
+
+# =============================================================================
+# PREPARE OUTPUT FOR KAFKA
+# =============================================================================
+
+# Select columns for output (exclude internal flag columns)
+output_columns = [
+    "block_number",
+    "block_hash",
+    "parent_hash",
+    "miner",
+    "gas_used",
+    "gas_limit",
+    "transaction_count",
+    "timestamp",
+    "total_value_wei",
+    "decision",
+    "is_quarantined",
+    "validation_reasons",
+    "processed_at",
+    "kafka_timestamp",
+]
+
+# Prepare Kafka output with dynamic topic routing
+df_output = df_with_topic.select(
+    F.col("block_hash").cast("string").alias("key"),
+    F.to_json(F.struct(*output_columns)).alias("value"),
+    F.col("topic")  # Dynamic topic for routing
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Write with Real-Time Mode
+# MAGIC
+# MAGIC Start the streaming query with Real-Time Mode trigger for sub-second latency.
+
+# COMMAND ----------
+
+# =============================================================================
+# WRITE TO KAFKA WITH RTM
+# =============================================================================
+
+# Remove topic from kafka_options since we're using dynamic routing
+write_kafka_options = {k: v for k, v in kafka_options.items() if k != "maxOffsetsPerTrigger"}
+
 query = (
-    df_enriched.writeStream
+    df_output.writeStream
     .format("kafka")
-    .options(**RP_KAFKA_OPTIONS)
-    .option("topic", OUTPUT_TOPIC)
+    .options(**write_kafka_options)
+    # Note: No .option("topic", ...) - using dynamic topic column
     .option("checkpointLocation", CHECKPOINT_LOCATION)
-    .option("queryName", f"rtm-stateless-guardrail-{OUTPUT_TOPIC}")
+    .option("queryName", "rtm-ethereum-guardrail")
     .outputMode("update")  # Required for Real-Time Mode
-    .trigger(realTime="5 minutes")  # Enable RTM (5-minute minimum recommended)
+    .trigger(realTime=RTM_TIMEOUT)  # Enable RTM
     .start()
 )
 
-print(f"Started Real-Time Mode streaming query")
-print(f"Query ID: {query.id}")
-print(f"Writing to topic: {OUTPUT_TOPIC}")
-print(f"Checkpoint: {CHECKPOINT_LOCATION}")
+print(f"Started RTM pipeline with checkpoint: {CHECKPOINT_LOCATION}")
+print(f"Writing to topics: {OUTPUT_TOPIC}-allowed, {OUTPUT_TOPIC}-quarantine")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 8. Monitor the Stream
+# MAGIC ## Monitoring
 
 # COMMAND ----------
 
-# Display streaming progress (run this cell to see live stats)
-# query.lastProgress
+# =============================================================================
+# MONITORING HELPER
+# =============================================================================
+
+def display_stream_status(query):
+    """Display current stream status and metrics."""
+    if query.isActive:
+        progress = query.lastProgress
+        if progress:
+            print(f"Query: {progress.get('name', 'N/A')}")
+            print(f"  Batch ID: {progress.get('batchId', 'N/A')}")
+            print(f"  Input Rows/sec: {progress.get('inputRowsPerSecond', 0):.2f}")
+            print(f"  Processed Rows/sec: {progress.get('processedRowsPerSecond', 0):.2f}")
+            print(f"  Batch Duration: {progress.get('batchDuration', 0)} ms")
+
+            # Source-specific metrics
+            sources = progress.get('sources', [])
+            for source in sources:
+                print(f"  Source: {source.get('description', 'N/A')}")
+                print(f"    Start Offset: {source.get('startOffset', 'N/A')}")
+                print(f"    End Offset: {source.get('endOffset', 'N/A')}")
+        else:
+            print("Query is active but no progress yet")
+    else:
+        print(f"Query is not active. Status: {query.status}")
+
+# Display initial status
+import time
+time.sleep(10)  # Wait for first batch
+display_stream_status(query)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Stop the Stream (when needed)
+# MAGIC ## Stream Management
+# MAGIC
+# MAGIC Use these cells to manage the streaming query.
 
 # COMMAND ----------
 
-# Uncomment to stop the stream
+# Check if query is still active
+print(f"Query Active: {query.isActive}")
+print(f"Query Status: {query.status}")
+
+# COMMAND ----------
+
+# Uncomment to stop the streaming query
 # query.stop()
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Alternative: Micro-Batch Mode (for comparison)
-# MAGIC
-# MAGIC To compare latency with traditional micro-batch processing,
-# MAGIC replace the trigger with:
-# MAGIC
-# MAGIC ```python
-# MAGIC .trigger(processingTime="1 second")  # Micro-batch: ~200ms+ latency
-# MAGIC ```
-# MAGIC
-# MAGIC Real-Time Mode typically achieves 10-40x lower latency than micro-batch.
+# Wait for termination (blocks until query stops or fails)
+# query.awaitTermination()

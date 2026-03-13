@@ -1,24 +1,52 @@
 {
-  "cluster_name": "rtm-streaming-cluster",
+  "$schema": "https://docs.databricks.com/schemas/cluster-spec.json",
+  "cluster_name": "rtm-guardrail-cluster",
   "spark_version": "16.4.x-scala2.12",
   "node_type_id": "i3.xlarge",
-  "num_workers": 4,
+  "num_workers": 2,
+  "_IMPORTANT_autoscaling": "MUST be disabled for RTM - do NOT use autoscale block",
   "spark_conf": {
     "spark.sql.shuffle.partitions": "8",
-    "spark.databricks.streaming.realTime.enabled": "true"
+    "spark.databricks.streaming.realTime.enabled": "true",
+    "spark.shuffle.manager": "org.apache.spark.shuffle.streaming.MultiShuffleManager",
+    "spark.sql.streaming.stateStore.providerClass": "com.databricks.sql.streaming.state.RocksDBStateStoreProvider",
+    "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled": "true",
+    "spark.databricks.delta.optimizeWrite.enabled": "true",
+    "spark.databricks.delta.autoCompact.enabled": "true"
+  },
+  "spark_env_vars": {
+    "PYSPARK_PYTHON": "/databricks/python3/bin/python3"
   },
   "custom_tags": {
     "project": "rtm-demo",
-    "team": "streaming"
+    "workload": "streaming",
+    "latency-tier": "sub-second"
   },
-  "cluster_log_conf": {
-    "dbfs": {
-      "destination": "dbfs:/cluster-logs"
-    }
+  "aws_attributes": {
+    "availability": "SPOT_WITH_FALLBACK",
+    "first_on_demand": 1,
+    "spot_bid_price_percent": 100,
+    "ebs_volume_type": "GENERAL_PURPOSE_SSD",
+    "ebs_volume_count": 1,
+    "ebs_volume_size": 100
   },
+  "init_scripts": [],
   "enable_elastic_disk": true,
-  "autoscale": {
-    "min_workers": 2,
-    "max_workers": 8
+  "_IMPORTANT_photon": "Photon is NOT supported with RTM - do NOT set runtime_engine",
+  "_comment_spark_conf": {
+    "spark.sql.shuffle.partitions": "Keep low (8-16) for sub-second latency. Increase for higher throughput.",
+    "spark.databricks.streaming.realTime.enabled": "REQUIRED: Enables Real-Time Mode for sub-second latency",
+    "spark.shuffle.manager": "REQUIRED: Multi-shuffle manager optimizes streaming shuffles",
+    "spark.sql.streaming.stateStore.providerClass": "RocksDB provides better performance for stateful operations",
+    "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled": "Enables faster recovery with changelog checkpointing"
+  },
+  "_comment_requirements": {
+    "runtime": "DBR 16.4 LTS or later required for Real-Time Mode",
+    "compute": "DEDICATED (single-user) compute ONLY - serverless and shared NOT supported",
+    "autoscaling": "MUST be DISABLED - RTM requires fixed cluster size",
+    "photon": "NOT SUPPORTED with RTM - do not enable Photon",
+    "instance_type": "Memory-optimized instances recommended for streaming workloads",
+    "workers": "Fixed worker count - calculate: source_partitions + shuffle_partitions per stage",
+    "slot_sizing": "Example: 8 Kafka partitions + 20 shuffle = 28 task slots needed"
   }
 }
