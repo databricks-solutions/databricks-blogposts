@@ -6,7 +6,7 @@ This demo showcases Databricks Real-Time Mode (RTM) for achieving sub-second lat
 
 ## Overview
 
-Real-Time Mode eliminates micro-batch scheduling overhead by processing records as they arrive, achieving 100-300ms end-to-end latency (5-100ms Spark processing) versus 1-5 seconds with traditional micro-batch processing.
+Real-Time Mode eliminates micro-batch scheduling overhead by processing records as they arrive, achieving ~100ms end-to-end latency (5-100ms Spark processing) versus 1-5 seconds with traditional micro-batch processing.
 
 **Use Cases:**
 - Fraud detection
@@ -98,7 +98,7 @@ This PR was validated on a Databricks cluster (DBR 16.4 LTS) with Redpanda Serve
 - ✅ 5 blocks routed to `ethereum-validated-quarantine`
 - ✅ All validation rules working correctly
 - ✅ RTM verification passed
-- ✅ Sub-second latency observed (100-300ms end-to-end)
+- ✅ Sub-second latency observed (~100ms end-to-end)
 
 **Verification:**
 Output topics verified using `check_rtm_output.py` showing correct routing decisions and validation reasons.

@@ -32,7 +32,7 @@
 # MAGIC - Kafka cluster with input/output topics
 # MAGIC
 # MAGIC **Features:**
-# MAGIC - Sub-second latency (typically 100-300ms end-to-end for Kafka→Spark→Kafka; Spark processing 5-100ms) with RTM trigger
+# MAGIC - Sub-second latency (typically ~100ms end-to-end for Kafka→Spark→Kafka; Spark processing 5-100ms) with RTM trigger
 # MAGIC - Sensitive data detection (PII, credentials)
 # MAGIC - Validation rules for transaction guardrails
 # MAGIC - Dynamic topic routing (ALLOW/QUARANTINE)
