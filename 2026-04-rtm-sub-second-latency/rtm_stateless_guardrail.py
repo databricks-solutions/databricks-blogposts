@@ -226,8 +226,22 @@ print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}
 # COMMAND ----------
 
 # =============================================================================
-# SENSITIVE DATA PATTERNS (Native Spark SQL - Optimized for Low Latency)
+# SENSITIVE DATA PATTERNS (Native Spark SQL)
 # =============================================================================
+#
+# Why Native Spark SQL here?
+# Native functions run entirely in the JVM via Catalyst codegen — no Python
+# boundary crossing, full optimizer visibility (predicate pushdown, constant
+# folding). For simple regex matching, this is the fastest option.
+#
+# But if you need custom Python logic, DON'T default to classic pickle UDFs.
+# Spark 3.5+ introduced Arrow-optimized UDFs and Spark 4.0+ added @arrow_udf
+# which take/return pyarrow.Array directly — near-zero-copy, and in many
+# workloads faster than even Scala UDFs.
+#
+# Deep dive: https://youtube.com/watch?v=EiEgU4m8XfM
+#   (Lisa Cao, Matt Topol, Hyukjin Kwon — 10-year Arrow + Spark convergence)
+# Blog:      https://canadiandataguy.com/p/why-your-pyspark-udf-is-slowing-everything
 
 def detect_sensitive_data_col(col_name):
     """
