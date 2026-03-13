@@ -6,15 +6,11 @@
 # MAGIC
 # MAGIC This notebook demonstrates **sub-second latency streaming** with Databricks Real-Time Mode (RTM) for operational guardrails.
 # MAGIC It processes **Ethereum blockchain events** in real-time and applies validation rules to detect suspicious transactions,
-# MAGIC sensitive data leakage, and operational anomalies.
+# MAGIC sensitive data leakage, and operational anomalies. It uses synthetic Ethereum block events as a representative schema to illustrate the pattern.
 # MAGIC
-# MAGIC ### Use Case: Operational Guardrails for Blockchain Monitoring
+# MAGIC ### Pattern: Operational Guardrails
 # MAGIC
-# MAGIC In blockchain operations, **real-time detection** is critical for:
-# MAGIC - **Security**: Detecting suspicious transactions before they propagate
-# MAGIC - **Compliance**: Identifying PII or sensitive data leaking into public blockchain records
-# MAGIC - **Operational Excellence**: Flagging anomalies like empty blocks, unusual gas usage, or high transaction volumes
-# MAGIC - **Fraud Prevention**: Quarantining transactions that violate business rules
+# MAGIC This demonstrates an operational guardrail pattern applicable to fraud detection, IoT anomaly detection, API security, and real-time compliance. We use Ethereum block events as the demo schema because the data shape provides natural validation scenarios (gas limits, transaction counts, miner addresses).
 # MAGIC
 # MAGIC This pipeline acts as a **guardrail** by:
 # MAGIC 1. Reading Ethereum block events from Kafka in real-time
@@ -26,8 +22,8 @@
 # MAGIC ### What Makes This RTM-Compatible?
 # MAGIC
 # MAGIC - **Stateless by design**: This pipeline uses simple transformations for maximum throughput. RTM also supports windowing, aggregations, and stream-table joins.
-# MAGIC - **Native Spark SQL**: Uses built-in functions instead of Python UDFs
-# MAGIC - **Efficient checkpointing**: 5-minute intervals (not per-micro-batch)
+# MAGIC - **Optimized for latency**: Uses native Spark SQL for JVM-level execution. Python UDFs are supported but add serialization overhead.
+# MAGIC - **Checkpoint interval**: 5-minute intervals balance durability with throughput.
 # MAGIC - **Update output mode**: Required for RTM. Aggregations are supported; append mode is not.
 # MAGIC
 # MAGIC **Requirements:**
@@ -120,9 +116,8 @@ SCHEMA = "default"
 CHECKPOINT_LOCATION = f"/tmp/Volumes/{CATALOG}/{SCHEMA}/checkpoints/rtm_guardrail_ethereum_blocks"
 
 # RTM checkpointing frequency - minimum 5 minutes recommended for stateless pipelines
-# Why 5 minutes? RTM executes long-running batches (default 5 minutes) that continuously
-# process data as it arrives, with streaming shuffle passing data between stages immediately
-# - NOT micro-batching. Checkpointing periodically reduces I/O overhead. For stateless
+# Why 5 minutes? RTM uses long-running batches (default 5 min) with streaming shuffle for
+# continuous within-batch processing. Checkpoints occur between batches. For stateless
 # pipelines, 5-10 minutes is optimal.
 RTM_CHECKPOINT_INTERVAL = "5 minutes"
 
@@ -138,14 +133,10 @@ RTM_CHECKPOINT_INTERVAL = "5 minutes"
 # MAGIC **Key Configurations:**
 # MAGIC
 # MAGIC 1. **RocksDB State Store**: Note: This truly stateless pipeline (no aggregations, no dedup, no state) doesn't use a state store.
-# MAGIC    These settings are included for future-proofing if stateful operations are added later.
-# MAGIC    - Faster state recovery if pipeline restarts
-# MAGIC    - Better handling of checkpoint metadata
-# MAGIC    - Production-grade durability
+# MAGIC    These settings are included for future-proofing.
+# MAGIC    - If you later add aggregations or transformWithState, having RocksDB already configured avoids a checkpoint-incompatible change.
 # MAGIC
-# MAGIC 2. **Changelog Checkpointing**: Reduces checkpoint latency by writing incremental changes (when state is present)
-# MAGIC    - Without: Full state snapshot on every checkpoint (slow)
-# MAGIC    - With: Only delta changes written (fast)
+# MAGIC 2. **Changelog Checkpointing**: Relevant when stateful operations are present. Reduces checkpoint latency by writing incremental state changes.
 # MAGIC
 # MAGIC 3. **Reduced Shuffle Partitions**: Lower latency for small-to-medium data volumes
 # MAGIC    - Default 200 partitions causes overhead for sub-second processing
@@ -183,6 +174,8 @@ spark.conf.set(
 )
 
 # Reduce shuffle partitions for lower latency
+# Relevant if the pipeline includes operations that trigger a shuffle (joins, aggregations).
+# For this single-stage stateless pipeline, no shuffle occurs.
 # Default 200 is too high for real-time processing - creates excessive overhead
 # 8 partitions provides good parallelism for sub-second latency
 # Adjust based on: cluster size, data volume, and latency requirements
@@ -223,8 +216,7 @@ print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}
 # MAGIC    - Email: `user@example.com`
 # MAGIC
 # MAGIC **Why Native Spark SQL Instead of UDF?**
-# MAGIC - **Performance best practice**: Native Spark SQL functions avoid Python serialization overhead and are faster than UDFs. Python UDFs are supported in RTM but have higher latency.
-# MAGIC - **Performance**: Native functions execute in JVM, UDFs require Python serialization
+# MAGIC - **Performance optimization**: Native Spark SQL functions execute in the JVM and avoid Python serialization overhead that UDFs incur.
 # MAGIC - **Scalability**: Native functions auto-vectorize across partitions
 # MAGIC
 # MAGIC **Example Outputs:**
@@ -234,14 +226,14 @@ print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}
 # COMMAND ----------
 
 # =============================================================================
-# SENSITIVE DATA PATTERNS (Native Spark SQL - RTM Compatible)
+# SENSITIVE DATA PATTERNS (Native Spark SQL - Optimized for Low Latency)
 # =============================================================================
 
 def detect_sensitive_data_col(col_name):
     """
     Scan column for sensitive data patterns using native Spark SQL.
 
-    RTM-compatible: Uses native Spark functions instead of Python UDF.
+    Performance-optimized: Uses native Spark functions to avoid Python serialization overhead.
     Returns reason code if found, None otherwise.
     Priority order: credentials > PII > other sensitive data.
 
@@ -302,6 +294,8 @@ def detect_sensitive_data_col(col_name):
 # MAGIC - `total_value_wei`: Total Ether transferred (in wei, smallest ETH unit)
 # MAGIC - `extra_data`: Arbitrary data field (32 bytes) - **potential sensitive data source**
 # MAGIC
+# MAGIC **Note:** This schema mirrors real Ethereum block metadata. In this demo, events are synthetic test data generated by the companion `send_test_ethereum_blocks` notebook.
+# MAGIC
 # MAGIC **Why `extra_data` is Risky:**
 # MAGIC - Miners can include arbitrary text/binary data
 # MAGIC - Historically used for vanity messages, but could contain PII accidentally
@@ -351,7 +345,7 @@ ethereum_block_schema = StructType([
 # MAGIC **Consumer Group ID:**
 # MAGIC - `rtm-guardrail-ethereum`: Unique identifier for this application
 # MAGIC - Used for offset tracking and consumer coordination
-# MAGIC - At-least-once delivery semantics: RTM with Kafka sink provides at-least-once guarantees. Exactly-once output sinks are not supported in RTM.
+# MAGIC - RTM provides at-least-once delivery guarantees. Downstream consumers should handle potential duplicates via idempotent writes or deduplication.
 
 # COMMAND ----------
 
@@ -837,14 +831,14 @@ df_output = df_with_topic.select(
 # MAGIC |--------|-------------|----------------|
 # MAGIC | Latency | 1-10 seconds | ~5ms to ~300ms (p99 latencies typically range from a few milliseconds to ~300ms based on transformation complexity) |
 # MAGIC | Checkpoint Frequency | Every micro-batch | Every 5+ minutes |
-# MAGIC | State Management | Per-batch | Continuous |
-# MAGIC | Use Cases | Batch analytics | Operational guardrails |
+# MAGIC | State Management | Process-then-checkpoint | Continuous within long-running batch |
+# MAGIC | Use Cases | ETL, analytics, medallion architecture | Fraud detection, real-time routing, operational decisions |
 # MAGIC
 # MAGIC **Key Configuration:**
 # MAGIC
 # MAGIC 1. **`trigger(realTime="5 minutes")`**
 # MAGIC    - Enables RTM with 5-minute checkpoint interval
-# MAGIC    - Data processed continuously with <50ms latency
+# MAGIC    - Data processed continuously with sub-second latency
 # MAGIC    - Checkpoints only every 5 minutes (reduces I/O overhead)
 # MAGIC    - Why 5 minutes? Balances durability vs. performance for stateless pipelines
 # MAGIC
@@ -953,7 +947,7 @@ print("=" * 80)
 # MAGIC
 # MAGIC **Stopping the Query:**
 # MAGIC - Use `query.stop()` for graceful shutdown
-# MAGIC - Completes current micro-batch before stopping
+# MAGIC - Completes current processing before stopping gracefully
 # MAGIC - Commits final checkpoint for recovery
 # MAGIC
 # MAGIC **Waiting for Termination:**
