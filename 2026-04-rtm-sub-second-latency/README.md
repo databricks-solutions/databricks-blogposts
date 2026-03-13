@@ -83,7 +83,7 @@ Real-Time Mode eliminates micro-batch scheduling overhead by processing records 
 CHECKPOINT_LOCATION = f"/Volumes/.../rtm_guardrail_{uuid.uuid4()}"
 
 # GOOD - stable path enables recovery
-CHECKPOINT_LOCATION = "/Volumes/catalog/schema/checkpoints/rtm_guardrail_ethereum_blocks"
+CHECKPOINT_LOCATION = "/tmp/Volumes/catalog/schema/checkpoints/rtm_guardrail_ethereum_blocks"
 ```
 
 **Why it matters:**
@@ -95,7 +95,7 @@ CHECKPOINT_LOCATION = "/Volumes/catalog/schema/checkpoints/rtm_guardrail_ethereu
 
 Follow a meaningful naming pattern:
 ```
-/Volumes/{catalog}/{schema}/checkpoints/{pipeline_name}_{source_topic}
+/tmp/Volumes/{catalog}/{schema}/checkpoints/{pipeline_name}_{source_topic}
 ```
 
 ### Checkpoint Protection
@@ -107,17 +107,20 @@ Follow a meaningful naming pattern:
 
 ## Rate Limiting
 
-Use `maxOffsetsPerTrigger` to control backpressure and prevent overwhelming downstream systems:
+**IMPORTANT**: `maxOffsetsPerTrigger` is **NOT compatible with Real-Time Mode**. RTM processes records as they arrive without rate limiting.
+
+For traditional micro-batch streaming (non-RTM), you can use `maxOffsetsPerTrigger`:
 
 ```python
-.option("maxOffsetsPerTrigger", 100000)  # Process max 100k messages per trigger
+# NOT compatible with RTM
+.option("maxOffsetsPerTrigger", 100000)  # Only for micro-batch mode
 ```
 
-**Guidelines:**
-- Start with a conservative limit (e.g., 100,000)
-- Monitor `inputRowsPerSecond` vs `processedRowsPerSecond`
-- Increase limit if processing is consistently faster than input
-- Decrease limit if you see batch duration spikes
+**For RTM pipelines:**
+- RTM processes all available records immediately (no rate limiting)
+- Control throughput via cluster sizing and partition count
+- Use Kafka topic partitions to control parallelism
+- Scale compute resources to handle peak load
 
 ## Compute Sizing for RTM
 
@@ -169,8 +172,8 @@ kafka_options = {
     "kafka.bootstrap.servers": bootstrap_servers,
     "kafka.request.timeout.ms": "60000",  # 60 seconds
     "kafka.session.timeout.ms": "30000",  # 30 seconds
-    "maxOffsetsPerTrigger": "100000",     # Rate limiting
     "kafka.group.id": "rtm-guardrail-app" # Consumer group tracking
+    # Note: maxOffsetsPerTrigger is NOT compatible with RTM
 }
 ```
 
@@ -228,7 +231,7 @@ Benefits:
 
 ### Query Not Starting
 
-1. Verify RTM is enabled: `spark.conf.get("spark.databricks.streaming.realTime.enabled")`
+1. Verify RTM is enabled: `spark.conf.get("spark.databricks.streaming.realTimeMode.enabled")`
 2. Check DBR version is 16.4+
 3. Ensure `outputMode("update")` is set (required for RTM)
 
@@ -237,7 +240,8 @@ Benefits:
 1. Reduce `spark.sql.shuffle.partitions` (try 4-8 for RTM)
 2. Check for data skew in partition keys
 3. Verify cluster has sufficient resources
-4. Consider reducing `maxOffsetsPerTrigger`
+4. Reduce Kafka topic partition count if oversubscribed
+5. Scale up cluster to handle increased throughput
 
 ### Checkpoint Recovery Issues
 

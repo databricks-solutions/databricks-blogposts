@@ -7,7 +7,7 @@
   "_IMPORTANT_autoscaling": "MUST be disabled for RTM - do NOT use autoscale block",
   "spark_conf": {
     "spark.sql.shuffle.partitions": "8",
-    "spark.databricks.streaming.realTime.enabled": "true",
+    "spark.databricks.streaming.realTimeMode.enabled": "true",
     "spark.shuffle.manager": "org.apache.spark.shuffle.streaming.MultiShuffleManager",
     "spark.sql.streaming.stateStore.providerClass": "com.databricks.sql.streaming.state.RocksDBStateStoreProvider",
     "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled": "true",
@@ -35,7 +35,7 @@
   "_IMPORTANT_photon": "Photon is NOT supported with RTM - do NOT set runtime_engine",
   "_comment_spark_conf": {
     "spark.sql.shuffle.partitions": "Keep low (8-16) for sub-second latency. Increase for higher throughput.",
-    "spark.databricks.streaming.realTime.enabled": "REQUIRED: Enables Real-Time Mode for sub-second latency",
+    "spark.databricks.streaming.realTimeMode.enabled": "REQUIRED: Enables Real-Time Mode for sub-second latency",
     "spark.shuffle.manager": "REQUIRED: Multi-shuffle manager optimizes streaming shuffles",
     "spark.sql.streaming.stateStore.providerClass": "RocksDB provides better performance for stateful operations",
     "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled": "Enables faster recovery with changelog checkpointing"
