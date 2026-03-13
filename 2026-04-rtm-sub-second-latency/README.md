@@ -1,12 +1,12 @@
 # Real-Time Mode (RTM) Sub-Second Latency Demo
 
-This demo showcases Databricks Real-Time Mode (RTM) for achieving sub-second latency (5-50ms) in streaming pipelines. It implements a stateless guardrail pipeline that validates Ethereum blockchain events in real-time.
+This demo showcases Databricks Real-Time Mode (RTM) for achieving sub-second latency in streaming pipelines. It implements a stateless guardrail pipeline that validates Ethereum blockchain events in real-time.
 
 **Blog Post**: [Unlocking Sub-Second Latency with Spark Structured Streaming Real-Time Mode](https://www.canadiandataguy.com/p/unlocking-sub-second-latency-with)
 
 ## Overview
 
-Real-Time Mode eliminates micro-batch scheduling overhead by processing records as they arrive, achieving consistent 5-50ms latency versus 200ms+ with traditional micro-batch processing.
+Real-Time Mode eliminates micro-batch scheduling overhead by processing records as they arrive, achieving 100-300ms end-to-end latency (5-100ms Spark processing) versus 1-5 seconds with traditional micro-batch processing.
 
 **Use Cases:**
 - Fraud detection
@@ -69,8 +69,39 @@ Real-Time Mode eliminates micro-batch scheduling overhead by processing records 
    databricks secrets put-secret rtm-demo kafka-username
    databricks secrets put-secret rtm-demo kafka-password
    ```
-3. **Create Topics**: Create input/output Kafka topics
+3. **Create Topics**: Create input/output Kafka topics (`ethereum-blocks`, `ethereum-validated-allowed`, `ethereum-validated-quarantine`)
 4. **Run**: Execute the notebook cells in order
+
+## Testing
+
+### End-to-End Test Results
+
+This PR was validated on a Databricks cluster (DBR 16.4 LTS) with Redpanda Serverless:
+
+**Test Setup:**
+- Cluster: rtm-guardrail-demo (dedicated, fixed workers, RTM enabled)
+- Kafka: Redpanda Serverless with SASL_SSL authentication
+- Test data: 7 synthetic Ethereum blocks sent via `send_test_ethereum_blocks.py`
+
+**Test Blocks:**
+1. Block 1000001: Clean block → **ALLOWED**
+2. Block 1000002: 97.5% gas usage → **QUARANTINE** (HIGH_GAS_USAGE)
+3. Block 1000003: 0 transactions → **QUARANTINE** (EMPTY_BLOCK)
+4. Block 1000004: Contains email → **QUARANTINE** (PII_EMAIL)
+5. Block 1000005: Clean block → **ALLOWED**
+6. Block 1000006: Zero miner address → **QUARANTINE** (ZERO_MINER)
+7. Block 1000007: 600 transactions → **QUARANTINE** (HIGH_TX_COUNT)
+
+**Results:**
+- ✅ All 7 blocks processed successfully
+- ✅ 2 blocks routed to `ethereum-validated-allowed`
+- ✅ 5 blocks routed to `ethereum-validated-quarantine`
+- ✅ All validation rules working correctly
+- ✅ RTM verification passed
+- ✅ Sub-second latency observed (100-300ms end-to-end)
+
+**Verification:**
+Output topics verified using `check_rtm_output.py` showing correct routing decisions and validation reasons.
 
 ## Checkpoint Best Practices
 

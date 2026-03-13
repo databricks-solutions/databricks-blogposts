@@ -24,7 +24,7 @@
 # MAGIC - **Stateless by design**: This pipeline uses simple transformations for maximum throughput. RTM also supports windowing, aggregations, and stream-table joins.
 # MAGIC - **Optimized for latency**: Uses native Spark SQL for JVM-level execution. Python UDFs are supported but add serialization overhead.
 # MAGIC - **Checkpoint interval**: 5-minute intervals balance durability with throughput.
-# MAGIC - **Update output mode**: Required for RTM. Aggregations are supported; append mode is not.
+# MAGIC - **Update output mode**: RTM requires `outputMode("update")` - append and complete modes are not supported. Both stateless and stateful operations work with update mode.
 # MAGIC
 # MAGIC **Requirements:**
 # MAGIC - Databricks Runtime 16.4 LTS or later
@@ -32,7 +32,7 @@
 # MAGIC - Kafka cluster with input/output topics
 # MAGIC
 # MAGIC **Features:**
-# MAGIC - Sub-second latency (~5ms to ~100ms depending on workload complexity) with RTM trigger
+# MAGIC - Sub-second latency (typically 100-300ms end-to-end for Kafka→Spark→Kafka; Spark processing 5-100ms) with RTM trigger
 # MAGIC - Sensitive data detection (PII, credentials)
 # MAGIC - Validation rules for transaction guardrails
 # MAGIC - Dynamic topic routing (ALLOW/QUARANTINE)
@@ -188,6 +188,21 @@ print(f"  - Changelog Checkpointing: {spark.conf.get('spark.sql.streaming.stateS
 print(f"  - RTM Enabled: {spark.conf.get('spark.databricks.streaming.realTimeMode.enabled')}")
 print(f"  - Shuffle Manager: {spark.conf.get('spark.shuffle.manager')} (set at cluster level)")
 print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}")
+
+# CRITICAL: Verify RTM is actually enabled on this cluster
+rtm_enabled = spark.conf.get("spark.databricks.streaming.realTimeMode.enabled", "false")
+if rtm_enabled != "true":
+    raise RuntimeError(
+        "❌ Real-Time Mode NOT enabled on this cluster!\n"
+        "\n"
+        "Required cluster configuration:\n"
+        "  spark.databricks.streaming.realTimeMode.enabled = true\n"
+        "  spark.shuffle.manager = org.apache.spark.sql.execution.streaming.shuffle.DatabricksShuffleManager\n"
+        "\n"
+        "Fix: Edit cluster → Advanced Options → Spark Config and add above settings.\n"
+        "See: cluster_config.json for complete configuration example"
+    )
+print("✅ RTM Verification Passed - cluster is configured correctly")
 
 # COMMAND ----------
 
