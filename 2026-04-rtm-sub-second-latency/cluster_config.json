@@ -1,0 +1,24 @@
+{
+  "cluster_name": "rtm-streaming-cluster",
+  "spark_version": "16.4.x-scala2.12",
+  "node_type_id": "i3.xlarge",
+  "num_workers": 4,
+  "spark_conf": {
+    "spark.sql.shuffle.partitions": "8",
+    "spark.databricks.streaming.realTime.enabled": "true"
+  },
+  "custom_tags": {
+    "project": "rtm-demo",
+    "team": "streaming"
+  },
+  "cluster_log_conf": {
+    "dbfs": {
+      "destination": "dbfs:/cluster-logs"
+    }
+  },
+  "enable_elastic_disk": true,
+  "autoscale": {
+    "min_workers": 2,
+    "max_workers": 8
+  }
+}
