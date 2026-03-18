@@ -121,6 +121,7 @@ Edit the notebook parameters:
 | `currency_conversion` | Conversion rate from USD (0 = no conversion) | `0` | No |
 | `destination_catalog` | Target catalog for tables | `main` | Yes |
 | `destination_schema` | Target schema for tables | `default` | Yes |
+| `max_parallel_threads` | Max concurrent threads for parallel query execution | `10` | No |
 
 ### Step 4: Run the Materialization Notebook
 
@@ -346,6 +347,7 @@ dbutils.widgets.text('discount', '33')
 dbutils.widgets.text('currency_conversion', '0')
 dbutils.widgets.text('destination_catalog', 'main')
 dbutils.widgets.text('destination_schema', 'default')
+dbutils.widgets.text('max_parallel_threads', '10')
 
 # Then run the notebook
 %run /path/to/materialize_dashboard_queries_run_parallely

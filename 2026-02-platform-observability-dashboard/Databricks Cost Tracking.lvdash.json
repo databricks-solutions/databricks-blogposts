@@ -1,34 +1,6 @@
 {
   "datasets": [
     {
-      "name": "2c8f935a",
-      "displayName": "total_ap_job_run_result_state_analysis",
-      "queryLines": [
-        "SELECT * \r\n",
-        "FROM main.default.total_ap_job_run_state_analysis\r\n",
-        "WHERE usage_date BETWEEN :date_range.min AND :date_range.max"
-      ],
-      "parameters": [
-        {
-          "displayName": "date_range",
-          "keyword": "date_range",
-          "dataType": "DATETIME",
-          "complexType": "RANGE",
-          "defaultSelection": {
-            "range": {
-              "dataType": "DATETIME",
-              "min": {
-                "value": "2025-04-30T00:00:00.000"
-              },
-              "max": {
-                "value": "2025-07-30T23:59:59.999"
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "52556b40",
       "displayName": "all_total_cost_and_quantity_workload",
       "queryLines": [
@@ -132,6 +104,14 @@
             }
           }
         }
+      ]
+    },
+    {
+      "name": "08b59170",
+      "displayName": "all_total_cost_and_quantity_workload-YTD",
+      "queryLines": [
+        "select * from main.default.total_cost_and_quantity_YTD\r\n",
+        "where usage_date between date_trunc('year', current_date) and current_date"
       ]
     },
     {
@@ -241,71 +221,85 @@
       "name": "028fc4c4",
       "displayName": "ap_clusters_by_job_runs",
       "queryLines": [
-        "WITH usage_cost AS (\n",
-        " select\n",
-        "    workspace_id,\n",
-        "    workspace_name,\n",
-        "    region,\n",
-        "    workspace_url,\n",
-        "    cluster_id,\n",
-        "    job_id,\n",
-        "    sku_name,\n",
-        "    sum(usage_quantity_dbu) as usage_quantity_dbu,\n",
-        "    sum(total_cost) as total_cost\n",
-        "     from main.default.ap_cluster_by_job_runs_usage_cost\n",
-        "where usage_date between :date_range.min AND :date_range.max\n",
-        " group by all\n",
+        "WITH ap_to_job_savings_ratio AS (\n",
+        "    SELECT\n",
+        "        ap.sku_name AS ap_sku_name,\n",
+        "        ROUND(\n",
+        "            1 - (job.pricing.effective_list.default / ap.pricing.effective_list.default),\n",
+        "            4\n",
+        "        ) AS savings_ratio\n",
+        "    FROM system.billing.list_prices ap\n",
+        "    INNER JOIN system.billing.list_prices job\n",
+        "        on job.sku_name = REPLACE(ap.sku_name, 'ALL_PURPOSE_COMPUTE', 'JOBS_COMPUTE')\n",
+        "        AND job.price_start_time = ap.price_start_time\n",
+        "    WHERE ap.sku_name LIKE '%ALL_PURPOSE_COMPUTE%'\n",
+        "        AND ap.price_end_time IS NULL\n",
+        "),\n",
+        "\n",
+        "usage_cost AS (\n",
+        "    SELECT\n",
+        "        workspace_id, workspace_name, region, workspace_url,\n",
+        "        cluster_id, sku_name, usage_date,\n",
+        "        SUM(usage_quantity_dbu) AS usage_quantity_dbu,\n",
+        "        SUM(total_cost) AS total_cost\n",
+        "    FROM main.default.ap_cluster_by_job_runs_usage_cost\n",
+        "    WHERE usage_date between :date_range.min AND :date_range.max\n",
+        "    GROUP BY workspace_id, workspace_name, region, workspace_url,\n",
+        "             cluster_id, sku_name, usage_date\n",
         "),\n",
         "\n",
         "total_job_runs AS (\n",
-        "   SELECT\n",
-        "    cluster_id,\n",
-        "    cluster_name,\n",
-        "    workspace_id,\n",
-        "    workspace_name,\n",
-        "    max(job_run_date) as job_run_date,\n",
-        "    sum(total_job_runs) as total_job_runs,\n",
-        "    sum(successful_runs) as successful_runs,\n",
-        "    sum(failed_runs) as failed_runs,\n",
-        "    avg(failure_rate_percent) as failure_rate_percent,\n",
-        "    avg(success_rate_percent) as success_rate_percent\n",
-        "  FROM\n",
-        "    main.default.ap_cluster_by_job_runs_total_job_runs\n",
-        "  WHERE\n",
-        "    job_run_date BETWEEN :date_range.min AND :date_range.max\n",
-        "    group by all\n",
+        "    SELECT\n",
+        "        cluster_id,\n",
+        "        cluster_name,\n",
+        "        workspace_id,\n",
+        "        workspace_name,\n",
+        "        CAST(job_run_date AS DATE) AS job_run_date,\n",
+        "        SUM(total_job_runs) AS total_job_runs,\n",
+        "        SUM(successful_runs) AS successful_runs,\n",
+        "        SUM(failed_runs) AS failed_runs,\n",
+        "        AVG(failure_rate_percent) AS failure_rate_percent,\n",
+        "        AVG(success_rate_percent) AS success_rate_percent\n",
+        "    FROM main.default.ap_cluster_by_job_runs_total_job_runs\n",
+        "    WHERE job_run_date between :date_range.min AND :date_range.max\n",
+        "    GROUP BY cluster_id, cluster_name, workspace_id, workspace_name, CAST(job_run_date AS DATE)\n",
         "),\n",
         "\n",
+        "-- Date-aligned join with actual SKU savings ratio\n",
         "temp AS (\n",
-        "  SELECT \n",
-        "    usage.region,\n",
-        "    j.workspace_id,\n",
-        "    j.workspace_name,\n",
-        "    CASE \n",
-        "      WHEN usage.sku_name LIKE '%SERVERLESS%' THEN 'ALL_PURPOSE_SERVERLESS'\n",
-        "      WHEN j.cluster_id IS NULL THEN 'UNKNOWN'\n",
-        "      ELSE j.cluster_id\n",
-        "    END AS cluster_id,\n",
-        "    CASE \n",
-        "      WHEN usage.sku_name LIKE '%SERVERLESS%' THEN 'ALL_PURPOSE_SERVERLESS'\n",
-        "      WHEN j.cluster_name IS NULL THEN 'UNKNOWN'\n",
-        "      ELSE j.cluster_name\n",
-        "    END AS cluster_name,\n",
-        "    usage.sku_name,\n",
-        "    j.total_job_runs,\n",
-        "    usage.total_cost,\n",
-        "    usage.total_cost * 0.454 AS potential_saving,\n",
-        "    j.job_run_date AS last_used_date\n",
-        "  FROM usage_cost usage\n",
-        "  INNER JOIN total_job_runs j\n",
-        "    ON usage.workspace_id = j.workspace_id AND usage.cluster_id = j.cluster_id\n",
+        "    SELECT\n",
+        "        usage.region,\n",
+        "        j.workspace_id,\n",
+        "        j.workspace_name,\n",
+        "        j.cluster_id,\n",
+        "        j.cluster_name,\n",
+        "        usage.sku_name,\n",
+        "        j.total_job_runs,\n",
+        "        usage.total_cost,\n",
+        "        usage.total_cost * sr.savings_ratio AS potential_saving,\n",
+        "        j.job_run_date AS last_used_date\n",
+        "    FROM usage_cost usage\n",
+        "    INNER JOIN total_job_runs j\n",
+        "        ON usage.workspace_id = j.workspace_id\n",
+        "        AND usage.cluster_id = j.cluster_id\n",
+        "        AND usage.usage_date = j.job_run_date\n",
+        "    INNER JOIN ap_to_job_savings_ratio sr\n",
+        "        ON usage.sku_name = sr.ap_sku_name\n",
         ")\n",
         "\n",
-        "\n",
-        "  SELECT \n",
-        "    t.*\n",
-        "  FROM temp t\n",
-        "  LIMIT CAST(:limit AS INT);\n"
+        "SELECT\n",
+        "    region,\n",
+        "    workspace_id,\n",
+        "    workspace_name,\n",
+        "    cluster_id,\n",
+        "    cluster_name,\n",
+        "    sku_name,\n",
+        "    SUM(total_job_runs) AS total_job_runs,\n",
+        "    ROUND(SUM(total_cost), 2) AS total_cost,\n",
+        "    ROUND(SUM(potential_saving), 2) AS potential_saving,\n",
+        "    MAX(last_used_date) AS last_used_date\n",
+        "FROM temp\n",
+        "GROUP BY region, workspace_id, workspace_name, cluster_id, cluster_name, sku_name;"
       ],
       "parameters": [
         {
@@ -322,21 +316,6 @@
               "max": {
                 "value": "2025-08-31T23:59:59.999"
               }
-            }
-          }
-        },
-        {
-          "displayName": "limit",
-          "keyword": "limit",
-          "dataType": "STRING",
-          "defaultSelection": {
-            "values": {
-              "dataType": "STRING",
-              "values": [
-                {
-                  "value": "1000000"
-                }
-              ]
             }
           }
         }
@@ -362,8 +341,7 @@
         "SELECT \r\n",
         "  t.*\r\n",
         "FROM \r\n",
-        "  base t\r\n",
-        "LIMIT CAST(:limit AS INT);"
+        "  base t;"
       ],
       "parameters": [
         {
@@ -397,21 +375,6 @@
               }
             }
           }
-        },
-        {
-          "displayName": "limit",
-          "keyword": "limit",
-          "dataType": "STRING",
-          "defaultSelection": {
-            "values": {
-              "dataType": "STRING",
-              "values": [
-                {
-                  "value": "100000"
-                }
-              ]
-            }
-          }
         }
       ]
     },
@@ -423,7 +386,7 @@
         "(\r\n",
         "select \r\n",
         "workspace_id, workspace_name, region, \r\n",
-        "sku_name, job_id_or_pipeline_name, job_or_pipeline_name, run_type, run_result, avg_cpu_utilization, \r\n",
+        "sku_name, job_id_or_pipeline_name, job_or_pipeline_name, run_type, avg_cpu_utilization, \r\n",
         "peak_cpu_utilization, avg_cpu_disk_wait, max_cpu_disk_wait, avg_memory_utilization, max_memory_utilization, \r\n",
         "sum(max_potential_savings) as max_potential_savings, sum(total_job_runs) as total_job_runs, sum(success_count) as success_count, \r\n",
         "sum(failure_count) as failure_count, AVG(success_percent) as success_percent, avg(not_successful_percent) as not_successful_percent, \r\n",
@@ -693,33 +656,6 @@
                   "value": "100000"
                 }
               ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "08b59170",
-      "displayName": "all_total_cost_and_quantity_workload-YTD",
-      "queryLines": [
-        "select * from main.default.total_cost_and_quantity_YTD\r\n",
-        "where usage_date between :date_range.min and :date_range.max;"
-      ],
-      "parameters": [
-        {
-          "displayName": "date_range",
-          "keyword": "date_range",
-          "dataType": "DATETIME",
-          "complexType": "RANGE",
-          "defaultSelection": {
-            "range": {
-              "dataType": "DATETIME",
-              "min": {
-                "value": "now/y"
-              },
-              "max": {
-                "value": "now/y"
-              }
             }
           }
         }
@@ -1269,6 +1205,63 @@
           }
         }
       ]
+    },
+    {
+      "name": "20492a4f",
+      "displayName": "total_job_run_status_and_cost",
+      "queryLines": [
+        "with base as\r\n",
+        "(\r\n",
+        "  select *,\r\n",
+        "  CASE\r\n",
+        "    WHEN :period = 'monthly' THEN CAST(DATE_FORMAT(usage_date, 'yyyy-MM-01') AS DATE)\r\n",
+        "    WHEN :period = 'daily' THEN CAST(DATE_FORMAT(usage_date, 'yyyy-MM-dd') AS DATE)\r\n",
+        "  END AS usage_date_new\r\n",
+        "  from main.default.total_job_run_status_and_cost\r\n",
+        "  where usage_date between :date_range.min AND :date_range.max\r\n",
+        ")\r\n",
+        "\r\n",
+        "\r\n",
+        "\r\n",
+        "SELECT \r\n",
+        "  t.*\r\n",
+        "FROM \r\n",
+        "  base t;"
+      ],
+      "parameters": [
+        {
+          "displayName": "period",
+          "keyword": "period",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "daily"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "displayName": "date_range",
+          "keyword": "date_range",
+          "dataType": "DATETIME",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATETIME",
+              "min": {
+                "value": "2025-06-01T00:00:00.000"
+              },
+              "max": {
+                "value": "2025-06-30T23:59:59.999"
+              }
+            }
+          }
+        }
+      ]
     }
   ],
   "pages": [
@@ -1332,7 +1325,7 @@
           "position": {
             "x": 0,
             "y": 3,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -1403,7 +1396,7 @@
           "position": {
             "x": 0,
             "y": 8,
-            "width": 3,
+            "width": 6,
             "height": 5
           }
         },
@@ -1428,7 +1421,7 @@
           "position": {
             "x": 0,
             "y": 0,
-            "width": 6,
+            "width": 12,
             "height": 3
           }
         },
@@ -1452,6 +1445,12 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Potential Savings Opportunity for All-Purpose Clusters",
+                "showDescription": true,
+                "description": "Note: This savings can be achieved by running the job runs on Job clusters instead of all purpose."
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
@@ -1472,19 +1471,13 @@
                   },
                   "displayName": "Sum of potential_saving"
                 }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Potential Savings Opportunity for All-Purpose Clusters",
-                "showDescription": true,
-                "description": "Note: This savings can be achieved by running the job runs on Job clusters instead of all purpose."
               }
             }
           },
           "position": {
             "x": 0,
             "y": 5,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -1508,6 +1501,12 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Potential Savings Opportunity for Job Clusters(Last 90 days only)",
+                "showDescription": true,
+                "description": "Note: Highlighted savings can be achieved through optimal CPU utilization."
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
@@ -1528,19 +1527,13 @@
                   },
                   "displayName": "Sum of max_potential_savings"
                 }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Potential Savings Opportunity for Job Clusters(Last 90 days only)",
-                "showDescription": true,
-                "description": "Note: Highlighted savings can be achieved through optimal CPU utilization."
               }
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 5,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -1598,9 +1591,9 @@
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 3,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -1673,7 +1666,7 @@
           "position": {
             "x": 0,
             "y": 21,
-            "width": 6,
+            "width": 12,
             "height": 4
           }
         },
@@ -1684,11 +1677,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "630ea6a2",
+                  "datasetName": "20492a4f",
                   "fields": [
                     {
-                      "name": "count(run_result)",
-                      "expression": "COUNT(`run_result`)"
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
                     },
                     {
                       "name": "run_result",
@@ -1705,10 +1698,16 @@
             ],
             "spec": {
               "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Breakdown on Job run status",
+                "showDescription": false,
+                "description": ""
+              },
               "widgetType": "pie",
               "encodings": {
                 "angle": {
-                  "fieldName": "count(run_result)",
+                  "fieldName": "count(*)",
                   "scale": {
                     "type": "quantitative"
                   },
@@ -1758,19 +1757,13 @@
                     "displayName": "Total Cost ($)"
                   }
                 ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Breakdown on Job run status",
-                "showDescription": false,
-                "description": ""
               }
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 8,
-            "width": 3,
+            "width": 6,
             "height": 5
           }
         },
@@ -1786,7 +1779,7 @@
           "position": {
             "x": 0,
             "y": 7,
-            "width": 6,
+            "width": 12,
             "height": 1
           }
         },
@@ -1802,7 +1795,7 @@
           "position": {
             "x": 0,
             "y": 20,
-            "width": 3,
+            "width": 6,
             "height": 1
           }
         },
@@ -1938,7 +1931,7 @@
           "position": {
             "x": 0,
             "y": 14,
-            "width": 3,
+            "width": 6,
             "height": 6
           }
         },
@@ -2075,9 +2068,9 @@
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 14,
-            "width": 3,
+            "width": 6,
             "height": 6
           }
         },
@@ -2221,7 +2214,7 @@
           "position": {
             "x": 0,
             "y": 25,
-            "width": 6,
+            "width": 12,
             "height": 5
           }
         },
@@ -2313,9 +2306,9 @@
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 20,
-            "width": 3,
+            "width": 6,
             "height": 1
           }
         },
@@ -2331,12 +2324,13 @@
           "position": {
             "x": 0,
             "y": 13,
-            "width": 6,
+            "width": 12,
             "height": 1
           }
         }
       ],
-      "pageType": "PAGE_TYPE_CANVAS"
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
     },
     {
       "name": "6df3de19",
@@ -2363,32 +2357,6 @@
                 "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141288b97dd765ad7b0c61_date_range",
                 "query": {
                   "datasetName": "079c901d",
-                  "parameters": [
-                    {
-                      "name": "date_range",
-                      "keyword": "date_range"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141213ac8ec626a9641c51_date_range",
-                "query": {
-                  "datasetName": "2c8f935a",
-                  "parameters": [
-                    {
-                      "name": "date_range",
-                      "keyword": "date_range"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_date_range",
-                "query": {
-                  "datasetName": "c5f70e15",
                   "parameters": [
                     {
                       "name": "date_range",
@@ -2594,19 +2562,6 @@
                 }
               },
               {
-                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412e2bd3aad3a7ece9ceb_date_range",
-                "query": {
-                  "datasetName": "08b59170",
-                  "parameters": [
-                    {
-                      "name": "date_range",
-                      "keyword": "date_range"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
                 "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_date_range",
                 "query": {
                   "datasetName": "ea1affbc",
@@ -2696,10 +2651,40 @@
                   ],
                   "disaggregated": false
                 }
+              },
+              {
+                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f11f96e3301cf58d2eeb06039bde37_date_range",
+                "query": {
+                  "datasetName": "20492a4f",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_date_range",
+                "query": {
+                  "datasetName": "c5f70e15",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
               }
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Date Range"
+              },
               "widgetType": "filter-date-range-picker",
               "encodings": {
                 "fields": [
@@ -2710,14 +2695,6 @@
                   {
                     "parameterName": "date_range",
                     "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141288b97dd765ad7b0c61_date_range"
-                  },
-                  {
-                    "parameterName": "date_range",
-                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141213ac8ec626a9641c51_date_range"
-                  },
-                  {
-                    "parameterName": "date_range",
-                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_date_range"
                   },
                   {
                     "parameterName": "date_range",
@@ -2781,10 +2758,6 @@
                   },
                   {
                     "parameterName": "date_range",
-                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412e2bd3aad3a7ece9ceb_date_range"
-                  },
-                  {
-                    "parameterName": "date_range",
                     "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_date_range"
                   },
                   {
@@ -2810,12 +2783,16 @@
                   {
                     "parameterName": "date_range",
                     "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0fdaf08eb1c7b93527fd3684a6845_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f11f96e3301cf58d2eeb06039bde37_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_date_range"
                   }
                 ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Date Range"
               }
             }
           },
@@ -2851,40 +2828,6 @@
                 "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141288b97dd765ad7b0c61_workspace_id",
                 "query": {
                   "datasetName": "079c901d",
-                  "fields": [
-                    {
-                      "name": "workspace_id",
-                      "expression": "`workspace_id`"
-                    },
-                    {
-                      "name": "workspace_id_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141213ac8ec626a9641c51_workspace_id",
-                "query": {
-                  "datasetName": "2c8f935a",
-                  "fields": [
-                    {
-                      "name": "workspace_id",
-                      "expression": "`workspace_id`"
-                    },
-                    {
-                      "name": "workspace_id_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_workspace_id",
-                "query": {
-                  "datasetName": "c5f70e15",
                   "fields": [
                     {
                       "name": "workspace_id",
@@ -3288,10 +3231,31 @@
                   ],
                   "disaggregated": false
                 }
+              },
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_workspace_id",
+                "query": {
+                  "datasetName": "c5f70e15",
+                  "fields": [
+                    {
+                      "name": "workspace_id",
+                      "expression": "`workspace_id`"
+                    },
+                    {
+                      "name": "workspace_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
               }
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Workspace Id"
+              },
               "widgetType": "filter-multi-select",
               "encodings": {
                 "fields": [
@@ -3302,14 +3266,6 @@
                   {
                     "fieldName": "workspace_id",
                     "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141288b97dd765ad7b0c61_workspace_id"
-                  },
-                  {
-                    "fieldName": "workspace_id",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141213ac8ec626a9641c51_workspace_id"
-                  },
-                  {
-                    "fieldName": "workspace_id",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_workspace_id"
                   },
                   {
                     "fieldName": "workspace_id",
@@ -3402,12 +3358,12 @@
                   {
                     "fieldName": "workspace_id",
                     "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0fdaf08eb1c7b93527fd3684a6845_workspace_id"
+                  },
+                  {
+                    "fieldName": "workspace_id",
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_workspace_id"
                   }
                 ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Workspace Id"
               }
             }
           },
@@ -3443,23 +3399,6 @@
                 "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc314129d9bf3c5b032820226_workspace_name",
                 "query": {
                   "datasetName": "028fc4c4",
-                  "fields": [
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    },
-                    {
-                      "name": "workspace_name_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141213ac8ec626a9641c51_workspace_name",
-                "query": {
-                  "datasetName": "2c8f935a",
                   "fields": [
                     {
                       "name": "workspace_name",
@@ -3630,23 +3569,6 @@
                 "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0ca951db317e5a39fe7a09034da5f_workspace_name",
                 "query": {
                   "datasetName": "55fd9c7a",
-                  "fields": [
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    },
-                    {
-                      "name": "workspace_name_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_workspace_name",
-                "query": {
-                  "datasetName": "c5f70e15",
                   "fields": [
                     {
                       "name": "workspace_name",
@@ -3880,10 +3802,31 @@
                   ],
                   "disaggregated": false
                 }
+              },
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_workspace_name",
+                "query": {
+                  "datasetName": "c5f70e15",
+                  "fields": [
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    },
+                    {
+                      "name": "workspace_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
               }
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Workspace Name"
+              },
               "widgetType": "filter-multi-select",
               "encodings": {
                 "fields": [
@@ -3894,10 +3837,6 @@
                   {
                     "fieldName": "workspace_name",
                     "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc314129d9bf3c5b032820226_workspace_name"
-                  },
-                  {
-                    "fieldName": "workspace_name",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141213ac8ec626a9641c51_workspace_name"
                   },
                   {
                     "fieldName": "workspace_name",
@@ -3938,10 +3877,6 @@
                   {
                     "fieldName": "workspace_name",
                     "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0ca951db317e5a39fe7a09034da5f_workspace_name"
-                  },
-                  {
-                    "fieldName": "workspace_name",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_workspace_name"
                   },
                   {
                     "fieldName": "workspace_name",
@@ -3994,12 +3929,12 @@
                   {
                     "fieldName": "workspace_name",
                     "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0fdaf08eb1c7b93527fd3684a6845_workspace_name"
+                  },
+                  {
+                    "fieldName": "workspace_name",
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_workspace_name"
                   }
                 ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Workspace Name"
               }
             }
           },
@@ -4022,7 +3957,7 @@
             "name": "b44af0fb",
             "queries": [
               {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cb39c081f8d3b199e17_cluster_id",
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141288b97dd765ad7b0c61_cluster_id",
                 "query": {
                   "datasetName": "079c901d",
                   "fields": [
@@ -4039,43 +3974,26 @@
                 }
               },
               {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cc1accf9975cb43ca39_cluster_id",
-                "query": {
-                  "datasetName": "2c8f935a",
-                  "fields": [
-                    {
-                      "name": "cluster_id",
-                      "expression": "`cluster_id`"
-                    },
-                    {
-                      "name": "cluster_id_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871ccebe6323c0a8e6bd92_cluster_id",
-                "query": {
-                  "datasetName": "c5f70e15",
-                  "fields": [
-                    {
-                      "name": "cluster_id",
-                      "expression": "`cluster_id`"
-                    },
-                    {
-                      "name": "cluster_id_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cdfa8c48e18c8a331cd_cluster_id",
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc314129d9bf3c5b032820226_cluster_id",
                 "query": {
                   "datasetName": "028fc4c4",
+                  "fields": [
+                    {
+                      "name": "cluster_id",
+                      "expression": "`cluster_id`"
+                    },
+                    {
+                      "name": "cluster_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_cluster_id",
+                "query": {
+                  "datasetName": "c5f70e15",
                   "fields": [
                     {
                       "name": "cluster_id",
@@ -4092,42 +4010,34 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Cluster Id"
+              },
               "widgetType": "filter-multi-select",
               "encodings": {
                 "fields": [
                   {
                     "fieldName": "cluster_id",
-                    "displayName": "cluster_id",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cb39c081f8d3b199e17_cluster_id"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141288b97dd765ad7b0c61_cluster_id"
                   },
                   {
                     "fieldName": "cluster_id",
-                    "displayName": "cluster_id",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cc1accf9975cb43ca39_cluster_id"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc314129d9bf3c5b032820226_cluster_id"
                   },
                   {
                     "fieldName": "cluster_id",
-                    "displayName": "cluster_id",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871ccebe6323c0a8e6bd92_cluster_id"
-                  },
-                  {
-                    "fieldName": "cluster_id",
-                    "displayName": "cluster_id",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cdfa8c48e18c8a331cd_cluster_id"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_cluster_id"
                   }
                 ]
-              },
-              "frame": {
-                "showTitle": true,
-                "showDescription": false,
-                "title": "Cluster Id"
               }
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 0,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -4186,7 +4096,7 @@
           "position": {
             "x": 0,
             "y": 2,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -4195,7 +4105,7 @@
             "name": "e3b2fd68",
             "queries": [
               {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cb39c081f8d3b199e17_cluster_name",
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141288b97dd765ad7b0c61_cluster_name",
                 "query": {
                   "datasetName": "079c901d",
                   "fields": [
@@ -4212,43 +4122,26 @@
                 }
               },
               {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cc1accf9975cb43ca39_cluster_name",
-                "query": {
-                  "datasetName": "2c8f935a",
-                  "fields": [
-                    {
-                      "name": "cluster_name",
-                      "expression": "`cluster_name`"
-                    },
-                    {
-                      "name": "cluster_name_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871ccebe6323c0a8e6bd92_cluster_name",
-                "query": {
-                  "datasetName": "c5f70e15",
-                  "fields": [
-                    {
-                      "name": "cluster_name",
-                      "expression": "`cluster_name`"
-                    },
-                    {
-                      "name": "cluster_name_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cdfa8c48e18c8a331cd_cluster_name",
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc314129d9bf3c5b032820226_cluster_name",
                 "query": {
                   "datasetName": "028fc4c4",
+                  "fields": [
+                    {
+                      "name": "cluster_name",
+                      "expression": "`cluster_name`"
+                    },
+                    {
+                      "name": "cluster_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_cluster_name",
+                "query": {
+                  "datasetName": "c5f70e15",
                   "fields": [
                     {
                       "name": "cluster_name",
@@ -4265,42 +4158,34 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Cluster Name"
+              },
               "widgetType": "filter-multi-select",
               "encodings": {
                 "fields": [
                   {
                     "fieldName": "cluster_name",
-                    "displayName": "cluster_name",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cb39c081f8d3b199e17_cluster_name"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141288b97dd765ad7b0c61_cluster_name"
                   },
                   {
                     "fieldName": "cluster_name",
-                    "displayName": "cluster_name",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cc1accf9975cb43ca39_cluster_name"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc314129d9bf3c5b032820226_cluster_name"
                   },
                   {
                     "fieldName": "cluster_name",
-                    "displayName": "cluster_name",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871ccebe6323c0a8e6bd92_cluster_name"
-                  },
-                  {
-                    "fieldName": "cluster_name",
-                    "displayName": "cluster_name",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871cdfa8c48e18c8a331cd_cluster_name"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc3141293ba1131e3e5e4043d_cluster_name"
                   }
                 ]
-              },
-              "frame": {
-                "showTitle": true,
-                "showDescription": false,
-                "title": "Cluster Name"
               }
             }
           },
           "position": {
             "x": 0,
             "y": 0,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -4348,9 +4233,9 @@
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 2,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -4504,7 +4389,7 @@
           "position": {
             "x": 0,
             "y": 7,
-            "width": 6,
+            "width": 12,
             "height": 5
           }
         },
@@ -4564,68 +4449,10 @@
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 13,
-            "width": 3,
+            "width": 6,
             "height": 4
-          }
-        },
-        {
-          "widget": {
-            "name": "edd62c12",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "2c8f935a",
-                  "fields": [
-                    {
-                      "name": "sum(total_job_runs)",
-                      "expression": "SUM(`total_job_runs`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "counter",
-              "encodings": {
-                "value": {
-                  "fieldName": "sum(total_job_runs)",
-                  "style": {
-                    "color": {
-                      "themeColorType": "visualizationColors",
-                      "position": 1
-                    },
-                    "bold": true,
-                    "italic": true,
-                    "rules": [
-                      {
-                        "condition": {
-                          "operator": ">="
-                        },
-                        "color": "#00A972"
-                      }
-                    ]
-                  },
-                  "displayName": "Sum of total_job_runs"
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Total job runs on All-Purpose clusters",
-                "showDescription": false,
-                "description": "Displays the total number of job runs executed for the selected filters\nNote: Data is only available for the past 365 days due to Databricks' retention policy, even if a longer date range is selected."
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 4,
-            "width": 3,
-            "height": 2
           }
         },
         {
@@ -4744,7 +4571,7 @@
           "position": {
             "x": 0,
             "y": 13,
-            "width": 3,
+            "width": 6,
             "height": 4
           }
         },
@@ -4760,7 +4587,7 @@
           "position": {
             "x": 0,
             "y": 6,
-            "width": 6,
+            "width": 12,
             "height": 1
           }
         },
@@ -4776,7 +4603,7 @@
           "position": {
             "x": 0,
             "y": 12,
-            "width": 3,
+            "width": 6,
             "height": 1
           }
         },
@@ -4832,7 +4659,7 @@
           "position": {
             "x": 0,
             "y": 4,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -4924,14 +4751,73 @@
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 12,
-            "width": 3,
+            "width": 6,
             "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "3d1b01b0",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "028fc4c4",
+                  "fields": [
+                    {
+                      "name": "sum(total_job_runs)",
+                      "expression": "SUM(`total_job_runs`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total job runs on All-Purpose clusters",
+                "showDescription": false,
+                "description": "Displays the total number of job runs executed for the selected filters\nNote: Data is only available for the past 365 days due to Databricks' retention policy, even if a longer date range is selected."
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_job_runs)",
+                  "style": {
+                    "color": {
+                      "themeColorType": "visualizationColors",
+                      "position": 1
+                    },
+                    "bold": true,
+                    "italic": true,
+                    "rules": [
+                      {
+                        "condition": {
+                          "operator": ">="
+                        },
+                        "color": "#00A972"
+                      }
+                    ]
+                  },
+                  "displayName": "Sum of total_job_runs"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 6,
+            "height": 2
           }
         }
       ],
-      "pageType": "PAGE_TYPE_CANVAS"
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
     },
     {
       "name": "6bff07ae",
@@ -4942,7 +4828,7 @@
             "name": "012fb556",
             "queries": [
               {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871d23bb40a4d70df41921_job_id",
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412bc9248d58788da0a11_job_id",
                 "query": {
                   "datasetName": "b0c93a9f",
                   "fields": [
@@ -4959,9 +4845,9 @@
                 }
               },
               {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871d008fd5c0fa39d38fb5_job_id_or_pipeline_name",
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f11f96e3301cf58d2eeb06039bde37_job_id_or_pipeline_name",
                 "query": {
-                  "datasetName": "630ea6a2",
+                  "datasetName": "20492a4f",
                   "fields": [
                     {
                       "name": "job_id_or_pipeline_name",
@@ -4976,7 +4862,7 @@
                 }
               },
               {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871d75a3afee67d4fe82cd_job_id_or_pipeline_name",
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412b393e4893329a76b8a_job_id_or_pipeline_name",
                 "query": {
                   "datasetName": "a7d92282",
                   "fields": [
@@ -4995,37 +4881,34 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Job Id or Pipeline Name"
+              },
               "widgetType": "filter-multi-select",
               "encodings": {
                 "fields": [
                   {
                     "fieldName": "job_id",
-                    "displayName": "job_id",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871d23bb40a4d70df41921_job_id"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412bc9248d58788da0a11_job_id"
                   },
                   {
                     "fieldName": "job_id_or_pipeline_name",
-                    "displayName": "job_id_or_pipeline_name",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871d008fd5c0fa39d38fb5_job_id_or_pipeline_name"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f11f96e3301cf58d2eeb06039bde37_job_id_or_pipeline_name"
                   },
                   {
                     "fieldName": "job_id_or_pipeline_name",
-                    "displayName": "job_id_or_pipeline_name",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f07eb471871d75a3afee67d4fe82cd_job_id_or_pipeline_name"
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412b393e4893329a76b8a_job_id_or_pipeline_name"
                   }
                 ]
-              },
-              "frame": {
-                "showTitle": true,
-                "showDescription": false,
-                "title": "Job Id or Pipeline Name"
               }
             }
           },
           "position": {
             "x": 0,
             "y": 0,
-            "width": 2,
+            "width": 4,
             "height": 2
           }
         },
@@ -5115,9 +4998,9 @@
             }
           },
           "position": {
-            "x": 2,
+            "x": 4,
             "y": 0,
-            "width": 2,
+            "width": 4,
             "height": 2
           }
         },
@@ -5141,6 +5024,12 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Job runs - Total Cost (USD)",
+                "showDescription": false,
+                "description": ""
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
@@ -5164,19 +5053,13 @@
                   },
                   "displayName": "Sum of total_cost"
                 }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Job runs - Total Cost (USD)",
-                "showDescription": false,
-                "description": ""
               }
             }
           },
           "position": {
             "x": 0,
             "y": 2,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -5266,9 +5149,9 @@
             }
           },
           "position": {
-            "x": 4,
+            "x": 8,
             "y": 0,
-            "width": 2,
+            "width": 4,
             "height": 2
           }
         },
@@ -5316,9 +5199,9 @@
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 2,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -5329,11 +5212,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "630ea6a2",
+                  "datasetName": "20492a4f",
                   "fields": [
                     {
-                      "name": "sum(total_job_runs)",
-                      "expression": "SUM(`total_job_runs`)"
+                      "name": "countdistinct(run_id)",
+                      "expression": "COUNT(DISTINCT `run_id`)"
                     }
                   ],
                   "disaggregated": false
@@ -5342,10 +5225,16 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total job runs",
+                "showDescription": false,
+                "description": ""
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sum(total_job_runs)",
+                  "fieldName": "countdistinct(run_id)",
                   "style": {
                     "color": {
                       "themeColorType": "visualizationColors",
@@ -5356,19 +5245,13 @@
                   },
                   "displayName": "Sum of total_job_runs"
                 }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Total job runs",
-                "showDescription": false,
-                "description": ""
               }
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 4,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -5456,7 +5339,7 @@
           "position": {
             "x": 0,
             "y": 7,
-            "width": 6,
+            "width": 12,
             "height": 4
           }
         },
@@ -5608,7 +5491,7 @@
           "position": {
             "x": 0,
             "y": 20,
-            "width": 6,
+            "width": 12,
             "height": 4
           }
         },
@@ -5687,9 +5570,9 @@
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 16,
-            "width": 3,
+            "width": 6,
             "height": 4
           }
         },
@@ -5779,7 +5662,7 @@
           "position": {
             "x": 0,
             "y": 11,
-            "width": 3,
+            "width": 6,
             "height": 4
           }
         },
@@ -5790,11 +5673,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "630ea6a2",
+                  "datasetName": "20492a4f",
                   "fields": [
                     {
-                      "name": "count(run_result)",
-                      "expression": "COUNT(`run_result`)"
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
                     },
                     {
                       "name": "run_result",
@@ -5811,10 +5694,16 @@
             ],
             "spec": {
               "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Breakdown on Job Run status",
+                "showDescription": false,
+                "description": ""
+              },
               "widgetType": "pie",
               "encodings": {
                 "angle": {
-                  "fieldName": "count(run_result)",
+                  "fieldName": "count(*)",
                   "scale": {
                     "type": "quantitative"
                   },
@@ -5822,28 +5711,8 @@
                 },
                 "color": {
                   "fieldName": "run_result",
-                  "legend": {
-                    "position": "bottom"
-                  },
-                  "displayName": "Job Run Status",
                   "scale": {
-                    "type": "categorical",
-                    "mappings": [
-                      {
-                        "value": "SUCCEEDED",
-                        "color": {
-                          "themeColorType": "visualizationColors",
-                          "position": 1
-                        }
-                      },
-                      {
-                        "value": "FAILED",
-                        "color": {
-                          "themeColorType": "visualizationColors",
-                          "position": 3
-                        }
-                      }
-                    ]
+                    "type": "categorical"
                   }
                 },
                 "label": {
@@ -5864,19 +5733,13 @@
                     "displayName": "Total Cost ($)"
                   }
                 ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Breakdown on Job Run Result",
-                "showDescription": false,
-                "description": ""
               }
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 11,
-            "width": 3,
+            "width": 6,
             "height": 4
           }
         },
@@ -5991,7 +5854,7 @@
           "position": {
             "x": 0,
             "y": 16,
-            "width": 3,
+            "width": 6,
             "height": 4
           }
         },
@@ -6007,7 +5870,7 @@
           "position": {
             "x": 0,
             "y": 6,
-            "width": 6,
+            "width": 12,
             "height": 1
           }
         },
@@ -6023,7 +5886,7 @@
           "position": {
             "x": 0,
             "y": 15,
-            "width": 3,
+            "width": 6,
             "height": 1
           }
         },
@@ -6079,7 +5942,7 @@
           "position": {
             "x": 0,
             "y": 4,
-            "width": 3,
+            "width": 6,
             "height": 2
           }
         },
@@ -6088,7 +5951,7 @@
             "name": "f3aa1843",
             "queries": [
               {
-                "name": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f0ae7bdb3513f0bba1a0c8cc2b26bf_period",
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412f2abc70bc71dd2d197_period",
                 "query": {
                   "datasetName": "ad4f3bfc",
                   "fields": [
@@ -6105,7 +5968,7 @@
                 }
               },
               {
-                "name": "parameter_dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f0ae7bd2471d2b946c1c5de3e8ea41_period",
+                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412a7b8c56426cafed382_period",
                 "query": {
                   "datasetName": "630ea6a2",
                   "parameters": [
@@ -6118,9 +5981,22 @@
                 }
               },
               {
-                "name": "parameter_dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f0ae7bd2471d3cbfbb86093b59a8fd_period",
+                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412bc9248d58788da0a11_period",
                 "query": {
                   "datasetName": "b0c93a9f",
+                  "parameters": [
+                    {
+                      "name": "period",
+                      "keyword": "period"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f11f96e3301cf58d2eeb06039bde37_period",
+                "query": {
+                  "datasetName": "20492a4f",
                   "parameters": [
                     {
                       "name": "period",
@@ -6133,23 +6009,6 @@
             ],
             "spec": {
               "version": 2,
-              "widgetType": "filter-single-select",
-              "encodings": {
-                "fields": [
-                  {
-                    "parameterName": "period",
-                    "queryName": "parameter_dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f0ae7bd2471d2b946c1c5de3e8ea41_period"
-                  },
-                  {
-                    "parameterName": "period",
-                    "queryName": "parameter_dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f0ae7bd2471d3cbfbb86093b59a8fd_period"
-                  },
-                  {
-                    "fieldName": "period",
-                    "queryName": "dashboards/01f07745cb3c1641be1cc35d7604f1c0/datasets/01f0ae7bdb3513f0bba1a0c8cc2b26bf_period"
-                  }
-                ]
-              },
               "selection": {
                 "defaultSelection": {
                   "values": {
@@ -6167,18 +6026,40 @@
                 "title": "Tend Period",
                 "showDescription": true,
                 "description": "Allowed values daily/monthly"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "parameterName": "period",
+                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412a7b8c56426cafed382_period"
+                  },
+                  {
+                    "parameterName": "period",
+                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412bc9248d58788da0a11_period"
+                  },
+                  {
+                    "fieldName": "period",
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412f2abc70bc71dd2d197_period"
+                  },
+                  {
+                    "parameterName": "period",
+                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f11f96e3301cf58d2eeb06039bde37_period"
+                  }
+                ]
               }
             }
           },
           "position": {
-            "x": 3,
+            "x": 6,
             "y": 15,
-            "width": 3,
+            "width": 6,
             "height": 1
           }
         }
       ],
-      "pageType": "PAGE_TYPE_CANVAS"
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
     },
     {
       "name": "0985c301",
@@ -6355,6 +6236,12 @@
             ],
             "spec": {
               "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Serverless – Total DBUs",
+                "showDescription": false,
+                "description": "Displays the total discounted cost across all Interactive Clusters for the selected filters\nNote: Data is only available for the past 365 days due to Databricks' retention policy, even if a longer date range is selected."
+              },
               "widgetType": "counter",
               "encodings": {
                 "value": {
@@ -6368,8 +6255,7 @@
                     "italic": true
                   },
                   "format": {
-                    "type": "number-currency",
-                    "currencyCode": "USD",
+                    "type": "number-plain",
                     "abbreviation": "compact",
                     "decimalPlaces": {
                       "type": "max",
@@ -6378,12 +6264,6 @@
                   },
                   "displayName": "Sum of total_cost_usd"
                 }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Serverless – Total DBUs",
-                "showDescription": false,
-                "description": "Displays the total discounted cost across all Interactive Clusters for the selected filters\nNote: Data is only available for the past 365 days due to Databricks' retention policy, even if a longer date range is selected."
               }
             }
           },
@@ -6852,6 +6732,767 @@
           "position": {
             "x": 0,
             "y": 17,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "d199f5f7",
+      "displayName": "SQL Warehouse Analysis",
+      "layout": [
+        {
+          "widget": {
+            "name": "2e40864d",
+            "queries": [
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaaf09b1a76aaccda15f7698c5e_warehouse_id",
+                "query": {
+                  "datasetName": "89987429",
+                  "fields": [
+                    {
+                      "name": "warehouse_id",
+                      "expression": "`warehouse_id`"
+                    },
+                    {
+                      "name": "warehouse_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_warehouse_id",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "fields": [
+                    {
+                      "name": "warehouse_id",
+                      "expression": "`warehouse_id`"
+                    },
+                    {
+                      "name": "warehouse_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "warehouse_id",
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaaf09b1a76aaccda15f7698c5e_warehouse_id"
+                  },
+                  {
+                    "fieldName": "warehouse_id",
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_warehouse_id"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "SQL Warehouse Id"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "6d786083",
+            "queries": [
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaaf09b1a76aaccda15f7698c5e_warehouse_name",
+                "query": {
+                  "datasetName": "89987429",
+                  "fields": [
+                    {
+                      "name": "warehouse_name",
+                      "expression": "`warehouse_name`"
+                    },
+                    {
+                      "name": "warehouse_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_warehouse_name",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "fields": [
+                    {
+                      "name": "warehouse_name",
+                      "expression": "`warehouse_name`"
+                    },
+                    {
+                      "name": "warehouse_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "warehouse_name",
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaaf09b1a76aaccda15f7698c5e_warehouse_name"
+                  },
+                  {
+                    "fieldName": "warehouse_name",
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_warehouse_name"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "SQL Warehouse Name"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "b5335b9b",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "All Type of SQL Warehouse  – Total Cost (€)"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_cost)",
+                  "style": {
+                    "color": {
+                      "themeColorType": "visualizationColors",
+                      "position": 1
+                    },
+                    "bold": true,
+                    "italic": true
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "031d4742",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "fields": [
+                    {
+                      "name": "sum(usage_quantity_dbu)",
+                      "expression": "SUM(`usage_quantity_dbu`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(usage_quantity_dbu)",
+                  "style": {
+                    "bold": true,
+                    "color": {
+                      "themeColorType": "visualizationColors",
+                      "position": 1
+                    },
+                    "italic": true
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "All Type of SQL Warehouse – Total Usage in DBUs"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "04ad05a7",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Cost Breakdown"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "6aa22165",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    },
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(total_cost)",
+                  "axis": {
+                    "hideTitle": false,
+                    "hideLabels": false,
+                    "hideGrid": false
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    },
+                    "hideGroupSeparator": false
+                  },
+                  "displayName": "Total Cost ($)",
+                  "scale": {
+                    "type": "quantitative",
+                    "reverse": false
+                  }
+                },
+                "y": {
+                  "fieldName": "workspace_name",
+                  "axis": {
+                    "labelAngle": 0
+                  },
+                  "displayName": "Workspace Name",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "type": "number-of-categories",
+                      "number": 10
+                    },
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Workspaces: Cost breakdown for All SQL Warehouse"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "a4e53d73",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "fields": [
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    },
+                    {
+                      "name": "type_of_sql",
+                      "expression": "`type_of_sql`"
+                    },
+                    {
+                      "name": "sum(usage_quantity_dbu)",
+                      "expression": "SUM(`usage_quantity_dbu`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(total_cost)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  },
+                  "displayName": "Cost breakdown by Type of Warehouse"
+                },
+                "color": {
+                  "fieldName": "type_of_sql",
+                  "displayName": "Type of SQL Warehouse",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                },
+                "extra": [
+                  {
+                    "fieldName": "sum(usage_quantity_dbu)",
+                    "displayName": "Total Usage DBUs"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cost breakdown by Type of SQL Warehouse\n"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "498cd9ac",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "fields": [
+                    {
+                      "name": "sku_name",
+                      "expression": "`sku_name`"
+                    },
+                    {
+                      "name": "sum(usage_quantity_dbu)",
+                      "expression": "SUM(`usage_quantity_dbu`)"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(total_cost)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  },
+                  "displayName": "Total Cost (S)",
+                  "scale": {
+                    "type": "quantitative",
+                    "reverse": false
+                  }
+                },
+                "y": {
+                  "fieldName": "sku_name",
+                  "displayName": "SKU Name",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "type": "number-of-categories",
+                      "number": 5
+                    },
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "sku_name",
+                  "displayName": "SKU Name",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "natural-order"
+                    }
+                  }
+                },
+                "label": {
+                  "show": true
+                },
+                "extra": [
+                  {
+                    "fieldName": "sum(usage_quantity_dbu)",
+                    "displayName": "Total Usage DBUs"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Cost By SKU Warehouse Types"
+              },
+              "mark": {
+                "layout": "stack"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "8f8fe884",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Warehouse Operations Uptime"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "c13da9d5",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "89987429",
+                  "fields": [
+                    {
+                      "name": "sum(uptime_hours)",
+                      "expression": "SUM(`uptime_hours`)"
+                    },
+                    {
+                      "name": "workspace_name",
+                      "expression": "`workspace_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(uptime_hours)",
+                  "displayName": "Total Uptime hours",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "workspace_name",
+                  "displayName": "Workspace Name",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "type": "number-of-categories",
+                      "number": 10
+                    },
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Workspaces: Warehouses with the Most Uptime"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "54cb3965",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Trends"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 20,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "d57eafd0",
+            "queries": [
+              {
+                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412f2abc70bc71dd2d197_period",
+                "query": {
+                  "datasetName": "ad4f3bfc",
+                  "fields": [
+                    {
+                      "name": "period",
+                      "expression": "`period`"
+                    },
+                    {
+                      "name": "period_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_period",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "parameters": [
+                    {
+                      "name": "period",
+                      "keyword": "period"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "parameterName": "period",
+                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_period"
+                  },
+                  {
+                    "fieldName": "period",
+                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412f2abc70bc71dd2d197_period"
+                  }
+                ]
+              },
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "daily"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Trend Period",
+                "showDescription": true,
+                "description": "Allowed values - \"daily/monthly\""
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 20,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "c47dc8c1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ea1affbc",
+                  "fields": [
+                    {
+                      "name": "usage_date_new",
+                      "expression": "`usage_date_new`"
+                    },
+                    {
+                      "name": "sum(total_cost)",
+                      "expression": "SUM(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date_new",
+                  "axis": {
+                    "labelAngle": 0,
+                    "title": "Timeline"
+                  },
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_cost)",
+                  "axis": {
+                    "hideTitle": false,
+                    "hideLabels": false,
+                    "hideGrid": false,
+                    "title": "Total Cost ($)"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  },
+                  "displayName": "Total Cost ($)",
+                  "scale": {
+                    "type": "quantitative",
+                    "reverse": false
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "SQL Warehouse Cost Analysis (Daily / Monthly)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 21,
             "width": 6,
             "height": 5
           }
@@ -7489,767 +8130,6 @@
             "x": 3,
             "y": 15,
             "width": 3,
-            "height": 5
-          }
-        }
-      ],
-      "pageType": "PAGE_TYPE_CANVAS"
-    },
-    {
-      "name": "d199f5f7",
-      "displayName": "SQL Warehouse Analysis",
-      "layout": [
-        {
-          "widget": {
-            "name": "2e40864d",
-            "queries": [
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaaf09b1a76aaccda15f7698c5e_warehouse_id",
-                "query": {
-                  "datasetName": "89987429",
-                  "fields": [
-                    {
-                      "name": "warehouse_id",
-                      "expression": "`warehouse_id`"
-                    },
-                    {
-                      "name": "warehouse_id_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_warehouse_id",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "fields": [
-                    {
-                      "name": "warehouse_id",
-                      "expression": "`warehouse_id`"
-                    },
-                    {
-                      "name": "warehouse_id_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "filter-multi-select",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "warehouse_id",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaaf09b1a76aaccda15f7698c5e_warehouse_id"
-                  },
-                  {
-                    "fieldName": "warehouse_id",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_warehouse_id"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "SQL Warehouse Id"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 0,
-            "width": 3,
-            "height": 2
-          }
-        },
-        {
-          "widget": {
-            "name": "6d786083",
-            "queries": [
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaaf09b1a76aaccda15f7698c5e_warehouse_name",
-                "query": {
-                  "datasetName": "89987429",
-                  "fields": [
-                    {
-                      "name": "warehouse_name",
-                      "expression": "`warehouse_name`"
-                    },
-                    {
-                      "name": "warehouse_name_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_warehouse_name",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "fields": [
-                    {
-                      "name": "warehouse_name",
-                      "expression": "`warehouse_name`"
-                    },
-                    {
-                      "name": "warehouse_name_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "filter-multi-select",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "warehouse_name",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaaf09b1a76aaccda15f7698c5e_warehouse_name"
-                  },
-                  {
-                    "fieldName": "warehouse_name",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_warehouse_name"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "SQL Warehouse Name"
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 0,
-            "width": 3,
-            "height": 2
-          }
-        },
-        {
-          "widget": {
-            "name": "b5335b9b",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "fields": [
-                    {
-                      "name": "sum(total_cost)",
-                      "expression": "SUM(`total_cost`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "counter",
-              "encodings": {
-                "value": {
-                  "fieldName": "sum(total_cost)",
-                  "style": {
-                    "color": {
-                      "themeColorType": "visualizationColors",
-                      "position": 1
-                    },
-                    "bold": true,
-                    "italic": true
-                  },
-                  "format": {
-                    "type": "number-currency",
-                    "currencyCode": "EUR",
-                    "abbreviation": "compact",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 2
-                    }
-                  }
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "All Type of SQL Warehouse  – Total Cost (€)"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 2,
-            "width": 3,
-            "height": 2
-          }
-        },
-        {
-          "widget": {
-            "name": "031d4742",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "fields": [
-                    {
-                      "name": "sum(usage_quantity_dbu)",
-                      "expression": "SUM(`usage_quantity_dbu`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "counter",
-              "encodings": {
-                "value": {
-                  "fieldName": "sum(usage_quantity_dbu)",
-                  "style": {
-                    "bold": true,
-                    "color": {
-                      "themeColorType": "visualizationColors",
-                      "position": 1
-                    },
-                    "italic": true
-                  }
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "All Type of SQL Warehouse – Total Usage in DBUs"
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 2,
-            "width": 3,
-            "height": 2
-          }
-        },
-        {
-          "widget": {
-            "name": "04ad05a7",
-            "multilineTextboxSpec": {
-              "lines": [
-                "## Cost Breakdown"
-              ]
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 4,
-            "width": 6,
-            "height": 1
-          }
-        },
-        {
-          "widget": {
-            "name": "6aa22165",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "fields": [
-                    {
-                      "name": "sum(total_cost)",
-                      "expression": "SUM(`total_cost`)"
-                    },
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "sum(total_cost)",
-                  "axis": {
-                    "hideTitle": false,
-                    "hideLabels": false,
-                    "hideGrid": false
-                  },
-                  "format": {
-                    "type": "number-currency",
-                    "currencyCode": "USD",
-                    "abbreviation": "compact",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 2
-                    },
-                    "hideGroupSeparator": false
-                  },
-                  "displayName": "Total Cost ($)",
-                  "scale": {
-                    "type": "quantitative",
-                    "reverse": false
-                  }
-                },
-                "y": {
-                  "fieldName": "workspace_name",
-                  "axis": {
-                    "labelAngle": 0
-                  },
-                  "displayName": "Workspace Name",
-                  "scale": {
-                    "type": "categorical",
-                    "categorySize": {
-                      "type": "number-of-categories",
-                      "number": 10
-                    },
-                    "sort": {
-                      "by": "x-reversed"
-                    }
-                  }
-                },
-                "label": {
-                  "show": true
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Top 10 Workspaces: Cost breakdown for All SQL Warehouse"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 5,
-            "width": 3,
-            "height": 4
-          }
-        },
-        {
-          "widget": {
-            "name": "a4e53d73",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "fields": [
-                    {
-                      "name": "sum(total_cost)",
-                      "expression": "SUM(`total_cost`)"
-                    },
-                    {
-                      "name": "type_of_sql",
-                      "expression": "`type_of_sql`"
-                    },
-                    {
-                      "name": "sum(usage_quantity_dbu)",
-                      "expression": "SUM(`usage_quantity_dbu`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "pie",
-              "encodings": {
-                "angle": {
-                  "fieldName": "sum(total_cost)",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "format": {
-                    "type": "number-plain",
-                    "abbreviation": "none",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 2
-                    }
-                  },
-                  "displayName": "Cost breakdown by Type of Warehouse"
-                },
-                "color": {
-                  "fieldName": "type_of_sql",
-                  "displayName": "Type of SQL Warehouse",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "label": {
-                  "show": true
-                },
-                "extra": [
-                  {
-                    "fieldName": "sum(usage_quantity_dbu)",
-                    "displayName": "Total Usage DBUs"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Cost breakdown by Type of SQL Warehouse\n"
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 5,
-            "width": 3,
-            "height": 4
-          }
-        },
-        {
-          "widget": {
-            "name": "498cd9ac",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "fields": [
-                    {
-                      "name": "sku_name",
-                      "expression": "`sku_name`"
-                    },
-                    {
-                      "name": "sum(usage_quantity_dbu)",
-                      "expression": "SUM(`usage_quantity_dbu`)"
-                    },
-                    {
-                      "name": "sum(total_cost)",
-                      "expression": "SUM(`total_cost`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "sum(total_cost)",
-                  "format": {
-                    "type": "number-currency",
-                    "currencyCode": "USD",
-                    "abbreviation": "compact",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 2
-                    }
-                  },
-                  "displayName": "Total Cost (S)",
-                  "scale": {
-                    "type": "quantitative",
-                    "reverse": false
-                  }
-                },
-                "y": {
-                  "fieldName": "sku_name",
-                  "displayName": "SKU Name",
-                  "scale": {
-                    "type": "categorical",
-                    "categorySize": {
-                      "type": "number-of-categories",
-                      "number": 5
-                    },
-                    "sort": {
-                      "by": "x-reversed"
-                    }
-                  }
-                },
-                "color": {
-                  "fieldName": "sku_name",
-                  "displayName": "SKU Name",
-                  "scale": {
-                    "type": "categorical",
-                    "sort": {
-                      "by": "natural-order"
-                    }
-                  }
-                },
-                "label": {
-                  "show": true
-                },
-                "extra": [
-                  {
-                    "fieldName": "sum(usage_quantity_dbu)",
-                    "displayName": "Total Usage DBUs"
-                  }
-                ]
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Total Cost By SKU Warehouse Types"
-              },
-              "mark": {
-                "layout": "stack"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 9,
-            "width": 6,
-            "height": 6
-          }
-        },
-        {
-          "widget": {
-            "name": "8f8fe884",
-            "multilineTextboxSpec": {
-              "lines": [
-                "## Warehouse Operations Uptime"
-              ]
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 15,
-            "width": 6,
-            "height": 1
-          }
-        },
-        {
-          "widget": {
-            "name": "c13da9d5",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "89987429",
-                  "fields": [
-                    {
-                      "name": "sum(uptime_hours)",
-                      "expression": "SUM(`uptime_hours`)"
-                    },
-                    {
-                      "name": "workspace_name",
-                      "expression": "`workspace_name`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "sum(uptime_hours)",
-                  "displayName": "Total Uptime hours",
-                  "scale": {
-                    "type": "quantitative"
-                  }
-                },
-                "y": {
-                  "fieldName": "workspace_name",
-                  "displayName": "Workspace Name",
-                  "scale": {
-                    "type": "categorical",
-                    "categorySize": {
-                      "type": "number-of-categories",
-                      "number": 10
-                    },
-                    "sort": {
-                      "by": "x-reversed"
-                    }
-                  }
-                },
-                "label": {
-                  "show": true
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Top 10 Workspaces: Warehouses with the Most Uptime"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 16,
-            "width": 6,
-            "height": 4
-          }
-        },
-        {
-          "widget": {
-            "name": "54cb3965",
-            "multilineTextboxSpec": {
-              "lines": [
-                "## Trends"
-              ]
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 20,
-            "width": 3,
-            "height": 1
-          }
-        },
-        {
-          "widget": {
-            "name": "d57eafd0",
-            "queries": [
-              {
-                "name": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412f2abc70bc71dd2d197_period",
-                "query": {
-                  "datasetName": "ad4f3bfc",
-                  "fields": [
-                    {
-                      "name": "period",
-                      "expression": "`period`"
-                    },
-                    {
-                      "name": "period_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_period",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "parameters": [
-                    {
-                      "name": "period",
-                      "keyword": "period"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "filter-single-select",
-              "encodings": {
-                "fields": [
-                  {
-                    "parameterName": "period",
-                    "queryName": "parameter_dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0dbaadebc11b1a886107bb49bb545_period"
-                  },
-                  {
-                    "fieldName": "period",
-                    "queryName": "dashboards/01f0c9dfc3131a879d82177a8bb459f2/datasets/01f0c9dfc31412f2abc70bc71dd2d197_period"
-                  }
-                ]
-              },
-              "selection": {
-                "defaultSelection": {
-                  "values": {
-                    "dataType": "STRING",
-                    "values": [
-                      {
-                        "value": "daily"
-                      }
-                    ]
-                  }
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Trend Period",
-                "showDescription": true,
-                "description": "Allowed values - \"daily/monthly\""
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 20,
-            "width": 3,
-            "height": 1
-          }
-        },
-        {
-          "widget": {
-            "name": "c47dc8c1",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ea1affbc",
-                  "fields": [
-                    {
-                      "name": "usage_date_new",
-                      "expression": "`usage_date_new`"
-                    },
-                    {
-                      "name": "sum(total_cost)",
-                      "expression": "SUM(`total_cost`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "line",
-              "encodings": {
-                "x": {
-                  "fieldName": "usage_date_new",
-                  "axis": {
-                    "labelAngle": 0,
-                    "title": "Timeline"
-                  },
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "y": {
-                  "fieldName": "sum(total_cost)",
-                  "axis": {
-                    "hideTitle": false,
-                    "hideLabels": false,
-                    "hideGrid": false,
-                    "title": "Total Cost ($)"
-                  },
-                  "format": {
-                    "type": "number-currency",
-                    "currencyCode": "USD",
-                    "abbreviation": "compact",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 2
-                    }
-                  },
-                  "displayName": "Total Cost ($)",
-                  "scale": {
-                    "type": "quantitative",
-                    "reverse": false
-                  }
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "SQL Warehouse Cost Analysis (Daily / Monthly)"
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 21,
-            "width": 6,
             "height": 5
           }
         }

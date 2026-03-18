@@ -30,12 +30,14 @@ dbutils.widgets.text('discount', '0')
 dbutils.widgets.text('currency_conversion', '0')
 dbutils.widgets.text('destination_catalog', 'main')
 dbutils.widgets.text('destination_schema', 'default')
+dbutils.widgets.text('max_parallel_threads', '10')
 
 params = dbutils.widgets.getAll()
 discount = params.get('discount') or '0'
 currency_conversion = params.get('currency_conversion') or '0'
 destination_catalog = params.get('destination_catalog') or 'main'
 destination_schema = params.get('destination_schema') or 'default'
+max_parallel_threads = int(params.get('max_parallel_threads') or '10')
 
 # Calculate the AP-to-Job savings ratio per SKU from list_prices
 spark.sql("""
@@ -69,6 +71,7 @@ spark.sql("""
 # MAGIC - **vacuum_queries_to_be_executed_parallely**: for vacuuming (cleaning up) the tables.
 # MAGIC
 # MAGIC ###### Each list is executed in parallel to speed up the overall dashboard materialization process.
+
 # COMMAND ----------
 
 queries_to_be_executed_parallely = []
@@ -86,7 +89,7 @@ vacuum_queries_to_be_executed_parallely=[]
 # DBTITLE 1,all_total_cost_and_quantity_workload
 
 query = f"""
-CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_workload
+CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_workload AS
 SELECT
   t1.usage_metadata.source_region as region,
   t1.workspace_id as workspace_id,
@@ -108,7 +111,7 @@ ROUND(
   SUM(
     usage_quantity
     * list_prices.pricing.effective_list.default
-    * (1 - (CAST({discount} AS DOUBLE) / 100))
+    * (1 - ({discount} / 100.0))
     * CASE 
         WHEN {currency_conversion} = 0 THEN 1
         ELSE {currency_conversion}
@@ -125,8 +128,7 @@ INNER JOIN system.access.workspaces_latest t2
 ON t1.account_id = t2.account_id
 AND t1.workspace_id = t2.workspace_id
 WHERE t1.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
-GROUP BY all
-order by total_list_cost desc;"""
+GROUP BY all;"""
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_workload;"
 query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.all_total_cost_and_quantity_workload;"
@@ -200,7 +202,7 @@ INNER JOIN system.billing.list_prices list_prices
 INNER JOIN system.access.workspaces_latest t2
   ON t1.account_id = t2.account_id
   AND t1.workspace_id = t2.workspace_id
-LEFT JOIN latest_clusters c on t1.usage_metadata.cluster_id= c.cluster_id 
+LEFT JOIN latest_clusters c on t1.workspace_id= c.workspace_id and t1.usage_metadata.cluster_id= c.cluster_id
 WHERE
   t1.sku_name like '%ALL_PURPOSE%' and t1.sku_name not like '%ALL_PURPOSE_SERVERLESS%'
   AND t1.usage_unit = 'DBU'
@@ -284,7 +286,7 @@ FROM
     INNER JOIN system.access.workspaces_latest t2
       ON u.account_id = t2.account_id
       AND u.workspace_id = t2.workspace_id
-    LEFT JOIN latest_clusters c on c.cluster_id=u.usage_metadata.cluster_id
+    LEFT JOIN latest_clusters c on c.workspace_id=u.workspace_id and c.cluster_id=u.usage_metadata.cluster_id
   WHERE u.sku_name like '%ALL_PURPOSE%' 
     AND u.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
 GROUP BY all)
@@ -548,85 +550,6 @@ vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 # COMMAND ----------
 
-query = f"""
-CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.total_ap_job_run_state_analysis
-AS
-with 
-latest_clusters AS (
-  SELECT *
-  FROM (
-    SELECT *,
-           ROW_NUMBER() OVER(PARTITION BY workspace_id, cluster_id ORDER BY change_time DESC) AS rn
-    FROM system.compute.clusters
-    WHERE cluster_source in ('UI','API')
-  )
-  WHERE rn = 1
-),
--- Deduplicate job runs to get the latest/final state per run_id
-deduplicated_job_runs as (
-    SELECT
-        j.run_id,
-        j.result_state,
-        j.workspace_id,
-        date(j.period_end_time) as usage_date,
-        j.compute_ids,
-        ROW_NUMBER() OVER (
-            PARTITION BY j.run_id 
-            ORDER BY j.period_end_time DESC, 
-                     CASE WHEN j.result_state = 'SUCCEEDED' THEN 1 ELSE 0 END ASC
-        ) as rn
-    FROM system.lakeflow.job_run_timeline j
-      INNER JOIN system.access.workspaces_latest wsinfo
-      on wsinfo.Workspace_id = j.workspace_id
-    where j.period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
-),
-job_runs as (
-    SELECT
-        run_id,
-        result_state,
-        workspace_id,
-        usage_date,
-        EXPLODE(IF(size(compute_ids) = 0, ARRAY('no cluster'), compute_ids)) AS cluster_id
-    FROM deduplicated_job_runs
-    WHERE rn = 1
-),
-temp as 
-(
-  SELECT
-    j.usage_date,
-    case when c.cluster_id is null then 'UNKNOWN' else c.cluster_id end as cluster_id,
-    case when c.cluster_name is null then 'UNKNOWN' else c.cluster_name end as cluster_name,
-    wsinfo.workspace_id as workspace_id,
-    wsinfo.workspace_name as workspace_name,
-    COUNT(DISTINCT j.run_id) AS total_job_runs,
-    COUNT(DISTINCT CASE WHEN j.result_state = 'SUCCEEDED' THEN j.run_id END) AS successful_runs,
-    COUNT(DISTINCT CASE WHEN COALESCE(j.result_state, 'FAILED') != 'SUCCEEDED' THEN j.run_id END) AS failed_runs,
-    ROUND(COUNT(DISTINCT CASE WHEN COALESCE(j.result_state, 'FAILED') != 'SUCCEEDED' THEN j.run_id END) / COUNT(DISTINCT j.run_id), 2) AS failure_rate_percent,
-    ROUND(COUNT(DISTINCT CASE WHEN j.result_state = 'SUCCEEDED' THEN j.run_id END) / COUNT(DISTINCT j.run_id), 2) AS success_rate_percent
-FROM job_runs j
-INNER JOIN system.access.workspaces_latest wsinfo 
-  ON j.workspace_id = wsinfo.workspace_id
-INNER JOIN latest_clusters c ON c.cluster_id = j.cluster_id
-GROUP BY 
-    j.usage_date,
-    case when c.cluster_id is null then 'UNKNOWN' else c.cluster_id end,
-    case when c.cluster_name is null then 'UNKNOWN' else c.cluster_name end,
-    wsinfo.workspace_id,
-    wsinfo.workspace_name
-)
-
-select * from temp"""
-
-query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.total_ap_job_run_state_analysis;"
-query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.total_ap_job_run_state_analysis;"
-
-
-queries_to_be_executed_parallely.append(query)
-optimize_queries_to_be_executed_parallely.append(query_optimize)
-vacuum_queries_to_be_executed_parallely.append(query_vacuum)
-
-# COMMAND ----------
-
 # DBTITLE 1,total_cost_and_quantity_YTD
 ## This query provides only year-to-date (YTD) total usage and cost all the workloads i.e. including All purpose, Job compute, Serverless, etc. across all cluster types, grouped by workspace, environment, and director,service—providing a comprehensive summary for dashboard reporting and spend analysis.
 
@@ -645,6 +568,7 @@ case when t1.sku_name like '%ALL_PURPOSE_COMPUTE%' THEN 'ALL_PURPOSE'
       when t1.sku_name like '%SQL%' THEN 'SQL_WAREHOUSE'
       when t1.sku_name like '%SERVING%' THEN 'MODEL_SERVING'
       when t1.sku_name like '%SERVERLESS%' THEN 'SERVERLESS'
+      when t1.sku_name like '%STORAGE%' THEN 'STORAGE'
       when (t1.sku_name like '%CONNECTIVITY%' or t1.sku_name like '%EGRESS%') THEN 'CONNECTIVITY_AND_EGRESS'
       else 'OTHERS'
 end as cluster_type,
@@ -669,7 +593,7 @@ AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_ti
 INNER JOIN system.access.workspaces_latest t2
     ON t1.account_id = t2.account_id
     AND t1.workspace_id = t2.workspace_id
-WHERE t1.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+WHERE t1.usage_date between date_trunc('year', current_date) and current_date
 GROUP BY all;
 """
 
@@ -688,9 +612,8 @@ vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 # DBTITLE 1,total_cost_and_quantity_job
 ## This query materializes job-run costs and DBU usage by workspace/job, joining run metadata and node utilization to compute totals, success/failure counts & rates, and a “max_potential_savings” for the last 3 years. It enriches with workspace/ownership context and writes the result as a Delta table for dashboarding job spend and efficiency.
 
-query=f"""
-CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.total_cost_and_quantity_job
-AS 
+query = f"""CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.total_cost_and_quantity_job
+AS
 WITH run_details AS (
     SELECT
         workspace_id,
@@ -699,9 +622,11 @@ WITH run_details AS (
         run_name,
         run_type,
         result_state,
+        period_start_time,
         ROW_NUMBER() OVER (PARTITION BY workspace_id, job_id, run_id ORDER BY period_start_time DESC) AS rn
     FROM system.lakeflow.job_run_timeline
-    WHERE period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp() and run_type is not null
+    WHERE period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+      AND run_type IS NOT NULL
     QUALIFY rn = 1
 ),
 job_details AS (
@@ -715,157 +640,253 @@ job_details AS (
 ),
 job_run_details AS (
     SELECT DISTINCT
+        runs.workspace_id,
         runs.job_id,
         runs.run_id,
-        -- Use COALESCE to get the defined job name if available, otherwise use the run_name from timeline
+        runs.period_start_time,
         COALESCE(jobs.name, runs.run_name) AS job_or_pipeline_name,
         runs.run_type,
         runs.result_state
     FROM run_details runs
     LEFT JOIN job_details jobs ON runs.job_id = jobs.job_id
 ),
-node_timeline AS (
-  SELECT 
-    nt.workspace_id,
-    nt.cluster_id,
-    AVG(nt.cpu_user_percent + nt.cpu_system_percent) AS avg_cpu_utilization,
-    MAX(nt.cpu_user_percent + nt.cpu_system_percent) AS peak_cpu_utilization,
-    AVG(nt.cpu_wait_percent) AS avg_cpu_disk_wait,  
-    MAX(nt.cpu_wait_percent) AS max_cpu_disk_wait,     
-    AVG(nt.mem_used_percent) AS avg_memory_utilization,
-    MAX(nt.mem_used_percent) AS max_memory_utilization
-  FROM system.compute.node_timeline nt
-  WHERE end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
-  GROUP BY nt.workspace_id, nt.cluster_id
-),
-temp as
-(SELECT
-    t2.workspace_id AS workspace_id, 
-    t2.workspace_name AS workspace_name,
-    t1.usage_metadata.source_region as region,
-    CASE 
-    WHEN run_type != 'SUBMIT_RUN' THEN t1.usage_metadata.job_id
-      ELSE LEFT(
-        job_or_pipeline_name, 
-        LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-    END AS job_id_or_pipeline_name,
-    t1.sku_name,
-    CASE 
-    WHEN run_type != 'SUBMIT_RUN' THEN job.job_or_pipeline_name
-      ELSE LEFT(
-        job_or_pipeline_name, 
-        LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-    END AS job_or_pipeline_name,
-    case when job.run_type == 'SUBMIT_RUN' then 'ADF_RUN' else 'WORKFLOW_RUN' end as run_type,
-    CASE WHEN result_state = 'SUCCEEDED' THEN 'SUCCEEDED' ELSE 'FAILED' end as run_result,
-    usage_date,
-    nt.avg_cpu_utilization,
-    nt.peak_cpu_utilization,
-    nt.avg_cpu_disk_wait,  
-    nt.max_cpu_disk_wait,     
-    nt.avg_memory_utilization,
-    nt.max_memory_utilization,
-    SUM(t1.usage_quantity) AS total_usage_quantity_dbu,
-      SUM(
-          t1.usage_quantity
-          * list_prices.pricing.effective_list.default
-          * (1 - ({discount} / 100.0))
-          * CASE
-              WHEN {currency_conversion} = 0 THEN 1
-              ELSE {currency_conversion}
-            END
-      )
-    AS total_cost,
-    (SUM(
-        t1.usage_quantity
-        * list_prices.pricing.effective_list.default
-        * (1 - ({discount} / 100.0))
-        * CASE
-            WHEN {currency_conversion} = 0 THEN 1
-            ELSE {currency_conversion}
-          END
-    ) * (1 - (nt.avg_cpu_utilization / 100)) / 2.0) AS max_potential_savings,
-    count(distinct run_id) as total_job_runs,
-    count(distinct case when result_state == 'SUCCEEDED' then run_id end) as success_count,
-    count(distinct case when result_state != 'SUCCEEDED' then run_id end) as failure_count,
-    count(distinct case when result_state = 'SUCCEEDED' then run_id end)
-      /
-      NULLIF(count(distinct run_id), 0) * 100
-      AS success_percent,
-    count(distinct case when result_state != 'SUCCEEDED' then run_id end)
-      /
-      NULLIF(count(distinct run_id), 0) * 100
-      AS not_successful_percent,
-    SUM(
-      CASE WHEN result_state = 'SUCCEEDED' 
-          THEN t1.usage_quantity 
-                * list_prices.pricing.effective_list.default 
-                * (1 - ({discount} / 100.0)) 
-                * CASE
-                    WHEN {currency_conversion} = 0 THEN 1
-                    ELSE {currency_conversion}
-                  END
-        END
-    ) AS total_success_cost,
-    SUM(
-      CASE WHEN result_state != 'SUCCEEDED' 
-          THEN t1.usage_quantity 
-                * list_prices.pricing.effective_list.default 
-                * (1 - ({discount} / 100.0)) 
-                * CASE
-                    WHEN {currency_conversion} = 0 THEN 1
-                    ELSE {currency_conversion}
-                  END
-        END
-    ) AS total_failure_cost
-FROM
-    system.billing.usage t1
-  INNER JOIN
-    system.billing.list_prices list_prices
-    ON t1.cloud = list_prices.cloud
-    AND t1.sku_name = list_prices.sku_name
-    AND t1.usage_start_time >= list_prices.price_start_time
-    AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
-  INNER JOIN system.access.workspaces_latest t2
-      ON t1.account_id = t2.account_id
-      AND t1.workspace_id = t2.workspace_id
-  LEFT JOIN
-     job_run_details job ON t1.usage_metadata.job_id = job.job_id AND t1.usage_metadata.job_run_id = job.run_id
-  LEFT JOIN node_timeline nt on t1.workspace_id = nt.workspace_id and t1.usage_metadata.cluster_id = nt.cluster_id
-WHERE
-    t1.sku_name like '%JOBS_COMPUTE%'
-    AND t1.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
-GROUP BY
-    ALL)
 
-SELECT 
-  t.workspace_id,
-  t.workspace_name,
-  t.region,
-  t.job_id_or_pipeline_name,
-  t.sku_name,
-  t.job_or_pipeline_name,
-  t.run_type,
-  t.run_result,
-  t.usage_date,
-  ROUND(t.total_cost, 2)                AS total_cost,
-  ROUND(t.max_potential_savings, 2)     AS max_potential_savings,
-  ROUND(t.total_success_cost, 2)        AS total_success_cost,
-  ROUND(t.total_failure_cost, 2)        AS total_failure_cost,
-  t.total_job_runs,
-  t.success_count,
-  t.failure_count,
-  ROUND(t.success_percent, 2)           AS success_percent,
-  ROUND(t.not_successful_percent, 2)    AS not_successful_percent,
-  t.avg_cpu_utilization,
-  t.peak_cpu_utilization,
-  t.avg_cpu_disk_wait,
-  t.max_cpu_disk_wait,
-  t.avg_memory_utilization,
-  t.max_memory_utilization,
-  t.total_usage_quantity_dbu
-FROM 
-  temp t;
+-- Run metrics per (job_id, date)
+run_metrics AS (
+    SELECT
+        job_id,
+        CAST(period_start_time AS DATE) AS run_date,
+        MAX(workspace_id) AS workspace_id,
+        MAX(job_or_pipeline_name) AS job_or_pipeline_name,
+        MAX(run_type) AS run_type,
+        COUNT(DISTINCT run_id) AS total_job_runs,
+        COUNT(DISTINCT CASE WHEN result_state = 'SUCCEEDED' THEN run_id END) AS success_count,
+        COUNT(DISTINCT CASE WHEN result_state != 'SUCCEEDED' THEN run_id END) AS failure_count,
+        ROUND(
+            COUNT(DISTINCT CASE WHEN result_state = 'SUCCEEDED' THEN run_id END) * 100.0
+            / NULLIF(COUNT(DISTINCT run_id), 0), 2
+        ) AS success_percent,
+        ROUND(
+            COUNT(DISTINCT CASE WHEN result_state != 'SUCCEEDED' THEN run_id END) * 100.0
+            / NULLIF(COUNT(DISTINCT run_id), 0), 2
+        ) AS not_successful_percent
+    FROM job_run_details
+    GROUP BY job_id, CAST(period_start_time AS DATE)
+),
+
+-- Node-level compute metrics per (workspace, cluster, date) — responds to single date filter
+node_timeline AS (
+    SELECT
+        nt.workspace_id,
+        nt.cluster_id,
+        CAST(nt.start_time AS DATE) AS usage_date,
+        AVG(nt.cpu_user_percent + nt.cpu_system_percent) AS avg_cpu_utilization,
+        MAX(nt.cpu_user_percent + nt.cpu_system_percent) AS peak_cpu_utilization,
+        AVG(nt.cpu_wait_percent)  AS avg_cpu_disk_wait,
+        MAX(nt.cpu_wait_percent)  AS max_cpu_disk_wait,
+        AVG(nt.mem_used_percent)  AS avg_memory_utilization,
+        MAX(nt.mem_used_percent)  AS max_memory_utilization
+    FROM system.compute.node_timeline nt
+    WHERE end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+    GROUP BY nt.workspace_id, nt.cluster_id, CAST(nt.start_time AS DATE)
+),
+
+-- Billing aggregation
+billing_agg AS (
+    SELECT
+        t2.workspace_id,
+        t2.workspace_name,
+        t1.usage_metadata.source_region AS region,
+        t1.usage_metadata.job_id AS job_id,
+        t1.sku_name,
+        COALESCE(
+            CASE
+                WHEN job.run_type = 'SUBMIT_RUN' AND job.job_or_pipeline_name IS NOT NULL
+                     AND CONTAINS(job.job_or_pipeline_name, '_')
+                THEN LEFT(
+                    job.job_or_pipeline_name,
+                    GREATEST(
+                        LENGTH(job.job_or_pipeline_name)
+                        - LENGTH('_' || SPLIT(job.job_or_pipeline_name, '_')[SIZE(SPLIT(job.job_or_pipeline_name, '_')) - 1]),
+                        0
+                    )
+                )
+                WHEN job.run_type = 'SUBMIT_RUN'
+                THEN job.job_or_pipeline_name
+                ELSE job.job_id
+            END,
+            CAST(t1.usage_metadata.job_id AS STRING)
+        ) AS job_id_or_pipeline_name,
+        COALESCE(
+            CASE
+                WHEN job.run_type = 'SUBMIT_RUN' AND job.job_or_pipeline_name IS NOT NULL
+                     AND CONTAINS(job.job_or_pipeline_name, '_')
+                THEN LEFT(
+                    job.job_or_pipeline_name,
+                    GREATEST(
+                        LENGTH(job.job_or_pipeline_name)
+                        - LENGTH('_' || SPLIT(job.job_or_pipeline_name, '_')[SIZE(SPLIT(job.job_or_pipeline_name, '_')) - 1]),
+                        0
+                    )
+                )
+                ELSE job.job_or_pipeline_name
+            END,
+            CAST(t1.usage_metadata.job_id AS STRING)
+        ) AS job_or_pipeline_name,
+        CASE WHEN job.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' ELSE 'WORKFLOW_RUN' END AS run_type,
+        t1.usage_date,
+        t1.usage_metadata.cluster_id,
+        SUM(t1.usage_quantity) AS total_usage_quantity_dbu,
+        SUM(
+            t1.usage_quantity
+            * list_prices.pricing.effective_list.default
+            * (1 - ({discount} / 100.0))
+            * CASE
+                WHEN {currency_conversion} = 0 THEN 1
+                ELSE {currency_conversion}
+              END
+        ) AS total_cost,
+        SUM(
+            CASE WHEN job.result_state = 'SUCCEEDED'
+                 THEN t1.usage_quantity
+                      * list_prices.pricing.effective_list.default
+                      * (1 - ({discount} / 100.0))
+                      * CASE
+                          WHEN {currency_conversion} = 0 THEN 1
+                          ELSE {currency_conversion}
+                        END
+            END
+        ) AS total_success_cost,
+        SUM(
+            CASE WHEN COALESCE(job.result_state, 'UNKNOWN') != 'SUCCEEDED'
+                 THEN t1.usage_quantity
+                      * list_prices.pricing.effective_list.default
+                      * (1 - ({discount} / 100.0))
+                      * CASE
+                          WHEN {currency_conversion} = 0 THEN 1
+                          ELSE {currency_conversion}
+                        END
+            END
+        ) AS total_failure_cost
+    FROM system.billing.usage t1
+    INNER JOIN system.billing.list_prices list_prices
+        ON t1.cloud = list_prices.cloud
+        AND t1.sku_name = list_prices.sku_name
+        AND t1.usage_start_time >= list_prices.price_start_time
+        AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
+    INNER JOIN system.access.workspaces_latest t2
+        ON t1.account_id = t2.account_id AND t1.workspace_id = t2.workspace_id
+    LEFT JOIN job_run_details job
+        ON t1.usage_metadata.job_id = job.job_id AND t1.usage_metadata.job_run_id = job.run_id
+    WHERE t1.sku_name LIKE '%JOBS_COMPUTE%'
+        AND t1.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+    GROUP BY
+        t2.workspace_id, t2.workspace_name, t1.usage_metadata.source_region,
+        t1.usage_metadata.job_id, t1.sku_name,
+        COALESCE(
+            CASE
+                WHEN job.run_type = 'SUBMIT_RUN' AND job.job_or_pipeline_name IS NOT NULL
+                     AND CONTAINS(job.job_or_pipeline_name, '_')
+                THEN LEFT(
+                    job.job_or_pipeline_name,
+                    GREATEST(
+                        LENGTH(job.job_or_pipeline_name)
+                        - LENGTH('_' || SPLIT(job.job_or_pipeline_name, '_')[SIZE(SPLIT(job.job_or_pipeline_name, '_')) - 1]),
+                        0
+                    )
+                )
+                WHEN job.run_type = 'SUBMIT_RUN'
+                THEN job.job_or_pipeline_name
+                ELSE job.job_id
+            END,
+            CAST(t1.usage_metadata.job_id AS STRING)
+        ),
+        COALESCE(
+            CASE
+                WHEN job.run_type = 'SUBMIT_RUN' AND job.job_or_pipeline_name IS NOT NULL
+                     AND CONTAINS(job.job_or_pipeline_name, '_')
+                THEN LEFT(
+                    job.job_or_pipeline_name,
+                    GREATEST(
+                        LENGTH(job.job_or_pipeline_name)
+                        - LENGTH('_' || SPLIT(job.job_or_pipeline_name, '_')[SIZE(SPLIT(job.job_or_pipeline_name, '_')) - 1]),
+                        0
+                    )
+                )
+                ELSE job.job_or_pipeline_name
+            END,
+            CAST(t1.usage_metadata.job_id AS STRING)
+        ),
+        CASE WHEN job.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' ELSE 'WORKFLOW_RUN' END,
+        t1.usage_date, t1.usage_metadata.cluster_id
+),
+
+-- FULL OUTER JOIN on (job_id, date): all metrics respond to one date filter
+combined AS (
+    SELECT
+        COALESCE(b.workspace_id, rm.workspace_id) AS workspace_id,
+        b.workspace_name,
+        b.region,
+        COALESCE(b.job_id, rm.job_id) AS job_id,
+        COALESCE(b.job_or_pipeline_name, rm.job_or_pipeline_name, CAST(rm.job_id AS STRING)) AS job_or_pipeline_name,
+        b.job_id_or_pipeline_name,
+        b.sku_name,
+        COALESCE(
+            b.run_type,
+            CASE WHEN rm.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' ELSE 'WORKFLOW_RUN' END
+        ) AS run_type,
+        COALESCE(b.usage_date, rm.run_date) AS usage_date,
+        b.cluster_id,
+        COALESCE(b.total_usage_quantity_dbu, 0) AS total_usage_quantity_dbu,
+        COALESCE(b.total_cost, 0) AS total_cost,
+        COALESCE(b.total_success_cost, 0) AS total_success_cost,
+        COALESCE(b.total_failure_cost, 0) AS total_failure_cost,
+        rm.total_job_runs  AS _rm_total_job_runs,
+        rm.success_count   AS _rm_success_count,
+        rm.failure_count   AS _rm_failure_count,
+        rm.success_percent AS _rm_success_percent,
+        rm.not_successful_percent AS _rm_not_successful_percent,
+        ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(b.job_id, rm.job_id), COALESCE(b.usage_date, rm.run_date)
+            ORDER BY b.cluster_id NULLS LAST, b.sku_name NULLS LAST
+        ) AS job_date_rn
+    FROM billing_agg b
+    FULL OUTER JOIN run_metrics rm
+        ON b.job_id = rm.job_id AND b.usage_date = rm.run_date
+)
+
+-- Single common filter at the end: all metrics (cost, runs, CPU) respond to this date
+SELECT
+    c.workspace_id,
+    COALESCE(c.workspace_name, w.workspace_name) AS workspace_name,
+    c.region,
+    c.job_id,
+    c.job_or_pipeline_name,
+    c.job_id_or_pipeline_name,
+    c.sku_name,
+    c.run_type,
+    c.usage_date,
+    ROUND(c.total_cost, 2)                AS total_cost,
+    ROUND(c.total_success_cost, 2)        AS total_success_cost,
+    ROUND(c.total_failure_cost, 2)        AS total_failure_cost,
+    c.total_usage_quantity_dbu,
+    CASE WHEN c.job_date_rn = 1 THEN COALESCE(c._rm_total_job_runs, 0) ELSE 0 END AS total_job_runs,
+    CASE WHEN c.job_date_rn = 1 THEN COALESCE(c._rm_success_count, 0) ELSE 0 END   AS success_count,
+    CASE WHEN c.job_date_rn = 1 THEN COALESCE(c._rm_failure_count, 0) ELSE 0 END   AS failure_count,
+    COALESCE(c._rm_success_percent, 0)    AS success_percent,
+    COALESCE(c._rm_not_successful_percent, 0) AS not_successful_percent,
+    ROUND(nt.avg_cpu_utilization, 2)      AS avg_cpu_utilization,
+    ROUND(nt.peak_cpu_utilization, 2)     AS peak_cpu_utilization,
+    ROUND(nt.avg_cpu_disk_wait, 2)        AS avg_cpu_disk_wait,
+    ROUND(nt.max_cpu_disk_wait, 2)        AS max_cpu_disk_wait,
+    ROUND(nt.avg_memory_utilization, 2)   AS avg_memory_utilization,
+    ROUND(nt.max_memory_utilization, 2)   AS max_memory_utilization,
+    ROUND(c.total_cost * (1 - COALESCE(nt.avg_cpu_utilization, 0) / 100.0) / 2.0, 2) AS max_potential_savings
+FROM combined c
+LEFT JOIN node_timeline nt
+    ON c.workspace_id = nt.workspace_id AND c.cluster_id = nt.cluster_id AND c.usage_date = nt.usage_date
+LEFT JOIN system.access.workspaces_latest w
+    ON c.workspace_id = w.workspace_id
 """
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.total_cost_and_quantity_job;"
@@ -876,29 +897,26 @@ queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
 vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
-
 # COMMAND ----------
 
-# DBTITLE 1,mom_potential_saving_trend
-## This query tracks the month-over-month (MoM) trend of potential cost savings for both job clusters and all-purpose clusters, combining job run efficiency and usage data to highlight where optimization efforts can yield the most financial benefit.
+# DBTITLE 1,total_job_run_status_and_cost
+## This query provides a bifurcation on job run status
 
-query=f"""
-CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.mom_potential_saving_trend
-AS 
+query = f"""CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.total_job_run_status_and_cost
+AS
 WITH run_details AS (
     SELECT
         workspace_id,
         job_id,
         run_id,
         run_name,
-        CASE WHEN run_type = 'SUBMIT_RUN'
-             THEN SPLIT(run_name, '_')[size(SPLIT(run_name, '_')) - 1]
-             ELSE 'JOB_RUN' END AS adf_pipeline_run_id,
         run_type,
         result_state,
+        period_start_time,
         ROW_NUMBER() OVER (PARTITION BY workspace_id, job_id, run_id ORDER BY period_start_time DESC) AS rn
     FROM system.lakeflow.job_run_timeline
     WHERE period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+      AND run_type IS NOT NULL
     QUALIFY rn = 1
 ),
 job_details AS (
@@ -912,286 +930,340 @@ job_details AS (
 ),
 job_run_details AS (
     SELECT DISTINCT
+        runs.workspace_id,
         runs.job_id,
         runs.run_id,
-        runs.workspace_id,
+        runs.period_start_time,
         COALESCE(jobs.name, runs.run_name) AS job_or_pipeline_name,
-        adf_pipeline_run_id,
         runs.run_type,
         runs.result_state
     FROM run_details runs
     LEFT JOIN job_details jobs ON runs.job_id = jobs.job_id
 ),
-latest_clusters AS (
-  SELECT
-    workspace_id,
-    cluster_id,
-    cluster_name,
-    owned_by,
-    cluster_source,
-    driver_instance_pool_id,
-    worker_instance_pool_id,
-    driver_node_type,
-    worker_node_type,
-    worker_count,
-    min_autoscale_workers,
-    max_autoscale_workers,
-    ROW_NUMBER() OVER (PARTITION BY workspace_id, cluster_id ORDER BY change_time DESC) AS rn
-  FROM system.compute.clusters
-  QUALIFY rn = 1
+-- Billing aggregated per run
+billing_per_run AS (
+    SELECT
+        t2.workspace_id,
+        t2.workspace_name,
+        t1.usage_metadata.source_region AS region,
+        t1.usage_metadata.job_id AS job_id,
+        t1.usage_metadata.job_run_id AS run_id,
+        t1.sku_name,
+        COALESCE(
+            CASE
+                WHEN job.run_type = 'SUBMIT_RUN' AND job.job_or_pipeline_name IS NOT NULL
+                     AND CONTAINS(job.job_or_pipeline_name, '_')
+                THEN LEFT(
+                    job.job_or_pipeline_name,
+                    GREATEST(
+                        LENGTH(job.job_or_pipeline_name)
+                        - LENGTH('_' || SPLIT(job.job_or_pipeline_name, '_')[SIZE(SPLIT(job.job_or_pipeline_name, '_')) - 1]),
+                        0
+                    )
+                )
+                ELSE job.job_or_pipeline_name
+            END,
+            CAST(t1.usage_metadata.job_id AS STRING)
+        ) AS job_or_pipeline_name,
+        CASE WHEN job.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' ELSE 'WORKFLOW_RUN' END AS run_type,
+        t1.usage_date,
+        job.result_state AS run_result,
+        SUM(t1.usage_quantity) AS total_usage_quantity_dbu,
+        SUM(
+            t1.usage_quantity
+            * list_prices.pricing.effective_list.default
+            * (1 - ({discount} / 100.0))
+            * CASE
+                WHEN {currency_conversion} = 0 THEN 1
+                ELSE {currency_conversion}
+              END
+        ) AS total_cost
+    FROM system.billing.usage t1
+    INNER JOIN system.billing.list_prices list_prices
+        ON t1.cloud = list_prices.cloud
+        AND t1.sku_name = list_prices.sku_name
+        AND t1.usage_start_time >= list_prices.price_start_time
+        AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
+    INNER JOIN system.access.workspaces_latest t2
+        ON t1.account_id = t2.account_id AND t1.workspace_id = t2.workspace_id
+    LEFT JOIN job_run_details job
+        ON t1.usage_metadata.job_id = job.job_id AND t1.usage_metadata.job_run_id = job.run_id
+    WHERE t1.sku_name LIKE '%JOBS_COMPUTE%'
+        AND t1.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+    GROUP BY
+        t2.workspace_id, t2.workspace_name, t1.usage_metadata.source_region,
+        t1.usage_metadata.job_id, t1.usage_metadata.job_run_id, t1.sku_name,
+        COALESCE(
+            CASE
+                WHEN job.run_type = 'SUBMIT_RUN' AND job.job_or_pipeline_name IS NOT NULL
+                     AND CONTAINS(job.job_or_pipeline_name, '_')
+                THEN LEFT(
+                    job.job_or_pipeline_name,
+                    GREATEST(
+                        LENGTH(job.job_or_pipeline_name)
+                        - LENGTH('_' || SPLIT(job.job_or_pipeline_name, '_')[SIZE(SPLIT(job.job_or_pipeline_name, '_')) - 1]),
+                        0
+                    )
+                )
+                ELSE job.job_or_pipeline_name
+            END,
+            CAST(t1.usage_metadata.job_id AS STRING)
+        ),
+        CASE WHEN job.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' ELSE 'WORKFLOW_RUN' END,
+        t1.usage_date, job.result_state
+)
+
+-- Run-level output with cost, result, and metadata
+SELECT
+    COALESCE(b.workspace_id, j.workspace_id) AS workspace_id,
+    COALESCE(b.workspace_name, w.workspace_name) AS workspace_name,
+    b.region,
+    COALESCE(b.job_id, j.job_id) AS job_id,
+    COALESCE(b.run_id, j.run_id) AS run_id,
+    CASE 
+      WHEN j.run_type != 'SUBMIT_RUN' THEN j.job_id
+      WHEN b.job_or_pipeline_name IS NOT NULL AND CONTAINS(b.job_or_pipeline_name, '_')
+      THEN LEFT(
+          b.job_or_pipeline_name, 
+          GREATEST(
+              LENGTH(b.job_or_pipeline_name) - LENGTH('_' || SPLIT(b.job_or_pipeline_name, '_')[SIZE(SPLIT(b.job_or_pipeline_name, '_')) - 1]),
+              0
+          ))
+      ELSE b.job_or_pipeline_name
+    END AS job_id_or_pipeline_name,
+    COALESCE(b.job_or_pipeline_name,
+        COALESCE(
+            CASE
+                WHEN j.run_type = 'SUBMIT_RUN' AND j.job_or_pipeline_name IS NOT NULL
+                     AND CONTAINS(j.job_or_pipeline_name, '_')
+                THEN LEFT(
+                    j.job_or_pipeline_name,
+                    GREATEST(
+                        LENGTH(j.job_or_pipeline_name)
+                        - LENGTH('_' || SPLIT(j.job_or_pipeline_name, '_')[SIZE(SPLIT(j.job_or_pipeline_name, '_')) - 1]),
+                        0
+                    )
+                )
+                ELSE j.job_or_pipeline_name
+            END,
+            CAST(j.job_id AS STRING)
+        )
+    ) AS job_or_pipeline_name,
+    b.sku_name,
+    COALESCE(b.run_type,
+        CASE WHEN j.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' ELSE 'WORKFLOW_RUN' END
+    ) AS run_type,
+    COALESCE(b.usage_date, CAST(j.period_start_time AS DATE)) AS usage_date,
+    COALESCE(b.run_result, j.result_state) AS run_result,
+    ROUND(COALESCE(b.total_usage_quantity_dbu, 0), 2) AS total_usage_quantity_dbu,
+    ROUND(COALESCE(b.total_cost, 0), 2) AS total_cost
+FROM billing_per_run b
+FULL OUTER JOIN job_run_details j
+    ON b.job_id = j.job_id AND b.run_id = j.run_id
+LEFT JOIN system.access.workspaces_latest w
+    ON COALESCE(b.workspace_id, j.workspace_id) = w.workspace_id
+"""
+
+query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.total_job_run_status_and_cost;"
+query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.total_job_run_status_and_cost;"
+
+
+queries_to_be_executed_parallely.append(query)
+optimize_queries_to_be_executed_parallely.append(query_optimize)
+vacuum_queries_to_be_executed_parallely.append(query_vacuum)
+
+
+# COMMAND ----------
+
+# DBTITLE 1,mom_potential_saving_trend
+## This query tracks the month-over-month (MoM) trend of potential cost savings for both job clusters 
+# and job runs on all-purpose clusters, combining job run efficiency and usage data to highlight 
+# where optimization efforts can yield the most financial benefit.
+
+query=f"""
+CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.mom_potential_saving_trend
+AS 
+WITH run_details AS (
+    SELECT
+        workspace_id,
+        job_id,
+        run_id,
+        ROW_NUMBER() OVER (PARTITION BY workspace_id, job_id, run_id ORDER BY period_start_time DESC) AS rn
+    FROM system.lakeflow.job_run_timeline
+    WHERE period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+      AND run_type IS NOT NULL
+    QUALIFY rn = 1
 ),
+
+latest_clusters AS (
+    SELECT
+        workspace_id,
+        cluster_id,
+        ROW_NUMBER() OVER (PARTITION BY workspace_id, cluster_id ORDER BY change_time DESC) AS rn
+    FROM system.compute.clusters
+    WHERE cluster_source IN ('UI', 'API')
+    QUALIFY rn = 1
+),
+
+ap_to_job_savings_ratio AS (
+    SELECT
+        ap.cloud,
+        ap.sku_name AS ap_sku_name,
+        ROUND(
+            1 - (job.pricing.effective_list.default / ap.pricing.effective_list.default),
+            4
+        ) AS savings_ratio
+    FROM system.billing.list_prices ap
+    INNER JOIN system.billing.list_prices job
+        ON job.cloud = ap.cloud
+        AND job.sku_name = REPLACE(ap.sku_name, 'ALL_PURPOSE_COMPUTE', 'JOBS_COMPUTE')
+        AND job.price_start_time = ap.price_start_time
+    WHERE ap.sku_name LIKE '%ALL_PURPOSE_COMPUTE%'
+        AND ap.price_end_time IS NULL
+),
+
 node_timeline AS (
-  SELECT 
-    nt.workspace_id,
-    nt.cluster_id,
-    AVG(nt.cpu_user_percent + nt.cpu_system_percent) AS avg_cpu_utilization,
-    MAX(nt.cpu_user_percent + nt.cpu_system_percent) AS peak_cpu_utilization,
-    AVG(nt.cpu_wait_percent) AS avg_cpu_disk_wait,  
-    MAX(nt.cpu_wait_percent) AS max_cpu_disk_wait,     
-    AVG(nt.mem_used_percent) AS avg_memory_utilization,
-    MAX(nt.mem_used_percent) AS max_memory_utilization
-  FROM system.compute.node_timeline nt
-  WHERE end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
-  GROUP BY nt.workspace_id, nt.cluster_id
+    SELECT
+        workspace_id,
+        cluster_id,
+        CAST(start_time AS DATE) AS usage_date,
+        AVG(cpu_user_percent + cpu_system_percent) AS avg_cpu_utilization
+    FROM system.compute.node_timeline
+    WHERE end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+    GROUP BY workspace_id, cluster_id, CAST(start_time AS DATE)
 ),
 
 job_detail AS (
-SELECT
-    t2.workspace_id AS workspace_id, 
-    t2.workspace_name AS workspace_name,
-    t1.usage_date,
-    CASE 
-      WHEN jrd.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' 
-      ELSE 'WORKFLOW_RUN' 
-    END AS run_type,
-    CASE 
-      WHEN jrd.run_type != 'SUBMIT_RUN' THEN jrd.job_id
-      ELSE LEFT(
-          job_or_pipeline_name, 
-          LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-    END AS job_id_or_pipeline_name,
-    CASE 
-      WHEN jrd.run_type != 'SUBMIT_RUN' THEN jrd.job_or_pipeline_name
-      ELSE LEFT(
-          job_or_pipeline_name, 
-          LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-    END AS job_or_pipeline_name,
-    jrd.adf_pipeline_run_id,
-    jrd.run_id,
-    t1.sku_name,
-    CASE WHEN t1.sku_name like '%SERVERLESS%' THEN 'JOBS_SERVERLESS' ELSE l.cluster_id END as cluster_id,
-    CASE WHEN t1.sku_name like '%SERVERLESS%' THEN 'JOBS_SERVERLESS' ELSE l.cluster_name END as cluster_name,
-    cluster_source,
-    CASE WHEN l.driver_instance_pool_id is not null then l.driver_instance_pool_id else 'NOT_A_POOL_RUN' end as driver_pool_id,
-    CASE WHEN l.worker_instance_pool_id is not null then l.worker_instance_pool_id else 'NOT_A_POOL_RUN' end as worker_pool_id,
-    driver_node_type,
-    worker_node_type,    
-    nt.avg_cpu_utilization,
-    nt.peak_cpu_utilization,
-    nt.avg_cpu_disk_wait,  
-    nt.max_cpu_disk_wait,     
-    nt.avg_memory_utilization,
-    nt.max_memory_utilization,
-    ROUND(SUM(t1.usage_quantity), 2) AS total_usage_quantity_dbu,
-    ROUND(
-        SUM(
-            t1.usage_quantity
-            * list_prices.pricing.effective_list.default
-            * (1 - ({discount} / 100.0))
-            * CASE
-                WHEN {currency_conversion} = 0 THEN 1
-                ELSE {currency_conversion}
-              END
-        ),
-    2) AS total_cost,
-    (
-        SUM(
-            t1.usage_quantity
-            * list_prices.pricing.effective_list.default
-            * (1 - ({discount} / 100.0))
-            * CASE
-                WHEN {currency_conversion} = 0 THEN 1
-                ELSE {currency_conversion}
-              END
-        )
-        * (1 - (nt.avg_cpu_utilization / 100))
-        / 2.0
-    ) AS max_potential_savings
-FROM system.billing.usage  t1
-JOIN system.billing.list_prices list_prices
-  ON t1.cloud = list_prices.cloud
- AND t1.sku_name = list_prices.sku_name
- AND t1.usage_start_time >= list_prices.price_start_time
- AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
-INNER JOIN system.access.workspaces_latest t2
-      ON t1.account_id = t2.account_id
-      AND t1.workspace_id = t2.workspace_id
-JOIN job_run_details jrd
-  ON t1.workspace_id = jrd.workspace_id
- AND t1.usage_metadata.job_id = jrd.job_id
- AND t1.usage_metadata.job_run_id = jrd.run_id
-LEFT JOIN latest_clusters l
-  ON t1.workspace_id = l.workspace_id
- AND t1.usage_metadata.cluster_id = l.cluster_id
-LEFT JOIN node_timeline nt
-  ON t1.workspace_id = nt.workspace_id
- AND t1.usage_metadata.cluster_id = nt.cluster_id
-WHERE
-    t1.sku_name LIKE '%JOB%'
-    AND t1.usage_unit = 'DBU'
-    AND t1.usage_metadata.job_id IS NOT NULL
-    AND t1.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
-GROUP BY 
-    t1.usage_metadata.source_region,
-    t2.workspace_id, 
-    t2.workspace_name,
-    t1.usage_date,
-    CASE 
-      WHEN jrd.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' 
-      ELSE 'WORKFLOW_RUN' 
-    END,
-    CASE 
-      WHEN jrd.run_type != 'SUBMIT_RUN' THEN jrd.job_id
-      ELSE LEFT(
-          job_or_pipeline_name, 
-          LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-    END,
-    CASE 
-      WHEN jrd.run_type != 'SUBMIT_RUN' THEN jrd.job_or_pipeline_name
-      ELSE LEFT(
-          job_or_pipeline_name, 
-          LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-    END,
-    jrd.adf_pipeline_run_id,
-    jrd.run_id,
-    t1.sku_name,
-    CASE WHEN t1.sku_name like '%SERVERLESS%' THEN 'JOBS_SERVERLESS' ELSE l.cluster_id END,
-    CASE WHEN t1.sku_name like '%SERVERLESS%' THEN 'JOBS_SERVERLESS' ELSE l.cluster_name END,
-    cluster_source,
-    CASE WHEN l.driver_instance_pool_id is not null then l.driver_instance_pool_id else 'NOT_A_POOL_RUN' end,
-    CASE WHEN l.worker_instance_pool_id is not null then l.worker_instance_pool_id else 'NOT_A_POOL_RUN' end,
-    driver_node_type,
-    worker_node_type, 
-    nt.avg_cpu_utilization,
-    nt.peak_cpu_utilization,
-    nt.avg_cpu_disk_wait,  
-    nt.max_cpu_disk_wait,     
-    nt.avg_memory_utilization,
-    nt.max_memory_utilization
+    SELECT
+        t2.workspace_id,
+        t2.workspace_name,
+        t1.usage_date,
+        (
+            SUM(
+                t1.usage_quantity
+                * list_prices.pricing.effective_list.default
+                * (1 - ({discount} / 100.0))
+                * CASE
+                    WHEN {currency_conversion} = 0 THEN 1
+                    ELSE {currency_conversion}
+                  END
+            )
+            * (1 - (COALESCE(nt.avg_cpu_utilization, 0) / 100))
+            / 2.0
+        ) AS max_potential_savings
+    FROM system.billing.usage t1
+    JOIN system.billing.list_prices list_prices
+        ON t1.cloud = list_prices.cloud
+        AND t1.sku_name = list_prices.sku_name
+        AND t1.usage_start_time >= list_prices.price_start_time
+        AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
+    INNER JOIN system.access.workspaces_latest t2
+        ON t1.account_id = t2.account_id
+        AND t1.workspace_id = t2.workspace_id
+    LEFT JOIN run_details jrd
+        ON t1.workspace_id = jrd.workspace_id
+        AND t1.usage_metadata.job_id = jrd.job_id
+        AND t1.usage_metadata.job_run_id = jrd.run_id
+    LEFT JOIN node_timeline nt
+        ON t1.workspace_id = nt.workspace_id
+        AND t1.usage_metadata.cluster_id = nt.cluster_id
+        AND t1.usage_date = nt.usage_date
+    WHERE
+        t1.sku_name LIKE '%JOBS_COMPUTE%'
+        AND t1.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+    GROUP BY
+        t2.workspace_id,
+        t2.workspace_name,
+        t1.usage_date,
+        t1.usage_metadata.cluster_id,
+        nt.avg_cpu_utilization
 ),
-
--- ===== ALL_PURPOSE side (your second query; logic intact) =====
--- Reuse latest_clusters CTE above
 
 usage_cost AS (
-  SELECT
-    t2.workspace_id AS workspace_id,
-    t2.workspace_name AS workspace_name,
-    CONCAT('https://', t2.workspace_url) AS workspace_url,
-    usage.cloud,
-    usage.usage_metadata.cluster_id AS cluster_id,
-    usage.usage_metadata.job_id,
-    usage.sku_name,
-    usage.usage_date,
-    SUM(usage.usage_quantity) AS usage_quantity_dbu,
-    ROUND(
-      SUM(
-        usage.usage_quantity
-        * list_prices.pricing.effective_list.default
-        * (1 - ({discount} / 100.0))
-        * CASE
-            WHEN {currency_conversion} = 0 THEN 1
-            ELSE {currency_conversion}
-          END
-      ),
-      2
-    ) AS total_cost
-  FROM system.billing.usage usage
-  INNER JOIN system.billing.list_prices list_prices
-    ON usage.cloud = list_prices.cloud
-   AND usage.sku_name = list_prices.sku_name
-   AND usage.usage_start_time >= list_prices.price_start_time
-   AND (usage.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
-  INNER JOIN system.access.workspaces_latest t2
+    SELECT
+        t2.workspace_id,
+        t2.workspace_name,
+        usage.cloud,
+        usage.usage_metadata.cluster_id AS cluster_id,
+        usage.sku_name,
+        usage.usage_date,
+        ROUND(
+            SUM(
+                usage.usage_quantity
+                * list_prices.pricing.effective_list.default
+                * (1 - ({discount} / 100.0))
+                * CASE
+                    WHEN {currency_conversion} = 0 THEN 1
+                    ELSE {currency_conversion}
+                  END
+            ),
+            2
+        ) AS total_cost
+    FROM system.billing.usage usage
+    INNER JOIN system.billing.list_prices list_prices
+        ON usage.cloud = list_prices.cloud
+        AND usage.sku_name = list_prices.sku_name
+        AND usage.usage_start_time >= list_prices.price_start_time
+        AND (usage.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
+    INNER JOIN system.access.workspaces_latest t2
         ON usage.account_id = t2.account_id
         AND usage.workspace_id = t2.workspace_id
-  WHERE usage.sku_name LIKE '%ALL_PURPOSE%'
-  AND usage.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
-  GROUP BY ALL
-),
-job_runs AS (
-  SELECT
-    j.job_id,
-    j.run_id,
-    j.result_state,
-    j.workspace_id,
-    EXPLODE(IF(size(j.compute_ids) = 0, ARRAY('no cluster'), j.compute_ids)) AS cluster_id,
-    j.period_end_time
-  FROM system.lakeflow.job_run_timeline j
-  INNER JOIN system.access.workspaces_latest t2
-        ON j.account_id = t2.account_id
-        AND j.workspace_id = t2.workspace_id
-  WHERE j.period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
-),
-total_job_runs AS (
-  SELECT
-    c.cluster_id,
-    c.cluster_name,
-    t2.workspace_id AS workspace_id,
-    t2.workspace_name AS workspace_name,
-    MAX(j.period_end_time) AS last_used_date,
-    COUNT(DISTINCT j.run_id) AS total_job_runs,
-    COUNT(DISTINCT CASE WHEN j.result_state = 'SUCCEEDED' THEN j.run_id END) AS successful_runs,
-    COUNT(DISTINCT CASE WHEN j.result_state != 'SUCCEEDED' THEN j.run_id END) AS failed_runs,
-    ROUND(
-      CAST(COUNT(DISTINCT CASE WHEN j.result_state != 'SUCCEEDED' THEN j.run_id END) AS DOUBLE) 
-      / COUNT(DISTINCT j.run_id) * 100, 2
-    ) AS failure_rate_percent,
-    ROUND(
-      CAST(COUNT(DISTINCT CASE WHEN j.result_state = 'SUCCEEDED' THEN j.run_id END) AS DOUBLE) 
-      / COUNT(DISTINCT j.run_id) * 100, 2
-    ) AS success_rate_percent
-  FROM job_runs j
-  INNER JOIN system.access.workspaces_latest t2
-        ON j.workspace_id = t2.workspace_id
-  LEFT JOIN latest_clusters c
-    ON c.workspace_id = j.workspace_id
-   AND c.cluster_id   = j.cluster_id
-  GROUP BY c.cluster_id, c.cluster_name, t2.workspace_id, t2.workspace_name
+    WHERE usage.sku_name LIKE '%ALL_PURPOSE%'
+        AND usage.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+    GROUP BY ALL
 ),
 
--- We only need AP savings per usage day to roll up to month
+job_runs AS (
+    SELECT
+        j.workspace_id,
+        EXPLODE(IF(size(j.compute_ids) = 0, ARRAY('no cluster'), j.compute_ids)) AS cluster_id,
+        CAST(j.period_end_time AS DATE) AS job_run_date
+    FROM system.lakeflow.job_run_timeline j
+    INNER JOIN system.access.workspaces_latest t2
+        ON j.account_id = t2.account_id
+        AND j.workspace_id = t2.workspace_id
+    WHERE j.period_end_time BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
+),
+
+total_job_runs AS (
+    SELECT c.cluster_id, j.workspace_id, j.job_run_date
+    FROM job_runs j
+    INNER JOIN latest_clusters c
+        ON c.workspace_id = j.workspace_id
+        AND c.cluster_id = j.cluster_id
+    GROUP BY c.cluster_id, j.workspace_id, j.job_run_date
+),
+
 ap_detail AS (
-  SELECT 
-    usage.workspace_id,
-    usage.workspace_name,
-    usage.usage_date,
-    SUM(usage.total_cost * sr.savings_ratio) AS potential_saving_eur
-  FROM total_job_runs j
-  INNER JOIN usage_cost usage
-    ON usage.workspace_id = j.workspace_id
-   AND usage.cluster_id   = j.cluster_id
-  INNER JOIN ap_to_job_savings_ratio sr
-    ON usage.cloud = sr.cloud
-   AND usage.sku_name = sr.ap_sku_name
-  GROUP BY all
+    SELECT
+        usage.workspace_id,
+        usage.workspace_name,
+        usage.usage_date,
+        SUM(usage.total_cost * sr.savings_ratio) AS potential_saving_eur
+    FROM total_job_runs j
+    INNER JOIN usage_cost usage
+        ON usage.workspace_id = j.workspace_id
+        AND usage.cluster_id = j.cluster_id
+        AND usage.usage_date = j.job_run_date
+    INNER JOIN ap_to_job_savings_ratio sr
+        ON usage.cloud = sr.cloud
+        AND usage.sku_name = sr.ap_sku_name
+    GROUP BY ALL
 ),
 
 combined AS (
-  SELECT 
-    workspace_id,
-    workspace_name,
-    usage_date,
-    'Job Cluster' AS workload_type, max_potential_savings as potential_saving_eur FROM job_detail
-  UNION ALL
-  SELECT 
-    workspace_id,
-    workspace_name,
-    usage_date,
-    'Job Run on All Purpose' AS workload_type,potential_saving_eur FROM ap_detail
+    SELECT workspace_id, workspace_name, usage_date,
+        'Job Cluster' AS workload_type,
+        max_potential_savings AS potential_saving_eur
+    FROM job_detail
+    UNION ALL
+    SELECT workspace_id, workspace_name, usage_date,
+        'Job Run on All Purpose' AS workload_type,
+        potential_saving_eur
+    FROM ap_detail
 )
 
-select * from combined;"""
+SELECT * FROM combined;"""
 
 query_optimize=f"OPTIMIZE {destination_catalog}.{destination_schema}.mom_potential_saving_trend;"
 query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.mom_potential_saving_trend;"
@@ -1200,8 +1272,6 @@ query_vacuum=f"VACUUM {destination_catalog}.{destination_schema}.mom_potential_s
 queries_to_be_executed_parallely.append(query)
 optimize_queries_to_be_executed_parallely.append(query_optimize)
 vacuum_queries_to_be_executed_parallely.append(query_vacuum)
-
-
 
 # COMMAND ----------
 
@@ -1255,15 +1325,25 @@ SELECT
     CAST(DATE_FORMAT(period_start_time, 'yyyy-MM-dd') AS DATE) AS job_date,
     CASE 
         WHEN jt.run_type != 'SUBMIT_RUN' THEN jt.job_id
-        ELSE LEFT(
+        WHEN job_or_pipeline_name IS NOT NULL AND CONTAINS(job_or_pipeline_name, '_')
+        THEN LEFT(
             job_or_pipeline_name, 
-            LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
+            GREATEST(
+                LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[SIZE(SPLIT(job_or_pipeline_name, '_')) - 1]),
+                0
+            ))
+        ELSE job_or_pipeline_name
     END AS job_id,
     CASE 
         WHEN jt.run_type != 'SUBMIT_RUN' THEN jt.job_or_pipeline_name
-        ELSE LEFT(
+        WHEN job_or_pipeline_name IS NOT NULL AND CONTAINS(job_or_pipeline_name, '_')
+        THEN LEFT(
             job_or_pipeline_name, 
-            LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
+            GREATEST(
+                LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[SIZE(SPLIT(job_or_pipeline_name, '_')) - 1]),
+                0
+            ))
+        ELSE job_or_pipeline_name
     END AS job_or_pipeline_name,
     CASE 
         WHEN jt.run_type = 'SUBMIT_RUN' THEN 'ADF_RUN' 
@@ -1410,16 +1490,26 @@ temp as
     t2.workspace_name AS workspace_name,
     CASE 
       WHEN jrd.run_type != 'SUBMIT_RUN' THEN t1.usage_metadata.job_id
-        ELSE LEFT(
+      WHEN job_or_pipeline_name IS NOT NULL AND CONTAINS(job_or_pipeline_name, '_')
+      THEN LEFT(
           job_or_pipeline_name, 
-          LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-      END AS job_id,
+          GREATEST(
+              LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[SIZE(SPLIT(job_or_pipeline_name, '_')) - 1]),
+              0
+          ))
+      ELSE job_or_pipeline_name
+    END AS job_id,
     CASE 
       WHEN jrd.run_type != 'SUBMIT_RUN' THEN jrd.job_or_pipeline_name
-        ELSE LEFT(
+      WHEN job_or_pipeline_name IS NOT NULL AND CONTAINS(job_or_pipeline_name, '_')
+      THEN LEFT(
           job_or_pipeline_name, 
-          LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-      END AS job_or_pipeline_name,
+          GREATEST(
+              LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[SIZE(SPLIT(job_or_pipeline_name, '_')) - 1]),
+              0
+          ))
+      ELSE job_or_pipeline_name
+    END AS job_or_pipeline_name,
     t1.sku_name,
     l.cluster_id,
     l.cluster_name,
@@ -1453,8 +1543,8 @@ FROM
     AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
   INNER JOIN system.access.workspaces_latest t2
         ON t1.workspace_id = t2.workspace_id
-  inner JOIN 
-    latest_clusters l on t1.usage_metadata.cluster_id = l.cluster_id
+  inner JOIN
+    latest_clusters l on t1.workspace_id = l.workspace_id and t1.usage_metadata.cluster_id = l.cluster_id
  LEFT JOIN
    job_run_details jrd on t1.workspace_id = jrd.workspace_id and t1.usage_metadata.job_id = jrd.job_id and t1.usage_metadata.job_run_id = jrd.run_id
 WHERE
@@ -1547,37 +1637,37 @@ SELECT
   t2.workspace_name AS workspace_name,
   CASE 
     WHEN jrd.run_type != 'SUBMIT_RUN' THEN jrd.job_id
-      ELSE LEFT(
+    WHEN job_or_pipeline_name IS NOT NULL AND CONTAINS(job_or_pipeline_name, '_')
+    THEN LEFT(
         job_or_pipeline_name, 
-        LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-    END AS job_id,
+        GREATEST(
+            LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[SIZE(SPLIT(job_or_pipeline_name, '_')) - 1]),
+            0
+        ))
+    ELSE job_or_pipeline_name
+  END AS job_id,
   CASE 
     WHEN jrd.run_type != 'SUBMIT_RUN' THEN jrd.job_or_pipeline_name
-      ELSE LEFT(
+    WHEN job_or_pipeline_name IS NOT NULL AND CONTAINS(job_or_pipeline_name, '_')
+    THEN LEFT(
         job_or_pipeline_name, 
-        LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[size(SPLIT(job_or_pipeline_name, '_')) - 1]))
-    END AS job_or_pipeline_name,
+        GREATEST(
+            LENGTH(job_or_pipeline_name) - LENGTH('_' || SPLIT(job_or_pipeline_name, '_')[SIZE(SPLIT(job_or_pipeline_name, '_')) - 1]),
+            0
+        ))
+    ELSE job_or_pipeline_name
+  END AS job_or_pipeline_name,
   t1.cluster_id,
   t1.cluster_name,
   t1.dbr_version,
   -- Styling for DBR Version (Specific Styling - ONLY this column is styled)
-  CASE
-      WHEN t1.dbr_version LIKE 'dlt:%' THEN CONCAT('<span style="color:#7E9BF3; font-weight:bold;">', t1.dbr_version, ' (DLT)</span>') -- Purple for DLT
-      WHEN t1.dbr_version LIKE '9.%' THEN CONCAT('<span style="color:#7E9BF3; font-weight:bold;">', t1.dbr_version, ' (Old)</span>') -- Orange for 9.x
-      WHEN t1.dbr_version LIKE '8.%' OR t1.dbr_version LIKE '7.%' OR t1.dbr_version LIKE '6.%' OR t1.dbr_version LIKE '5.%' THEN CONCAT('<span style="color:#7E9BF3; font-weight:bold;">', t1.dbr_version, ' (Deprecated)</span>') -- Red for very old/deprecated
-      ELSE t1.dbr_version -- Default to plain text if not matched by specific conditions (though WHERE filters this)
-  END AS dbr_version_html,
+  CONCAT('<span style="color:#7E9BF3; font-weight:bold;">', t1.dbr_version, ' - DBR version very old - upgrade recommended.</span>') AS dbr_version_html,
   -- No styling for these columns - plain text output
   SPLIT(t1.dbr_version, '.')[0] AS dbr_major_version,
   t1.create_time,
   t1.owned_by,
-  -- Upgrade Recommendation with Icons and Colors (Specific Styling - ONLY this column is styled)
-  CASE
-      WHEN t1.dbr_version LIKE 'dlt:%' THEN CONCAT('<span style="color:#7E9BF3; font-weight:bold;">⚠️ DLT runtime – review compatibility.</span>')
-      WHEN t1.dbr_version LIKE '9.%' THEN CONCAT('<span style="color:#7E9BF3; font-weight:bold;">⚠️ DBR 9.x is very old – upgrade strongly recommended.</span>')
-      WHEN t1.dbr_version LIKE '8.%' OR t1.dbr_version LIKE '7.%' OR t1.dbr_version LIKE '6.%' OR t1.dbr_version LIKE '5.%' THEN CONCAT('<span style="color:#7E9BF3; font-weight:bold;">⚠️ DBR ', SPLIT(t1.dbr_version, '.')[0], '.x is deprecated – upgrade immediately.</span>')
-      ELSE 'Up to date or not flagged.' -- Default to plain text (though WHERE filters this)
-  END AS upgrade_recommendation_html
+  -- Upgrade Recommendation (Specific Styling - ONLY this column is styled)
+  CONCAT('<span style="color:#7E9BF3; font-weight:bold;">⚠️ DBR version very old - upgrade recommended.</span>') AS upgrade_recommendation_html
 FROM
     latest_clusters as t1
 INNER JOIN system.access.workspaces_latest t2
@@ -1588,6 +1678,7 @@ WHERE
     t1.delete_time IS NULL
     AND t1.dbr_version IS NOT NULL
     AND (
+        t1.dbr_version LIKE '10.%' OR
         t1.dbr_version LIKE '9.%' OR
         t1.dbr_version LIKE '8.%' OR
         t1.dbr_version LIKE '7.%' OR
@@ -1966,7 +2057,7 @@ WITH serverless_usage_cost AS (
   WHERE 
       u.sku_name like '%SERVERLESS%' and u.sku_name not like '%SERVERLESS_SQL%'
       AND u.usage_unit = 'DBU'
-
+      AND u.usage_date BETWEEN current_timestamp() - INTERVAL 3 YEARS AND current_timestamp()
   GROUP BY
       u.workspace_id,
       ws.workspace_name,
@@ -2120,6 +2211,7 @@ vacuum_queries_to_be_executed_parallely.append(query_vacuum)
 
 # DBTITLE 1,idle_warehouse
 ## Explain the query: This query provides top idle warehouse. Enrich it with the information i.e. including service name, director, etc.
+## The warehouse idle time is calculated in the Dashboard that takes this data as input.
 query = f"""
 CREATE OR REPLACE TABLE {destination_catalog}.{destination_schema}.idle_warehouse
 AS 
@@ -2450,7 +2542,7 @@ def run_query(query):
         }
 
 if len(queries_to_be_executed_parallely) > 0:
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=max_parallel_threads) as executor:
         futures = [executor.submit(run_query, q) for q in queries_to_be_executed_parallely]
 
         for future in as_completed(futures):
@@ -2513,7 +2605,7 @@ if execute_flag and not failed_list:
         return spark.sql(query)
 
     optimize_failed = []
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=max_parallel_threads) as executor:
         futures = {executor.submit(run_optimize_query, q): q for q in optimize_queries_to_be_executed_parallely}
         for future in as_completed(futures):
             try:
@@ -2538,7 +2630,7 @@ if execute_flag and not failed_list:
         return spark.sql(query)
 
     vacuum_failed = []
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=max_parallel_threads) as executor:
         futures = {executor.submit(run_vacuum_query, q): q for q in vacuum_queries_to_be_executed_parallely}
         for future in as_completed(futures):
             try:
