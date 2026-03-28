@@ -1,29 +1,57 @@
-# UC Volumes Credential Vending
+# Processing Unstructured Data in Volumes with UC Open APIs
 
 Download images from Databricks Unity Catalog Volumes and process them locally with HuggingFace models for image classification and captioning.
 
 ## Overview
 
-The `run_download_and_process.py` wrapper script runs two steps in sequence:
+This project demonstrates three approaches to accessing Unity Catalog Volumes via credential vending, plus local ML inference on the downloaded data.
 
-### Step 1: Download images from Unity Catalog (Daft)
+### Step 1: Download images from Unity Catalog
 
-- Authenticates to Databricks using OAuth U2M (via the Databricks SDK)
-- Lists schemas in the `volumes_cv_demo` catalog
-- Downloads image files from `/Volumes/volumes_cv_demo/gold/images` (e.g., `Bliss_(Windows_XP).png`, `flower.jpg`)
-- Saves files to the specified directory (default: current directory)
+Authenticates to Databricks using OAuth U2M (via the Databricks SDK), then downloads image files from `/Volumes/volumes_cv_demo/gold/images` using one of three query engines:
 
-*Uses: `query_volume_with_daft.py`*
+| Engine | Script | Best for |
+|--------|--------|----------|
+| **Daft** | `query_engines/daft_download.py` | File downloads (default) |
+| **DuckDB** | `query_engines/duckdb_query.py` | Querying parquet files |
+| **Ray** | `query_engines/ray_process.py` | Parallel image processing |
 
 ### Step 2: Classify and caption images (HuggingFace)
 
-- Scans the directory for image files (`.jpg`, `.jpeg`, `.png`, etc.)
+- Scans a directory for image files (`.jpg`, `.jpeg`, `.png`, etc.)
 - **Image classification**: Uses `google/vit-base-patch16-224` to predict top-5 labels per image
 - **Image captioning**: Uses `Salesforce/blip-image-captioning-base` to generate captions
 
-*Uses: `process_images_with_huggingface.py`*
+*Script: `processing/huggingface_inference.py`*
 
 ---
+
+## Project Structure
+
+```
+.
+├── run_download_and_process.py         # Entry point: download + classify + caption
+├── credential_vending/                 # Shared auth & credential vending module
+│   ├── __init__.py
+│   └── get_temp_vol_cred.py
+├── query_engines/                      # One file per query engine
+│   ├── daft_download.py                # Daft (file downloads)
+│   ├── duckdb_query.py                 # DuckDB (parquet queries)
+│   └── ray_process.py                  # Ray (parallel image processing)
+├── processing/                         # Downstream ML inference
+│   └── huggingface_inference.py
+├── requirements/                       # Split by engine/use case
+│   ├── base.txt                        # databricks-sdk, python-dotenv
+│   ├── daft.txt
+│   ├── duckdb.txt
+│   ├── ray.txt
+│   └── huggingface.txt
+├── sample_data/                        # Example input images
+│   ├── Bliss_(Windows_XP).png
+│   └── flower.jpg
+└── assets/                             # README/blog images
+    └── sample-images.png
+```
 
 ## Prerequisites
 
@@ -40,20 +68,27 @@ The `run_download_and_process.py` wrapper script runs two steps in sequence:
    source venv/bin/activate   # macOS/Linux
    ```
 
-2. **Install dependencies**:
+2. **Install dependencies** (install only what you need):
 
    ```bash
-   pip install databricks-sdk python-dotenv daft getdaft
-   pip install -r requirements-huggingface.txt
+   # Core + Daft (for the default download pipeline)
+   pip install -r requirements/daft.txt
+
+   # HuggingFace models (for classification/captioning)
+   pip install -r requirements/huggingface.txt
+
+   # Optional: DuckDB or Ray engines
+   pip install -r requirements/duckdb.txt
+   pip install -r requirements/ray.txt
    ```
 
-3. **Configure your workspace** – create a `.env` file or set:
+3. **Configure your workspace** — copy `.env.example` to `.env` and fill in:
 
-   ```
-   DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+   ```bash
+   cp .env.example .env
    ```
 
-4. **Authenticate** – on first run, the Databricks SDK will open a browser for
+4. **Authenticate** — on first run, the Databricks SDK will open a browser for
    OAuth consent. Subsequent runs use cached credentials automatically.
 
 ## Usage
@@ -70,29 +105,29 @@ python run_download_and_process.py --dir ./images
 
 ### Run steps individually
 
-**Download only:**
+**Download only (Daft):**
 
 ```bash
-python query_volume_with_daft.py
+python query_engines/daft_download.py
 ```
 
-**Process existing images only:**
+**Query parquet files (DuckDB):**
 
 ```bash
-python process_images_with_huggingface.py                    # process cwd
-python process_images_with_huggingface.py --dir ./images     # custom dir
-python process_images_with_huggingface.py --task classify    # classification only
-python process_images_with_huggingface.py --task caption     # captioning only
+python query_engines/duckdb_query.py
 ```
 
-## Project structure
+**Process images with Ray:**
 
-| File | Description |
-|------|-------------|
-| `run_download_and_process.py` | Wrapper: downloads images, then classifies and captions them |
-| `get_temp_vol_cred.py` | Shared module: OAuth auth via Databricks SDK, Volumes credential vending API |
-| `query_volume_with_daft.py` | Downloads files from Unity Catalog Volumes using Daft |
-| `query_volume_with_duckdb.py` | Queries parquet files from Volumes using DuckDB with vended AWS credentials |
-| `query_volume_with_ray.py` | Reads and processes images from Volumes using Ray Data with vended AWS credentials |
-| `process_images_with_huggingface.py` | Image classification and captioning with HuggingFace |
-| `requirements-huggingface.txt` | Dependencies for HuggingFace processing |
+```bash
+python query_engines/ray_process.py
+```
+
+**Process existing images only (HuggingFace):**
+
+```bash
+python processing/huggingface_inference.py                    # process cwd
+python processing/huggingface_inference.py --dir ./images     # custom dir
+python processing/huggingface_inference.py --task classify    # classification only
+python processing/huggingface_inference.py --task caption     # captioning only
+```

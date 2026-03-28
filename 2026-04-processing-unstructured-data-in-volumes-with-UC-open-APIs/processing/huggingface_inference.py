@@ -1,16 +1,16 @@
 """Process downloaded images with HuggingFace models locally.
 
 This script runs on images that were downloaded from Databricks Unity Catalog
-Volumes using query_volume_with_daft.py. It uses HuggingFace transformers
+Volumes using query_engines/daft_download.py. It uses HuggingFace transformers
 for image classification and captioning on your laptop.
 
 Install dependencies first:
-    pip install -r requirements-huggingface.txt
+    pip install -r requirements/huggingface.txt
 
 Usage:
-    python process_images_with_huggingface.py                    # process cwd
-    python process_images_with_huggingface.py --dir ./images     # custom dir
-    python process_images_with_huggingface.py --task caption     # caption only
+    python processing/huggingface_inference.py                    # process cwd
+    python processing/huggingface_inference.py --dir ./images     # custom dir
+    python processing/huggingface_inference.py --task caption     # caption only
 """
 
 import argparse
@@ -49,7 +49,7 @@ def run_image_classification(image_paths: List[Path], model_name: str = "google/
     pipe = pipeline("image-classification", model=model_name)
 
     for img_path in image_paths:
-        print(f"\n📷 {img_path.name}")
+        print(f"\n  {img_path.name}")
         results = pipe(str(img_path), top_k=5)
         for i, r in enumerate(results, 1):
             print(f"   {i}. {r['label']}: {r['score']:.2%}")
@@ -91,7 +91,7 @@ def run_image_captioning(
     prompt = "a picture of"
 
     for img_path in image_paths:
-        print(f"\n📷 {img_path.name}")
+        print(f"\n  {img_path.name}")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = pipe(images=str(img_path), text=prompt, return_full_text=return_full_text)
@@ -140,7 +140,7 @@ def main() -> None:
     # Find images
     image_paths = find_images(directory)
     if not image_paths:
-        print("No image files found. Run query_volume_with_daft.py first to download images.")
+        print("No image files found. Run query_engines/daft_download.py first to download images.")
         return
 
     print(f"Found {len(image_paths)} image(s): {[p.name for p in image_paths]}")
@@ -155,7 +155,7 @@ def main() -> None:
             return_full_text=args.return_full_text,
         )
 
-    print("\n✅ Done.")
+    print("\nDone.")
 
 
 if __name__ == "__main__":

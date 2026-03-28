@@ -10,12 +10,14 @@ https://docs.daft.ai/en/stable/connectors/unity_catalog/
 """
 
 import os
+import sys
 from typing import List, Dict, Any, Optional
 
 import daft
 from daft.unity_catalog import UnityCatalog
 
-from get_temp_vol_cred import load_environment, get_workspace_client
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from credential_vending import load_environment, get_workspace_client
 
 
 def create_unity_catalog() -> UnityCatalog:

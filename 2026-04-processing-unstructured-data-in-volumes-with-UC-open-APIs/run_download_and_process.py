@@ -1,7 +1,7 @@
 """Wrapper script: download images from Unity Catalog, then classify and caption them.
 
-Runs query_volume_with_daft.py to download images, then process_images_with_huggingface.py
-to classify and caption the downloaded images.
+Runs query_engines/daft_download.py to download images, then
+processing/huggingface_inference.py to classify and caption the downloaded images.
 
 Usage:
     python run_download_and_process.py                    # use current directory
@@ -37,21 +37,21 @@ def main() -> None:
     print("STEP 1: Download images from Unity Catalog (Daft)")
     print("=" * 60)
 
-    daft_script = script_dir / "query_volume_with_daft.py"
+    daft_script = script_dir / "query_engines" / "daft_download.py"
     result = subprocess.run(
         [sys.executable, str(daft_script)],
         cwd=str(output_dir),
         check=False,
     )
     if result.returncode != 0:
-        print(f"\n❌ Download failed with exit code {result.returncode}")
+        print(f"\nDownload failed with exit code {result.returncode}")
         sys.exit(result.returncode)
 
     print("\n" + "=" * 60)
     print("STEP 2: Classify and caption images (HuggingFace)")
     print("=" * 60)
 
-    process_script = script_dir / "process_images_with_huggingface.py"
+    process_script = script_dir / "processing" / "huggingface_inference.py"
     result = subprocess.run(
         [
             sys.executable,
@@ -64,10 +64,10 @@ def main() -> None:
         check=False,
     )
     if result.returncode != 0:
-        print(f"\n❌ Processing failed with exit code {result.returncode}")
+        print(f"\nProcessing failed with exit code {result.returncode}")
         sys.exit(result.returncode)
 
-    print("\n✅ All done.")
+    print("\nAll done.")
 
 
 if __name__ == "__main__":

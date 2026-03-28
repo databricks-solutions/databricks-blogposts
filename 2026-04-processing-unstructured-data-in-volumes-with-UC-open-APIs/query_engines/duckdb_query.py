@@ -9,11 +9,13 @@ https://docs.unitycatalog.io/integrations/unity-catalog-duckdb/
 """
 
 import os
+import sys
 from typing import Optional
 
 import duckdb  # type: ignore
 
-from get_temp_vol_cred import (
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from credential_vending import (
     load_environment,
     get_workspace_client,
     get_volume_info,

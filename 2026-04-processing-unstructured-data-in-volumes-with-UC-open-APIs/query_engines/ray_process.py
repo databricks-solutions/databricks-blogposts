@@ -16,6 +16,7 @@ https://docs.ray.io/en/latest/data/api/doc/ray.data.read_images.html
 """
 
 import os
+import sys
 import math
 from typing import Dict, Any, List, Tuple
 
@@ -24,7 +25,8 @@ import ray.data
 import numpy as np
 from pyarrow.fs import S3FileSystem
 
-from get_temp_vol_cred import (
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from credential_vending import (
     load_environment,
     get_workspace_client,
     get_volume_info_by_name,
@@ -305,15 +307,15 @@ def display_results(dataset: ray.data.Dataset) -> None:
             has_error = error and str(error).lower() not in ("", "nan", "none")
 
             if has_error:
-                print(f"\n❌ Error processing {filename}: {error}")
+                print(f"\n--- Error processing {filename}: {error}")
                 continue
 
             width, height = batch["width"][i], batch["height"][i]
             if not is_valid(width):
-                print(f"\n❌ Error processing {filename}: Invalid dimensions")
+                print(f"\n--- Error processing {filename}: Invalid dimensions")
                 continue
 
-            print(f"\n✅ {filename}")
+            print(f"\n+++ {filename}")
             print("-" * 60)
 
             fmt = batch["format"][i] if is_valid(batch.get("format", [None])[i] if "format" in batch else None) else "Unknown"
@@ -373,7 +375,6 @@ def display_results(dataset: ray.data.Dataset) -> None:
 
 def main() -> None:
     """Main execution function."""
-    # Suppress Ray warning about object store memory on laptops
     os.environ.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")
 
     ray.init(ignore_reinit_error=True)
