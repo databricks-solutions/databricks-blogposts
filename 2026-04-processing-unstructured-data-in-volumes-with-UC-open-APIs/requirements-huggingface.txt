@@ -1,0 +1,6 @@
+# Dependencies for process_images_with_huggingface.py
+# Install: pip install -r requirements-huggingface.txt
+
+transformers>=4.30.0
+torch>=2.0.0
+Pillow>=9.0.0

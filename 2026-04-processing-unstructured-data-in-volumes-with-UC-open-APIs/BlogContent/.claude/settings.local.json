@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:community.databricks.com)",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_snapshot",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__click",
+      "mcp__chrome-devtools__evaluate_script",
+      "WebSearch",
+      "WebFetch(domain:www.linkedin.com)",
+      "WebFetch(domain:aws.amazon.com)",
+      "WebFetch(domain:webcache.googleusercontent.com)",
+      "WebFetch(domain:aws-news.com)",
+      "WebFetch(domain:noise.getoto.net)",
+      "WebFetch(domain:www.databricks.com)"
+    ]
+  }
+}
