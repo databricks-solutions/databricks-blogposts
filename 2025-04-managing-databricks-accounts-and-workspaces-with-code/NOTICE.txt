@@ -1,0 +1,17 @@
+Copyright (2025) Databricks, Inc.
+
+This Software includes software developed at Databricks (https://www.databricks.com/) and its use is subject to the included LICENSE file.
+
+________________
+This Software contains code from the following open source projects, licensed under the Apache 2.0 license (https://www.apache.org/licenses/LICENSE-2.0):
+
+databricks/terraform-provider-databricks - https://github.com/databricks/terraform-provider-databricks
+Copyright 2022 Databricks, Inc.  All rights reserved.
+
+_____________
+This Software contains code from the following open source projects, licensed under the MPL License Agreement:
+
+hashicorp/terraform-provider-azurerm - https://github.com/hashicorp/terraform-provider-azurerm
+Copyright © 2017- Hashicorp, Inc; All Rights Reserved
+License - https://github.com/hashicorp/terraform-provider-azurerm/blob/main/LICENSE
+
