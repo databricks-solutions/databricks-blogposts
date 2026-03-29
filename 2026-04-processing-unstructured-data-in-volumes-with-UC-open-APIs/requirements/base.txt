@@ -1,0 +1,3 @@
+# Core dependencies (required by all scripts)
+databricks-sdk
+python-dotenv
