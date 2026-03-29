@@ -55,8 +55,44 @@ def get_volume_info_by_name(
     return resp["volume_id"], resp.get("storage_location", "")
 
 
+def _get_catalog_and_schema() -> Tuple[str, str]:
+    """Get UC_CATALOG and UC_SCHEMA from the environment.
+
+    Returns:
+        Tuple[str, str]: (catalog, schema).
+
+    Raises:
+        ValueError: If UC_CATALOG or UC_SCHEMA is not set.
+    """
+    catalog = os.environ.get("UC_CATALOG")
+    schema = os.environ.get("UC_SCHEMA")
+    if not catalog or not schema:
+        missing = [v for v, val in [("UC_CATALOG", catalog), ("UC_SCHEMA", schema)] if not val]
+        raise ValueError(
+            f"{', '.join(missing)} environment variable(s) not set. "
+            "Please set them before running this script."
+        )
+    return catalog, schema
+
+
+def get_full_volume_name(volume_name: str) -> str:
+    """Build catalog.schema.volume from env vars and a short volume name.
+
+    Args:
+        volume_name: Short volume name (e.g. 'images').
+
+    Returns:
+        str: Full three-level name (e.g. 'volumes_cv_demo.gold.images').
+    """
+    catalog, schema = _get_catalog_and_schema()
+    return f"{catalog}.{schema}.{volume_name}"
+
+
 def get_volume_info(w: WorkspaceClient) -> Tuple[str, str]:
-    """Get volume_id and storage_location using volume name from env.
+    """Get volume_id and storage_location using file volume name from env.
+
+    Constructs the full volume name from UC_CATALOG, UC_SCHEMA, and
+    DATABRICKS_FILE_VOLUME_NAME.
 
     Args:
         w: Authenticated WorkspaceClient.
@@ -65,7 +101,7 @@ def get_volume_info(w: WorkspaceClient) -> Tuple[str, str]:
         Tuple[str, str]: A tuple containing (volume_id, storage_location).
 
     Raises:
-        ValueError: If DATABRICKS_FILE_VOLUME_NAME is not set.
+        ValueError: If required environment variables are not set.
     """
     volume_name = os.environ.get("DATABRICKS_FILE_VOLUME_NAME")
     if not volume_name:
@@ -74,7 +110,30 @@ def get_volume_info(w: WorkspaceClient) -> Tuple[str, str]:
             "Please set it before running this script."
         )
 
-    return get_volume_info_by_name(w, volume_name)
+    return get_volume_info_by_name(w, get_full_volume_name(volume_name))
+
+
+def get_image_volume_path() -> str:
+    """Get the image volume path in /Volumes/ format from env.
+
+    Constructs /Volumes/catalog/schema/volume from UC_CATALOG, UC_SCHEMA,
+    and DATABRICKS_IMAGE_VOLUME_NAME.
+
+    Returns:
+        str: Volume path in /Volumes/ format.
+
+    Raises:
+        ValueError: If required environment variables are not set.
+    """
+    volume_name = os.environ.get("DATABRICKS_IMAGE_VOLUME_NAME")
+    if not volume_name:
+        raise ValueError(
+            "DATABRICKS_IMAGE_VOLUME_NAME environment variable is not set. "
+            "Please set it before running this script."
+        )
+
+    catalog, schema = _get_catalog_and_schema()
+    return f"/Volumes/{catalog}/{schema}/{volume_name}"
 
 
 def get_temporary_volume_credentials(

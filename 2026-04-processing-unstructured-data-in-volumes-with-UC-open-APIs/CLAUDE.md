@@ -30,7 +30,7 @@ python processing/huggingface_inference.py --task caption     # captioning only
 
 ## Setup
 
-Python 3.11+ with a `.env` file (copy from `.env.example`) containing `DATABRICKS_HOST`, `DATABRICKS_FILE_VOLUME_NAME`, and `AWS_REGION`. Install deps per engine: `pip install -r requirements/daft.txt` for Daft, `pip install -r requirements/huggingface.txt` for HuggingFace, etc.
+Python 3.11+ with a `.env` file (copy from `.env.example`) containing `DATABRICKS_HOST`, `UC_CATALOG`, `UC_SCHEMA`, `DATABRICKS_FILE_VOLUME_NAME` (for parquet/DuckDB), `DATABRICKS_IMAGE_VOLUME_NAME` (for images/Daft/Ray), and `AWS_REGION`. Install deps per engine: `pip install -r requirements/daft.txt` for Daft, `pip install -r requirements/huggingface.txt` for HuggingFace, etc.
 
 ## Architecture
 

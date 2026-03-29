@@ -17,7 +17,7 @@ import daft
 from daft.unity_catalog import UnityCatalog
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from credential_vending import load_environment, get_workspace_client
+from credential_vending import load_environment, get_workspace_client, get_image_volume_path
 
 
 def create_unity_catalog() -> UnityCatalog:
@@ -126,11 +126,17 @@ def main() -> None:
 
     unity = create_unity_catalog()
 
-    catalog_name = "volumes_cv_demo"
+    catalog_name = os.environ.get("UC_CATALOG")
+    if not catalog_name:
+        raise ValueError(
+            "UC_CATALOG environment variable is not set. "
+            "Please set it before running this script."
+        )
     list_schemas(unity, catalog_name)
 
-    volume_name = "/Volumes/volumes_cv_demo/gold/images"
-    filenames = ["Bliss_(Windows_XP).png", "flower.jpg"]
+    volume_name = get_image_volume_path()
+    filenames_env = os.environ.get("IMAGE_FILENAMES", "Bliss_(Windows_XP).png,flower.jpg")
+    filenames = [f.strip() for f in filenames_env.split(",")]
     file_paths = build_file_paths(volume_name, filenames)
 
     files_data = download_files_from_volume(unity, file_paths)

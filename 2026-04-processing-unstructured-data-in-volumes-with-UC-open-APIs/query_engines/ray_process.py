@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from credential_vending import (
     load_environment,
     get_workspace_client,
+    get_image_volume_path,
     get_volume_info_by_name,
     get_temporary_volume_credentials,
 )
@@ -386,8 +387,9 @@ def main() -> None:
 
         unity = UnityCatalog(w)
 
-        volume_path = "/Volumes/volumes_cv_demo/gold/images"
-        filenames = ["Bliss_(Windows_XP).png", "flower.jpg"]
+        volume_path = get_image_volume_path()
+        filenames_env = os.environ.get("IMAGE_FILENAMES", "Bliss_(Windows_XP).png,flower.jpg")
+        filenames = [f.strip() for f in filenames_env.split(",")]
 
         s3_paths, s3_filesystem = unity.build_file_paths(volume_path, filenames)
 
