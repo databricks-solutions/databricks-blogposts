@@ -117,32 +117,31 @@ Run the notebook cells in order. The pipeline will start processing and routing 
 
 ### End-to-End Test Results
 
-This PR was validated on a Databricks cluster (DBR 16.4 LTS) with Redpanda Serverless:
+This demo was validated on the `e2-dogfood` staging workspace using Databricks Runtime 16.4 LTS and Redpanda Serverless.
 
 **Test Setup:**
-- Cluster: rtm-guardrail-demo (dedicated, single-user, fixed workers, RTM enabled)
-- Kafka: Redpanda Serverless with SASL_SSL authentication
-- Test data: 7 synthetic Ethereum blocks sent via `produce_test_data.py`
+- Workspace: `https://e2-dogfood.staging.cloud.databricks.com`
+- Cluster: `rtm-guardrail-cluster` (`0313-063110-u4ldfaiy`)
+- Cluster mode: dedicated, single-user, fixed workers, RTM enabled
+- Kafka: Redpanda Serverless with SASL/SCRAM over SSL
+- Secret scope: `rtm-demo`
 
-**Test Blocks:**
-1. Block 1000001: Clean block → **ALLOWED**
-2. Block 1000002: 97.5% gas usage → **QUARANTINE** (HIGH_GAS_USAGE)
-3. Block 1000003: 0 transactions → **QUARANTINE** (EMPTY_BLOCK)
-4. Block 1000004: Contains email → **QUARANTINE** (PII_EMAIL)
-5. Block 1000005: Clean block → **ALLOWED**
-6. Block 1000006: Zero miner address → **QUARANTINE** (ZERO_MINER)
-7. Block 1000007: 600 transactions → **QUARANTINE** (HIGH_TX_COUNT)
+**What Was Verified:**
+- Pattern detection tests passed locally for email, SSN, credit card, AWS key, JWT, and Ethereum private key cases
+- The notebook was uploaded to the workspace and executed on the RTM-enabled cluster
+- The stream successfully read from `ethereum-blocks` and wrote to:
+  - `ethereum-validated-allowed`
+  - `ethereum-validated-quarantine`
+- Output records were inspected directly in Kafka to confirm routing decisions and validation reasons
 
-**Results:**
-- ✅ All 7 blocks processed successfully
-- ✅ 2 blocks routed to `ethereum-validated-allowed`
-- ✅ 5 blocks routed to `ethereum-validated-quarantine`
-- ✅ All validation rules working correctly
-- ✅ RTM verification passed
-- ✅ Sub-second latency observed (~100ms end-to-end)
+**Live Routing Checks:**
+1. Block `2000001` (clean input) → **ALLOW** → `ethereum-validated-allowed`
+2. Block `2000002` (high gas usage) → **QUARANTINE** → `ethereum-validated-quarantine` with `HIGH_GAS_USAGE`
+3. Block `2000003` (email in `extra_data`) → **QUARANTINE** → `ethereum-validated-quarantine` with `PII_EMAIL`
 
-**Verification:**
-Output topics verified using `kafka-console-consumer` or Databricks UI, showing correct routing decisions and validation reasons.
+**Notes:**
+- The notebook now uses `startingOffsets = "earliest"` so pre-seeded test data can be replayed during demos and integration tests
+- End-to-end validation here focused on correctness of routing and guardrail behavior rather than publishing a latency benchmark
 
 ## Checkpoint Best Practices
 
