@@ -1,13 +1,20 @@
 """
 Test Data Producer for RTM Guardrail Demo
 
-Sends sample Ethereum block events to Redpanda for testing.
+Sends sample Ethereum block events to Kafka/Redpanda for testing.
 
 Usage:
     pip install confluent-kafka
-    python produce_test_data.py
 
-Update KAFKA_USERNAME and KAFKA_PASSWORD before running.
+    # Required environment variables
+    export KAFKA_BOOTSTRAP_SERVERS="your-bootstrap-server:9092"
+    export KAFKA_USERNAME="your-username"
+    export KAFKA_PASSWORD="your-password"
+
+    # Optional (default: ethereum-blocks)
+    export KAFKA_TOPIC="your-topic-name"
+
+    python produce_test_data.py
 """
 
 import json
@@ -28,12 +35,13 @@ import os
 KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "")
 KAFKA_USERNAME = os.environ.get("KAFKA_USERNAME", "")
 KAFKA_PASSWORD = os.environ.get("KAFKA_PASSWORD", "")
-TOPIC = "ethereum-blocks"
+TOPIC = os.environ.get("KAFKA_TOPIC", "ethereum-blocks")  # Configurable, default: ethereum-blocks
 
 if not all([KAFKA_BOOTSTRAP_SERVERS, KAFKA_USERNAME, KAFKA_PASSWORD]):
     raise ValueError(
         "Missing required environment variables. Set:\n"
-        "  KAFKA_BOOTSTRAP_SERVERS, KAFKA_USERNAME, KAFKA_PASSWORD"
+        "  KAFKA_BOOTSTRAP_SERVERS, KAFKA_USERNAME, KAFKA_PASSWORD\n"
+        "Optional: KAFKA_TOPIC (default: ethereum-blocks)"
     )
 
 # =============================================================================

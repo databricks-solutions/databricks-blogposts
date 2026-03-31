@@ -61,16 +61,50 @@ Real-Time Mode eliminates micro-batch scheduling overhead by processing records 
 
 ## Quick Start
 
-1. **Create Cluster**: Import `cluster_config.json` or apply the Spark configurations manually
-2. **Configure Secrets**: Set up Kafka credentials in Databricks secrets:
-   ```bash
-   databricks secrets create-scope rtm-demo
-   databricks secrets put-secret rtm-demo kafka-bootstrap-servers
-   databricks secrets put-secret rtm-demo kafka-username
-   databricks secrets put-secret rtm-demo kafka-password
-   ```
-3. **Create Topics**: Create input/output Kafka topics (`ethereum-blocks`, `ethereum-validated-allowed`, `ethereum-validated-quarantine`)
-4. **Run**: Execute the notebook cells in order
+### Step 1: Create RTM-Enabled Cluster
+
+Edit `cluster_config.json` for your cloud:
+1. Replace `REPLACE_WITH_YOUR_INSTANCE_TYPE` with an instance from your cloud provider:
+   - **AWS**: `i3.xlarge`, `r5.xlarge`
+   - **Azure**: `Standard_DS3_v2`, `Standard_E4ds_v4`
+   - **GCP**: `n1-highmem-4`, `n2-highmem-4`
+2. Add the appropriate cloud attributes block (`aws_attributes`, `azure_attributes`, or `gcp_attributes`)
+3. Remove all keys starting with `_` (these are comments)
+4. Create the cluster via UI or CLI: `databricks clusters create --json @cluster_config.json`
+
+### Step 2: Configure Kafka Secrets
+
+Create a secret scope with your Kafka credentials:
+```bash
+# Create secret scope (use any name you want)
+databricks secrets create-scope my-kafka-scope
+
+# Add your Kafka credentials
+databricks secrets put-secret my-kafka-scope kafka-bootstrap-servers
+databricks secrets put-secret my-kafka-scope kafka-username
+databricks secrets put-secret my-kafka-scope kafka-password
+```
+
+### Step 3: Create Kafka Topics
+
+Create the required topics in your Kafka cluster:
+- Input topic (e.g., `ethereum-blocks`)
+- Output topics will be auto-created: `<output-topic>-allowed`, `<output-topic>-quarantine`
+
+### Step 4: Configure and Run the Notebook
+
+The notebook uses **Databricks widgets** for easy configuration. Set these values in the widget panel:
+
+| Widget | Description | Default |
+|--------|-------------|---------|
+| `secret_scope` | Your Databricks secret scope name | `rtm-demo` |
+| `input_topic` | Kafka topic to read from | `ethereum-blocks` |
+| `output_topic` | Base name for output topics | `ethereum-validated` |
+| `catalog` | Unity Catalog for checkpoints | `main` |
+| `schema` | Schema for checkpoints | `default` |
+| `checkpoint_interval` | RTM checkpoint frequency | `5 minutes` |
+
+Run the notebook cells in order. The pipeline will start processing and routing events.
 
 ## Testing
 
@@ -81,7 +115,7 @@ This PR was validated on a Databricks cluster (DBR 16.4 LTS) with Redpanda Serve
 **Test Setup:**
 - Cluster: rtm-guardrail-demo (dedicated, fixed workers, RTM enabled)
 - Kafka: Redpanda Serverless with SASL_SSL authentication
-- Test data: 7 synthetic Ethereum blocks sent via `send_test_ethereum_blocks.py`
+- Test data: 7 synthetic Ethereum blocks sent via `produce_test_data.py`
 
 **Test Blocks:**
 1. Block 1000001: Clean block → **ALLOWED**
@@ -101,7 +135,7 @@ This PR was validated on a Databricks cluster (DBR 16.4 LTS) with Redpanda Serve
 - ✅ Sub-second latency observed (~100ms end-to-end)
 
 **Verification:**
-Output topics verified using `check_rtm_output.py` showing correct routing decisions and validation reasons.
+Output topics verified using `kafka-console-consumer` or Databricks UI, showing correct routing decisions and validation reasons.
 
 ## Checkpoint Best Practices
 
@@ -114,7 +148,7 @@ Output topics verified using `check_rtm_output.py` showing correct routing decis
 CHECKPOINT_LOCATION = f"/Volumes/.../rtm_guardrail_{uuid.uuid4()}"
 
 # GOOD - stable path enables recovery
-CHECKPOINT_LOCATION = "/tmp/Volumes/catalog/schema/checkpoints/rtm_guardrail_ethereum_blocks"
+CHECKPOINT_LOCATION = "/Volumes/catalog/schema/checkpoints/rtm_guardrail_ethereum_blocks"
 ```
 
 **Why it matters:**
@@ -126,7 +160,7 @@ CHECKPOINT_LOCATION = "/tmp/Volumes/catalog/schema/checkpoints/rtm_guardrail_eth
 
 Follow a meaningful naming pattern:
 ```
-/tmp/Volumes/{catalog}/{schema}/checkpoints/{pipeline_name}_{source_topic}
+/Volumes/{catalog}/{schema}/checkpoints/{pipeline_name}_{source_topic}
 ```
 
 ### Checkpoint Protection

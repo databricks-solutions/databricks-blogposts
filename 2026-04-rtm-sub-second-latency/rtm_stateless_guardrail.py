@@ -45,31 +45,75 @@
 # MAGIC %md
 # MAGIC ## 1. Configuration
 # MAGIC
-# MAGIC ### Kafka Connection Setup
+# MAGIC ### Widget Parameters (Configure These First!)
 # MAGIC
-# MAGIC This section configures Kafka connection details using **Databricks Secrets** for security best practices.
+# MAGIC This notebook uses **Databricks widgets** for easy configuration. Set these values before running:
 # MAGIC
-# MAGIC **Why Databricks Secrets?**
-# MAGIC - Credentials never appear in code or logs
-# MAGIC - Centralized secret management
-# MAGIC - Access control and audit trails
-# MAGIC - Integration with Azure Key Vault, AWS Secrets Manager, or Databricks native secrets
+# MAGIC | Widget | Description | Default |
+# MAGIC |--------|-------------|---------|
+# MAGIC | `secret_scope` | Databricks secret scope containing Kafka credentials | `rtm-demo` |
+# MAGIC | `input_topic` | Kafka topic to read events from | `ethereum-blocks` |
+# MAGIC | `output_topic` | Base name for output topics (appends `-allowed`/`-quarantine`) | `ethereum-validated` |
+# MAGIC | `catalog` | Unity Catalog name for checkpoints | `main` |
+# MAGIC | `schema` | Schema name for checkpoints | `default` |
+# MAGIC | `checkpoint_interval` | RTM checkpoint frequency | `5 minutes` |
 # MAGIC
-# MAGIC **Setup Instructions:**
+# MAGIC ### Kafka Secrets Setup
+# MAGIC
+# MAGIC Before running, create a secret scope with your Kafka credentials:
+# MAGIC
 # MAGIC ```bash
-# MAGIC # Create secret scope (one-time setup)
-# MAGIC databricks secrets create-scope rtm-demo
+# MAGIC # Create secret scope (use your own scope name)
+# MAGIC databricks secrets create-scope <your-scope-name>
 # MAGIC
-# MAGIC # Add secrets
-# MAGIC databricks secrets put-secret rtm-demo kafka-bootstrap-servers
-# MAGIC databricks secrets put-secret rtm-demo kafka-username
-# MAGIC databricks secrets put-secret rtm-demo kafka-password
+# MAGIC # Add secrets (you'll be prompted for values)
+# MAGIC databricks secrets put-secret <your-scope-name> kafka-bootstrap-servers
+# MAGIC databricks secrets put-secret <your-scope-name> kafka-username
+# MAGIC databricks secrets put-secret <your-scope-name> kafka-password
 # MAGIC ```
 # MAGIC
-# MAGIC **Expected Values:**
+# MAGIC **Expected Secret Values:**
 # MAGIC - `kafka-bootstrap-servers`: e.g., `pkc-abc123.us-west-2.aws.confluent.cloud:9092`
 # MAGIC - `kafka-username`: Your Confluent Cloud API key or Kafka username
 # MAGIC - `kafka-password`: Your Confluent Cloud API secret or Kafka password
+
+# COMMAND ----------
+
+# =============================================================================
+# WIDGET DEFINITIONS - Configure these for your environment
+# =============================================================================
+# These widgets allow you to customize the pipeline without modifying code.
+# Set values in the widget panel at the top of the notebook, or pass them
+# when running the notebook as a job.
+
+dbutils.widgets.text("secret_scope", "rtm-demo", "1. Secret Scope Name")
+dbutils.widgets.text("input_topic", "ethereum-blocks", "2. Input Kafka Topic")
+dbutils.widgets.text("output_topic", "ethereum-validated", "3. Output Topic Base Name")
+dbutils.widgets.text("catalog", "main", "4. Unity Catalog")
+dbutils.widgets.text("schema", "default", "5. Schema")
+dbutils.widgets.text("checkpoint_interval", "5 minutes", "6. Checkpoint Interval")
+
+# =============================================================================
+# READ WIDGET VALUES
+# =============================================================================
+
+SECRET_SCOPE = dbutils.widgets.get("secret_scope")
+INPUT_TOPIC = dbutils.widgets.get("input_topic")
+OUTPUT_TOPIC = dbutils.widgets.get("output_topic")
+CATALOG = dbutils.widgets.get("catalog")
+SCHEMA = dbutils.widgets.get("schema")
+RTM_CHECKPOINT_INTERVAL = dbutils.widgets.get("checkpoint_interval")
+
+print("=" * 60)
+print("Pipeline Configuration (from widgets)")
+print("=" * 60)
+print(f"  Secret Scope:        {SECRET_SCOPE}")
+print(f"  Input Topic:         {INPUT_TOPIC}")
+print(f"  Output Topic Base:   {OUTPUT_TOPIC}")
+print(f"  Catalog:             {CATALOG}")
+print(f"  Schema:              {SCHEMA}")
+print(f"  Checkpoint Interval: {RTM_CHECKPOINT_INTERVAL}")
+print("=" * 60)
 
 # COMMAND ----------
 
@@ -80,46 +124,25 @@ from pyspark.sql.types import StructType, StructField, StringType, LongType, Dou
 # COMMAND ----------
 
 # =============================================================================
-# PRODUCTION CONFIGURATION - Using Databricks Secrets
+# LOAD KAFKA CREDENTIALS FROM SECRETS
 # =============================================================================
-# Setup secrets with Databricks CLI:
-#   databricks secrets create-scope rtm-demo
-#   databricks secrets put-secret rtm-demo kafka-bootstrap-servers
-#   databricks secrets put-secret rtm-demo kafka-username
-#   databricks secrets put-secret rtm-demo kafka-password
+# Credentials are stored in Databricks Secrets for security.
+# The secret scope name is configured via the widget above.
 
-# Load secrets from Databricks secret scope
-# .strip() removes any accidental whitespace that could break authentication
-KAFKA_BOOTSTRAP_SERVERS = dbutils.secrets.get(scope="rtm-demo", key="kafka-bootstrap-servers").strip()
-KAFKA_USERNAME = dbutils.secrets.get(scope="rtm-demo", key="kafka-username").strip()
-KAFKA_PASSWORD = dbutils.secrets.get(scope="rtm-demo", key="kafka-password").strip()
+KAFKA_BOOTSTRAP_SERVERS = dbutils.secrets.get(scope=SECRET_SCOPE, key="kafka-bootstrap-servers").strip()
+KAFKA_USERNAME = dbutils.secrets.get(scope=SECRET_SCOPE, key="kafka-username").strip()
+KAFKA_PASSWORD = dbutils.secrets.get(scope=SECRET_SCOPE, key="kafka-password").strip()
 
 # Verify secrets loaded correctly (for debugging)
-# Password is masked with asterisks for security
-print(f"✓ Bootstrap servers: {KAFKA_BOOTSTRAP_SERVERS}")
-print(f"✓ Username: {KAFKA_USERNAME}")
-print(f"✓ Password: {'*' * len(KAFKA_PASSWORD)} (length: {len(KAFKA_PASSWORD)})")
-
-# Kafka topic configuration
-# INPUT_TOPIC: Raw Ethereum block events from blockchain indexer
-# OUTPUT_TOPIC: Base name for validated events (will append -allowed or -quarantine)
-INPUT_TOPIC = "ethereum-blocks"
-OUTPUT_TOPIC = "ethereum-validated"
-
-# Unity Catalog location for checkpoint metadata
-CATALOG = "main"
-SCHEMA = "default"
+# Avoid printing sensitive details - just confirm secrets are loaded
+print(f"✓ Kafka credentials loaded from secret scope: {SECRET_SCOPE}")
 
 # CRITICAL: Use stable checkpoint path for production recovery
 # DO NOT use UUID in checkpoint path - breaks recovery after restart
 # Checkpoints store streaming state and offset tracking for at-least-once delivery
-CHECKPOINT_LOCATION = f"/tmp/Volumes/{CATALOG}/{SCHEMA}/checkpoints/rtm_guardrail_ethereum_blocks"
+CHECKPOINT_LOCATION = f"/Volumes/{CATALOG}/{SCHEMA}/checkpoints/rtm_guardrail_{INPUT_TOPIC}"
 
-# RTM checkpointing frequency - minimum 5 minutes recommended for stateless pipelines
-# Why 5 minutes? RTM uses long-running batches (default 5 min) with streaming shuffle for
-# continuous within-batch processing. Checkpoints occur between batches. For stateless
-# pipelines, 5-10 minutes is optimal.
-RTM_CHECKPOINT_INTERVAL = "5 minutes"
+print(f"✓ Checkpoint location: {CHECKPOINT_LOCATION}")
 
 # COMMAND ----------
 
@@ -186,7 +209,7 @@ print("RTM Configuration Applied:")
 print(f"  - RocksDB Provider: {spark.conf.get('spark.sql.streaming.stateStore.providerClass')}")
 print(f"  - Changelog Checkpointing: {spark.conf.get('spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled')}")
 print(f"  - RTM Enabled: {spark.conf.get('spark.databricks.streaming.realTimeMode.enabled')}")
-print(f"  - Shuffle Manager: {spark.conf.get('spark.shuffle.manager')} (set at cluster level)")
+print(f"  - Shuffle Manager: {spark.conf.get('spark.shuffle.manager', 'UNSET')} (set at cluster level)")
 print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}")
 
 # CRITICAL: Verify RTM is actually enabled on this cluster
@@ -197,7 +220,7 @@ if rtm_enabled != "true":
         "\n"
         "Required cluster configuration:\n"
         "  spark.databricks.streaming.realTimeMode.enabled = true\n"
-        "  spark.shuffle.manager = org.apache.spark.sql.execution.streaming.shuffle.DatabricksShuffleManager\n"
+        "  spark.shuffle.manager = org.apache.spark.shuffle.streaming.MultiShuffleManager\n"
         "\n"
         "Fix: Edit cluster → Advanced Options → Spark Config and add above settings.\n"
         "See: cluster_config.json for complete configuration example"
@@ -291,10 +314,10 @@ def detect_sensitive_data_col(col_name):
         # Ethereum Private Key: 0x followed by 64 hex characters
         .when(F.col(col_name).rlike(r"0x[a-fA-F0-9]{64}"), F.lit("CREDENTIAL_PRIVATE_KEY"))
         # Check for PII
-        # SSN: 123-45-6789 format
-        .when(F.col(col_name).rlike(r"\d{3}-\d{2}-\d{4}"), F.lit("PII_SSN"))
-        # Credit Card: 1234-5678-9012-3456 or 1234567890123456
-        .when(F.col(col_name).rlike(r"(\d{4}[-\s]?){3}\d{4}"), F.lit("PII_CREDIT_CARD"))
+        # SSN: 123-45-6789 format (with word boundaries)
+        .when(F.col(col_name).rlike(r"\b\d{3}-\d{2}-\d{4}\b"), F.lit("PII_SSN"))
+        # Credit Card: 1234-5678-9012-3456 or 1234567890123456 (with word boundaries)
+        .when(F.col(col_name).rlike(r"\b(\d{4}[-\s]?){3}\d{4}\b"), F.lit("PII_CREDIT_CARD"))
         # Email: user@example.com (case-insensitive)
         .when(F.col(col_name).rlike(r"(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"), F.lit("PII_EMAIL"))
         # No match found - return null

@@ -100,31 +100,37 @@ def test_patterns():
 # =============================================================================
 
 def get_spark_session():
-    """Get a Spark session - Databricks Connect (serverless) or local."""
-    # Try Databricks Connect with serverless first
+    """
+    Get a Spark session for running validation logic tests.
+
+    Note: These tests validate transformation logic (regex patterns, validation rules)
+    and do NOT execute RTM streaming queries. RTM requires dedicated clusters with
+    specific configurations - these tests can run on any Spark environment.
+
+    Prefers local PySpark for simplicity; falls back to Databricks Connect if needed.
+    """
+    # Prefer local PySpark for testing validation logic
+    try:
+        from pyspark.sql import SparkSession
+        spark = SparkSession.builder.appName("RTM_Guardrail_Test").getOrCreate()
+        print("✅ Using local PySpark (testing validation logic only, not RTM execution)")
+        return spark
+    except Exception as e:
+        print(f"⚠️  Local PySpark not available: {e}")
+
+    # Fall back to Databricks Connect
     try:
         from databricks.connect import DatabricksSession
-        spark = (
-            DatabricksSession.builder
-            .serverless(True)
-            .getOrCreate()
-        )
-        print("✅ Connected via Databricks Connect (serverless)")
+        spark = DatabricksSession.builder.getOrCreate()
+        print("✅ Connected via Databricks Connect (testing validation logic only)")
         return spark
     except ImportError:
         pass
     except Exception as e:
-        print(f"⚠️  Databricks Connect serverless failed: {e}")
+        print(f"❌ Databricks Connect failed: {e}")
 
-    # Fall back to local PySpark
-    try:
-        from pyspark.sql import SparkSession
-        spark = SparkSession.builder.appName("RTM_Test").getOrCreate()
-        print("✅ Using local PySpark")
-        return spark
-    except Exception as e:
-        print(f"❌ Local PySpark failed: {e}")
-        return None
+    print("❌ No Spark environment available")
+    return None
 
 
 def test_spark_configs():
