@@ -68,9 +68,12 @@ Edit `cluster_config.template.json` for your cloud:
    - **AWS**: `i3.xlarge`, `r5.xlarge`
    - **Azure**: `Standard_DS3_v2`, `Standard_E4ds_v4`
    - **GCP**: `n1-highmem-4`, `n2-highmem-4`
-2. Add the appropriate cloud attributes block (`aws_attributes`, `azure_attributes`, or `gcp_attributes`)
-3. Remove all keys starting with `_` (these are comments)
-4. Create the cluster via UI or CLI: `databricks clusters create --json @cluster_config.template.json`
+2. Replace `REPLACE_WITH_YOUR_USER_EMAIL` with the identity that will own the cluster
+3. Add the appropriate cloud attributes block (`aws_attributes`, `azure_attributes`, or `gcp_attributes`)
+4. Remove all keys starting with `_` (these are comments)
+5. Create the cluster via UI or CLI: `databricks clusters create --json @cluster_config.template.json`
+
+**Important:** This demo checkpoints to a Unity Catalog Volume under `/Volumes/...`, so the cluster must run in **Single User** access mode. Shared or standard access modes may fail when the stream initializes its checkpoint location.
 
 ### Step 2: Configure Kafka Secrets
 
@@ -89,7 +92,9 @@ databricks secrets put-secret my-kafka-scope kafka-password
 
 Create the required topics in your Kafka cluster:
 - Input topic (e.g., `ethereum-blocks`)
-- Output topics will be auto-created: `<output-topic>-allowed`, `<output-topic>-quarantine`
+- Output topics: `<output-topic>-allowed`, `<output-topic>-quarantine`
+
+If your Kafka provider does **not** auto-create topics, create all three topics explicitly before starting the notebook.
 
 ### Step 4: Configure and Run the Notebook
 
@@ -106,6 +111,8 @@ The notebook uses **Databricks widgets** for easy configuration. Set these value
 
 Run the notebook cells in order. The pipeline will start processing and routing events.
 
+**Replay behavior:** The notebook now reads with `startingOffsets = "earliest"` so seeded backlog is replayed during demos and integration tests. If you only want new records produced after the stream starts, change this back to `"latest"`.
+
 ## Testing
 
 ### End-to-End Test Results
@@ -113,7 +120,7 @@ Run the notebook cells in order. The pipeline will start processing and routing 
 This PR was validated on a Databricks cluster (DBR 16.4 LTS) with Redpanda Serverless:
 
 **Test Setup:**
-- Cluster: rtm-guardrail-demo (dedicated, fixed workers, RTM enabled)
+- Cluster: rtm-guardrail-demo (dedicated, single-user, fixed workers, RTM enabled)
 - Kafka: Redpanda Serverless with SASL_SSL authentication
 - Test data: 7 synthetic Ethereum blocks sent via `produce_test_data.py`
 

@@ -208,18 +208,21 @@ spark.conf.set("spark.sql.shuffle.partitions", "8")
 print("RTM Configuration Applied:")
 print(f"  - RocksDB Provider: {spark.conf.get('spark.sql.streaming.stateStore.providerClass')}")
 print(f"  - Changelog Checkpointing: {spark.conf.get('spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled')}")
-print(f"  - RTM Enabled: {spark.conf.get('spark.databricks.streaming.realTimeMode.enabled', 'UNSET')}")
+print(f"  - RTM Enabled (realTimeMode): {spark.conf.get('spark.databricks.streaming.realTimeMode.enabled', 'UNSET')}")
+print(f"  - RTM Enabled (legacy realTime): {spark.conf.get('spark.databricks.streaming.realTime.enabled', 'UNSET')}")
 print(f"  - Shuffle Manager: {spark.conf.get('spark.shuffle.manager', 'UNSET')} (set at cluster level)")
 print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}")
 
 # CRITICAL: Verify RTM is actually enabled on this cluster
-rtm_enabled = spark.conf.get("spark.databricks.streaming.realTimeMode.enabled", "false")
-if rtm_enabled != "true":
+rtm_mode_enabled = spark.conf.get("spark.databricks.streaming.realTimeMode.enabled", "false")
+rtm_legacy_enabled = spark.conf.get("spark.databricks.streaming.realTime.enabled", "false")
+if rtm_mode_enabled != "true" and rtm_legacy_enabled != "true":
     raise RuntimeError(
         "❌ Real-Time Mode NOT enabled on this cluster!\n"
         "\n"
         "Required cluster configuration:\n"
-        "  spark.databricks.streaming.realTimeMode.enabled = true\n"
+        "  spark.databricks.streaming.realTimeMode.enabled = true (preferred)\n"
+        "  or spark.databricks.streaming.realTime.enabled = true\n"
         "  spark.shuffle.manager = org.apache.spark.shuffle.streaming.MultiShuffleManager\n"
         "\n"
         "Fix: Edit cluster → Advanced Options → Spark Config and add above settings.\n"
@@ -446,13 +449,13 @@ kafka_options = {
 # MAGIC
 # MAGIC - `format("kafka")`: Use Kafka as streaming source
 # MAGIC - `subscribe`: Topic to consume from (vs. subscribePattern or assign)
-# MAGIC - `startingOffsets = "latest"`: Begin from newest messages (vs. "earliest" for full replay)
+# MAGIC - `startingOffsets = "earliest"`: Begin from earliest available messages for full replay
 # MAGIC - `failOnDataLoss = "false"`: Continue processing if Kafka data is deleted/expired
 # MAGIC
-# MAGIC **Why `startingOffsets = "latest"`?**
-# MAGIC - Guardrail use case: Only care about new transactions going forward
-# MAGIC - Historical data already processed or not relevant
-# MAGIC - Reduces initial backlog and achieves steady-state faster
+# MAGIC **Why `startingOffsets = "earliest"`?**
+# MAGIC - Integration testing: Replays backlog already present in the input topic
+# MAGIC - Demo workflow: Lets the stream process seeded test data without re-producing it
+# MAGIC - Operational note: Switch back to "latest" if you only want new events after startup
 # MAGIC
 # MAGIC **Why `failOnDataLoss = "false"`?**
 # MAGIC - Production resilience: Don't crash if Kafka retention expires old offsets
@@ -483,13 +486,13 @@ df_raw = (
     .format("kafka")                           # Use Kafka connector
     .options(**kafka_options)                  # Apply connection settings
     .option("subscribe", INPUT_TOPIC)          # Subscribe to single topic
-    .option("startingOffsets", "latest")       # Start from newest messages
+    .option("startingOffsets", "earliest")     # Start from earliest available messages
     .option("failOnDataLoss", "false")         # Continue on data loss
     .load()
 )
 
 print(f"✓ Reading from Kafka topic: {INPUT_TOPIC}")
-print(f"✓ Starting from: latest offsets")
+print(f"✓ Starting from: earliest offsets")
 print(f"✓ Data loss handling: continue processing")
 
 # COMMAND ----------

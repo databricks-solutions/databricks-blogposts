@@ -28,6 +28,9 @@
     "PYSPARK_PYTHON": "/databricks/python3/bin/python3"
   },
 
+  "data_security_mode": "SINGLE_USER",
+  "single_user_name": "REPLACE_WITH_YOUR_USER_EMAIL",
+
   "custom_tags": {
     "project": "rtm-demo",
     "workload": "streaming",
@@ -76,6 +79,7 @@
   "_comment_requirements": {
     "runtime": "DBR 16.4 LTS or later required for Real-Time Mode",
     "compute": "DEDICATED (single-user) compute ONLY - serverless and shared NOT supported",
+    "access_mode": "Use SINGLE_USER so the notebook can checkpoint to Unity Catalog Volumes under /Volumes/...",
     "autoscaling": "MUST be DISABLED - RTM requires fixed cluster size",
     "photon": "NOT SUPPORTED with RTM - do not enable Photon",
     "instance_type": "Memory-optimized instances recommended for streaming workloads",
@@ -86,8 +90,9 @@
   "_setup_instructions": [
     "1. Copy this file and remove all keys starting with '_' (comments)",
     "2. Replace 'REPLACE_WITH_YOUR_INSTANCE_TYPE' with an instance from your cloud",
-    "3. Add the appropriate cloud_attributes block for your provider (aws_attributes, azure_attributes, or gcp_attributes)",
-    "4. Import via Databricks UI: Compute > Create Cluster > JSON Configuration",
-    "5. Or use CLI: databricks clusters create --json @cluster_config.template.json"
+    "3. Replace 'REPLACE_WITH_YOUR_USER_EMAIL' with the user who will own the single-user cluster",
+    "4. Add the appropriate cloud_attributes block for your provider (aws_attributes, azure_attributes, or gcp_attributes)",
+    "5. Import via Databricks UI: Compute > Create Cluster > JSON Configuration",
+    "6. Or use CLI: databricks clusters create --json @cluster_config.template.json"
   ]
 }
