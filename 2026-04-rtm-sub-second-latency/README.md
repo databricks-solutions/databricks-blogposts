@@ -113,6 +113,10 @@ Run the notebook cells in order. The pipeline will start processing and routing 
 
 **Replay behavior:** The notebook now reads with `startingOffsets = "earliest"` so seeded backlog is replayed during demos and integration tests. If you only want new records produced after the stream starts, change this back to `"latest"`.
 
+**Notebook flow after the stream starts:**
+- **Section 11, "Verify Routed Output Topics"** reads the Kafka output topics back and shows what was actually written to `-allowed` and `-quarantine`
+- **Section 12, "Stream Management"** shows query status and provides the cells you use to stop the stream cleanly when you are done validating it
+
 ## Testing
 
 ### End-to-End Test Results
