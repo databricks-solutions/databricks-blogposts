@@ -117,9 +117,11 @@ print("=" * 60)
 
 # COMMAND ----------
 
+import time
+
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, LongType, DoubleType, TimestampType
+from pyspark.sql.types import ArrayType, BooleanType, StructType, StructField, StringType, LongType, DoubleType, TimestampType
 
 # COMMAND ----------
 
@@ -988,7 +990,179 @@ print("=" * 80)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 11. Stream Management
+# MAGIC ## 11. Verify Routed Output Topics
+# MAGIC
+# MAGIC ### Inspect What Was Actually Written to ALLOW and QUARANTINE
+# MAGIC
+# MAGIC The stream status above tells us the query is alive, but it does **not** prove that records
+# MAGIC were written to the expected Kafka topics. This section reads the output topics back from Kafka
+# MAGIC and shows the records that landed in each destination.
+# MAGIC
+# MAGIC **What this verifies:**
+# MAGIC - Messages were written to `OUTPUT_TOPIC-allowed`
+# MAGIC - Messages were written to `OUTPUT_TOPIC-quarantine`
+# MAGIC - The output payload includes the expected `decision` and `validation_reasons`
+# MAGIC
+# MAGIC **How it works:**
+# MAGIC - Poll Kafka for a short period while the RTM query is running
+# MAGIC - Read both output topics as a batch snapshot
+# MAGIC - Print counts and sample rows from each topic
+# MAGIC
+# MAGIC **Typical demo flow:**
+# MAGIC 1. Start the RTM query
+# MAGIC 2. Produce a few test records to the input topic
+# MAGIC 3. Run this section to confirm exactly what landed in the target topics
+
+# COMMAND ----------
+
+# Schema of the JSON written to the target Kafka topics
+output_verification_schema = StructType([
+    StructField("block_number", LongType(), True),
+    StructField("block_hash", StringType(), True),
+    StructField("parent_hash", StringType(), True),
+    StructField("miner", StringType(), True),
+    StructField("gas_used", LongType(), True),
+    StructField("gas_limit", LongType(), True),
+    StructField("transaction_count", LongType(), True),
+    StructField("timestamp", LongType(), True),
+    StructField("total_value_wei", StringType(), True),
+    StructField("decision", StringType(), True),
+    StructField("is_quarantined", BooleanType(), True),
+    StructField("validation_reasons", ArrayType(StringType()), True),
+    StructField("processed_at", TimestampType(), True),
+    StructField("kafka_timestamp", TimestampType(), True),
+])
+
+# Reuse Kafka auth settings for batch reads from the output topics.
+verification_kafka_options = {
+    k: v for k, v in kafka_options.items()
+    if k not in ["kafka.group.id", "kafka.session.timeout.ms"]
+}
+
+allowed_topic_name = f"{OUTPUT_TOPIC}-allowed"
+quarantine_topic_name = f"{OUTPUT_TOPIC}-quarantine"
+
+
+def read_output_topic_snapshot(topic_name: str):
+    return (
+        spark.read
+        .format("kafka")
+        .options(**verification_kafka_options)
+        .option("subscribe", topic_name)
+        .option("startingOffsets", "earliest")
+        .option("endingOffsets", "latest")
+        .load()
+        .select(
+            F.col("topic"),
+            F.col("partition").alias("kafka_partition"),
+            F.col("offset").alias("kafka_offset"),
+            F.col("timestamp").alias("output_kafka_timestamp"),
+            F.col("key").cast("string").alias("block_hash"),
+            F.from_json(F.col("value").cast("string"), output_verification_schema).alias("payload"),
+        )
+        .select(
+            "topic",
+            "kafka_partition",
+            "kafka_offset",
+            "output_kafka_timestamp",
+            "block_hash",
+            "payload.*",
+        )
+    )
+
+
+def print_topic_preview(topic_name: str, snapshot_df, limit: int = 10):
+    print(f"\nTopic: {topic_name}")
+    print("-" * 80)
+
+    preview_rows = (
+        snapshot_df
+        .orderBy(F.col("output_kafka_timestamp").desc(), F.col("kafka_offset").desc())
+        .select(
+            "block_number",
+            "decision",
+            "validation_reasons",
+            "output_kafka_timestamp",
+            "kafka_offset",
+        )
+        .limit(limit)
+        .collect()
+    )
+
+    if not preview_rows:
+        print("No records found.")
+        return
+
+    for row in preview_rows:
+        print(
+            f"block_number={row.block_number}, "
+            f"decision={row.decision}, "
+            f"validation_reasons={row.validation_reasons}, "
+            f"offset={row.kafka_offset}, "
+            f"written_at={row.output_kafka_timestamp}"
+        )
+
+
+VERIFICATION_TIMEOUT_SECONDS = 30
+VERIFICATION_POLL_INTERVAL_SECONDS = 5
+verification_deadline = time.time() + VERIFICATION_TIMEOUT_SECONDS
+
+allowed_snapshot = None
+quarantine_snapshot = None
+allowed_count = 0
+quarantine_count = 0
+
+print("=" * 80)
+print("Verifying output topics...")
+print("=" * 80)
+
+while True:
+    allowed_snapshot = read_output_topic_snapshot(allowed_topic_name)
+    quarantine_snapshot = read_output_topic_snapshot(quarantine_topic_name)
+    allowed_count = allowed_snapshot.count()
+    quarantine_count = quarantine_snapshot.count()
+    total_count = allowed_count + quarantine_count
+
+    print(
+        f"Observed records so far -> "
+        f"{allowed_topic_name}: {allowed_count}, "
+        f"{quarantine_topic_name}: {quarantine_count}"
+    )
+
+    if total_count > 0 or time.time() >= verification_deadline:
+        break
+
+    time.sleep(VERIFICATION_POLL_INTERVAL_SECONDS)
+
+print("=" * 80)
+print("Output topic verification summary")
+print("=" * 80)
+print(f"{allowed_topic_name}: {allowed_count} record(s)")
+print(f"{quarantine_topic_name}: {quarantine_count} record(s)")
+
+print_topic_preview(allowed_topic_name, allowed_snapshot)
+print_topic_preview(quarantine_topic_name, quarantine_snapshot)
+
+if allowed_count > 0:
+    display(
+        allowed_snapshot.orderBy(
+            F.col("output_kafka_timestamp").desc(),
+            F.col("kafka_offset").desc(),
+        )
+    )
+
+if quarantine_count > 0:
+    display(
+        quarantine_snapshot.orderBy(
+            F.col("output_kafka_timestamp").desc(),
+            F.col("kafka_offset").desc(),
+        )
+    )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 12. Stream Management
 # MAGIC
 # MAGIC ### Query Monitoring and Control
 # MAGIC
