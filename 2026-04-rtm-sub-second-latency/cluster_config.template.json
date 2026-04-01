@@ -1,0 +1,98 @@
+{
+  "$schema": "https://docs.databricks.com/schemas/cluster-spec.json",
+  "cluster_name": "rtm-guardrail-cluster",
+  "spark_version": "16.4.x-scala2.12",
+
+  "_CONFIGURE_node_type_id": {
+    "description": "Choose a memory-optimized instance for your cloud provider",
+    "AWS": "i3.xlarge, i3.2xlarge, r5.xlarge, r5.2xlarge",
+    "Azure": "Standard_DS3_v2, Standard_DS4_v2, Standard_E4ds_v4",
+    "GCP": "n1-highmem-4, n1-highmem-8, n2-highmem-4"
+  },
+  "node_type_id": "REPLACE_WITH_YOUR_INSTANCE_TYPE",
+
+  "num_workers": 2,
+  "_IMPORTANT_autoscaling": "MUST be disabled for RTM - do NOT add min_workers/max_workers or autoscale block",
+
+  "spark_conf": {
+    "spark.sql.shuffle.partitions": "8",
+    "spark.databricks.streaming.realTimeMode.enabled": "true",
+    "spark.shuffle.manager": "org.apache.spark.shuffle.streaming.MultiShuffleManager",
+    "spark.sql.streaming.stateStore.providerClass": "com.databricks.sql.streaming.state.RocksDBStateStoreProvider",
+    "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled": "true",
+    "spark.databricks.delta.optimizeWrite.enabled": "true",
+    "spark.databricks.delta.autoCompact.enabled": "true"
+  },
+
+  "spark_env_vars": {
+    "PYSPARK_PYTHON": "/databricks/python3/bin/python3"
+  },
+
+  "data_security_mode": "SINGLE_USER",
+  "single_user_name": "REPLACE_WITH_YOUR_USER_EMAIL",
+
+  "custom_tags": {
+    "project": "rtm-demo",
+    "workload": "streaming",
+    "latency-tier": "sub-second"
+  },
+
+  "_CONFIGURE_cloud_attributes": {
+    "description": "Add ONE of these blocks based on your cloud provider (remove the others)",
+    "AWS_example": {
+      "aws_attributes": {
+        "availability": "SPOT_WITH_FALLBACK",
+        "first_on_demand": 1,
+        "spot_bid_price_percent": 100,
+        "ebs_volume_type": "GENERAL_PURPOSE_SSD",
+        "ebs_volume_count": 1,
+        "ebs_volume_size": 100
+      }
+    },
+    "Azure_example": {
+      "azure_attributes": {
+        "availability": "SPOT_WITH_FALLBACK_AZURE",
+        "first_on_demand": 1,
+        "spot_bid_max_price": -1
+      }
+    },
+    "GCP_example": {
+      "gcp_attributes": {
+        "availability": "PREEMPTIBLE_WITH_FALLBACK_GCP",
+        "local_ssd_count": 0
+      }
+    }
+  },
+
+  "init_scripts": [],
+  "enable_elastic_disk": true,
+  "_IMPORTANT_photon": "Photon is NOT supported with RTM - do NOT set runtime_engine to PHOTON",
+
+  "_comment_spark_conf": {
+    "spark.sql.shuffle.partitions": "Keep low (8-16) for sub-second latency. Increase for higher throughput.",
+    "spark.databricks.streaming.realTimeMode.enabled": "REQUIRED: Enables Real-Time Mode for sub-second latency",
+    "spark.shuffle.manager": "REQUIRED: Multi-shuffle manager optimizes streaming shuffles",
+    "spark.sql.streaming.stateStore.providerClass": "RocksDB provides better performance for stateful operations",
+    "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled": "Enables faster recovery with changelog checkpointing"
+  },
+
+  "_comment_requirements": {
+    "runtime": "DBR 16.4 LTS or later required for Real-Time Mode",
+    "compute": "DEDICATED (single-user) compute ONLY - serverless and shared NOT supported",
+    "access_mode": "Use SINGLE_USER so the notebook can checkpoint to Unity Catalog Volumes under /Volumes/...",
+    "autoscaling": "MUST be DISABLED - RTM requires fixed cluster size",
+    "photon": "NOT SUPPORTED with RTM - do not enable Photon",
+    "instance_type": "Memory-optimized instances recommended for streaming workloads",
+    "workers": "Fixed worker count - calculate: source_partitions + shuffle_partitions per stage",
+    "slot_sizing": "Example: 8 Kafka partitions + 20 shuffle = 28 task slots needed"
+  },
+
+  "_setup_instructions": [
+    "1. Copy this file and remove all keys starting with '_' (comments)",
+    "2. Replace 'REPLACE_WITH_YOUR_INSTANCE_TYPE' with an instance from your cloud",
+    "3. Replace 'REPLACE_WITH_YOUR_USER_EMAIL' with the user who will own the single-user cluster",
+    "4. Add the appropriate cloud_attributes block for your provider (aws_attributes, azure_attributes, or gcp_attributes)",
+    "5. Import via Databricks UI: Compute > Create Cluster > JSON Configuration",
+    "6. Or use CLI: databricks clusters create --json @cluster_config.template.json"
+  ]
+}
