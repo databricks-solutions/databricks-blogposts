@@ -1,0 +1,5 @@
+# Dependencies for query_engines/ray_process.py
+-r base.txt
+ray[data]
+pyarrow
+numpy

@@ -1,0 +1,4 @@
+# Dependencies for processing/huggingface_inference.py
+transformers>=4.30.0
+torch>=2.0.0
+Pillow>=9.0.0
