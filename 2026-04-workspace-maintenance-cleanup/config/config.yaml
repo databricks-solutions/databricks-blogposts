@@ -1,0 +1,20 @@
+dev:
+  job_cleanup: false
+  dashboard_cleanup: false
+  vector_cleanup: true
+  system_table_cleanup: true
+  dry_run: true
+
+stage:
+  job_cleanup: true
+  dashboard_cleanup: true
+  vector_cleanup: true
+  system_table_cleanup: true
+  dry_run: false
+
+prod:
+  job_cleanup: true
+  dashboard_cleanup: true
+  vector_cleanup: true
+  system_table_cleanup: true
+  dry_run: false
