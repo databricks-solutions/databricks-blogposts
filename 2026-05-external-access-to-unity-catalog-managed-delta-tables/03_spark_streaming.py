@@ -125,6 +125,19 @@ def main() -> None:
         "version", "timestamp", "operation", "operationMetrics"
     ).orderBy("version", ascending=False).show(10, truncate=False)
 
+    # ---- Time travel ------------------------------------------------------
+    # Version 0 is the CREATE TABLE that produced an empty `orders_stream`.
+    # Each subsequent version is a streaming micro-batch commit. Showing
+    # both versions side-by-side proves catalog-managed commits also work
+    # for time travel against streaming-written tables.
+    print_banner(f"Time travel: {fq(STREAM_TABLE)} VERSION AS OF 0 vs latest")
+    v0 = spark.sql(
+        f"SELECT count(*) AS n FROM {fq(STREAM_TABLE)} VERSION AS OF 0"
+    ).first()["n"]
+    now = spark.table(fq(STREAM_TABLE)).count()
+    print(f"  rows at version 0 (CREATE TABLE):   {v0:>10,d}")
+    print(f"  rows now (after streaming):         {now:>10,d}")
+
     spark.stop()
 
 

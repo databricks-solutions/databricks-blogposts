@@ -29,6 +29,20 @@ def main() -> None:
     print_banner("DESCRIBE HISTORY orders")
     spark.sql(f"DESCRIBE HISTORY {fq('orders')}").show(10, truncate=False)
 
+    # ---- Time travel ------------------------------------------------------
+    # Delta SQL `VERSION AS OF N` reads the table as of commit version N.
+    # Version 0 is the original CTAS that seeded the table; the current
+    # state reflects every commit (Databricks-Runtime + external engines)
+    # since then.
+    print_banner(f"Time travel: {fq('orders')} VERSION AS OF 0 vs latest")
+    v0 = spark.sql(
+        f"SELECT count(*) AS n FROM {fq('orders')} VERSION AS OF 0"
+    ).first()["n"]
+    now = spark.table(fq("orders")).count()
+    print(f"  rows at version 0:   {v0:>12,d}")
+    print(f"  rows now (latest):   {now:>12,d}")
+    print(f"  delta (post-v0):     {now - v0:>+12,d}")
+
     spark.stop()
 
 
