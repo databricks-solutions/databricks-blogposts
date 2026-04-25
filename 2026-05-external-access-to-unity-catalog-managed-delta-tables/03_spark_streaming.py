@@ -29,7 +29,7 @@ ROWS_PER_SECOND = int(os.environ.get("STREAM_ROWS_PER_SECOND", "50"))
 
 
 def main() -> None:
-    spark = build_spark("09_spark_streaming_external_write")
+    spark = build_spark("03_spark_streaming")
 
     # Idempotency: drop and recreate so each run produces a reproducible
     # row count / commit sequence. The table is still the same managed

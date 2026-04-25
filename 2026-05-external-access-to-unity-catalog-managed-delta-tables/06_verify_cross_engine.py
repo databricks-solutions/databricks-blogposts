@@ -6,7 +6,7 @@ script reads through the same external Delta Spark session and dumps
 mix of `engineInfo` values:
 
   * `Databricks-Runtime/...` — original CTAS by 00_setup_databricks.sql
-  * `Apache-Spark/4.1.0 Delta-Lake/4.2.0` — external Spark batch + stream
+  * `Apache-Spark/4.1.1 Delta-Lake/4.2.0` — external Spark batch + stream
   * DuckDB INSERT commits — visible alongside the Spark commits on the
     same `orders` table, proving UC coordinated writes across engines.
 """
@@ -59,40 +59,19 @@ def main() -> None:
     else:
         print(f"({fq('orders_stream')} not present — run 03_spark_streaming.py)")
 
-    # customer_nation_join — only present if DuckDB scripts 04/05 succeeded.
-    # PRD §10 item 1: uc_catalog DuckDB extension is still pre-GA against
-    # Databricks UC, so this may be absent.
-    if _table_exists(spark, fq("customer_nation_join")):
-        print_banner(
-            f"Spark: read DuckDB-created table {fq('customer_nation_join')}"
-        )
-        spark.table(fq("customer_nation_join")).show(5, truncate=False)
-        print("row count:", spark.table(fq("customer_nation_join")).count())
-
-        print_banner(
-            f"Spark: orders rows inserted by DuckDB (o_clerk='{MARKER_CLERK}')"
-        )
-        spark.sql(
-            f"""
-            SELECT o_orderkey, o_orderstatus, o_totalprice, o_comment
-            FROM {fq('orders')}
-            WHERE o_clerk = '{MARKER_CLERK}'
-            ORDER BY o_orderkey
-            """
-        ).show(truncate=False)
-    else:
-        print(
-            f"({fq('customer_nation_join')} not present — DuckDB extension is pre-GA, "
-            "see PRD §10 item 1)"
-        )
-
-    # Flink-produced table — only present if 07_flink_external_write.py was run
-    if _table_exists(spark, fq("orders_from_flink")):
-        print_banner(f"Spark: DESCRIBE HISTORY {fq('orders_from_flink')} (commits from Flink)")
-        _describe_history(spark, fq("orders_from_flink"), 5).show(truncate=False)
-        print(f"{fq('orders_from_flink')} row count:", spark.table(fq("orders_from_flink")).count())
-    else:
-        print(f"({fq('orders_from_flink')} not present — skip Flink verification)")
+    # DuckDB-inserted rows visible to external Spark (cross-engine read of
+    # rows committed by another engine through UC).
+    print_banner(
+        f"Spark: orders rows inserted by DuckDB (o_clerk LIKE '{MARKER_CLERK}%')"
+    )
+    spark.sql(
+        f"""
+        SELECT o_orderkey, o_clerk, o_orderstatus, o_totalprice, o_comment
+        FROM {fq('orders')}
+        WHERE o_clerk LIKE '{MARKER_CLERK}%'
+        ORDER BY o_orderkey
+        """
+    ).show(truncate=False)
 
     spark.stop()
 
