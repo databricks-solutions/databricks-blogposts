@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import duckdb
 
-from _common import attach_unity_catalog, fq, print_banner
+from _common import attach_unity_catalog, fq, print_banner, script_banner
 
 
 MARKER_CLERK = "Clerk#external-duckdb"
@@ -86,4 +86,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    with script_banner(__file__):
+        main()

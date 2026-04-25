@@ -105,4 +105,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    with _common.script_banner(__file__):
+        sys.exit(main())

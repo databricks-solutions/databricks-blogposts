@@ -13,7 +13,7 @@ committed.
 """
 import duckdb
 
-from _common import UC_CATALOG, UC_SCHEMA, attach_unity_catalog, fq, print_banner
+from _common import UC_CATALOG, UC_SCHEMA, attach_unity_catalog, fq, print_banner, script_banner
 
 
 def main() -> None:
@@ -48,4 +48,5 @@ def main() -> None:
     print(df.to_string(index=False))
 
 if __name__ == "__main__":
-    main()
+    with script_banner(__file__):
+        main()

@@ -20,7 +20,7 @@ from pathlib import Path
 
 from pyspark.sql.functions import col, concat, current_date, lit, expr
 
-from _common import build_spark, fq, print_banner
+from _common import build_spark, fq, print_banner, script_banner
 
 
 STREAM_TABLE = "orders_stream"
@@ -142,4 +142,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    with script_banner(__file__):
+        main()

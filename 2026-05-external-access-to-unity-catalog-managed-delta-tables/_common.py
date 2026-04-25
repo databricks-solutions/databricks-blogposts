@@ -6,8 +6,48 @@ on the operation it is demonstrating.
 """
 from __future__ import annotations
 
+import contextlib
 import os
+import sys
+import tempfile
 from pathlib import Path
+
+
+DEMO_VERBOSE = os.environ.get("DEMO_VERBOSE", "0") == "1"
+
+
+@contextlib.contextmanager
+def _quiet_stderr():
+    """Suppress JVM/Ivy stderr (Spark startup banner, package resolution).
+
+    Replaces fd 2 with a temp file for the duration of the block. On
+    success the captured output is dropped; on exception it is forwarded
+    to the real stderr so genuine errors are not lost. Set DEMO_VERBOSE=1
+    to disable suppression (useful when debugging classpath issues).
+    """
+    if DEMO_VERBOSE:
+        yield
+        return
+    sys.stdout.flush()
+    sys.stderr.flush()
+    saved_fd = os.dup(2)
+    tmp = tempfile.TemporaryFile(mode="w+b")
+    try:
+        os.dup2(tmp.fileno(), 2)
+        try:
+            yield
+        except BaseException:
+            os.dup2(saved_fd, 2)
+            tmp.seek(0)
+            captured = tmp.read()
+            if captured:
+                os.write(2, captured)
+            raise
+        else:
+            os.dup2(saved_fd, 2)
+    finally:
+        os.close(saved_fd)
+        tmp.close()
 
 
 def _load_dotenv() -> None:
@@ -239,12 +279,41 @@ def build_spark(app_name: str = "uc-external-access-demo"):
     if SPARK_REPOSITORIES:
         builder = builder.config("spark.jars.repositories", SPARK_REPOSITORIES)
 
-    return builder.getOrCreate()
+    # Hush log4j during runtime; suppress Ivy resolution + JVM banner during
+    # startup. Override with DEMO_VERBOSE=1 if you need the full noise.
+    builder = builder.config("spark.log.level", "ERROR")
+
+    with _quiet_stderr():
+        spark = builder.getOrCreate()
+    spark.sparkContext.setLogLevel("ERROR")
+    return spark
 
 
 def print_banner(title: str) -> None:
     bar = "=" * len(title)
     print(f"\n{bar}\n{title}\n{bar}")
+
+
+@contextlib.contextmanager
+def script_banner(script_path: str):
+    """Print heavy START/END banners around a standalone script run.
+
+    Suppressed when invoked under run_all.py (which exports
+    ``RUN_ALL_ACTIVE=1`` and prints its own per-step banners) so a single
+    end-to-end run does not double-banner each script.
+    """
+    if os.environ.get("RUN_ALL_ACTIVE") == "1":
+        yield
+        return
+    name = os.path.basename(script_path)
+    bar = "#" * 78
+    print(f"\n{bar}\n#  START  {name}\n{bar}\n", flush=True)
+    try:
+        yield
+        print(f"\n{bar}\n#  END    {name}  —  OK\n{bar}\n", flush=True)
+    except BaseException:
+        print(f"\n{bar}\n#  END    {name}  —  FAILED\n{bar}\n", flush=True)
+        raise
 
 
 # --- DuckDB helper ----------------------------------------------------------
@@ -263,10 +332,11 @@ def attach_unity_catalog(con) -> None:
     AWS_REGION must match the region of the S3 bucket that backs the UC
     metastore. Override via the AWS_REGION env var for other workspaces.
     """
-    con.execute("INSTALL unity_catalog;")
-    con.execute("LOAD unity_catalog;")
-    con.execute("INSTALL delta;")
-    con.execute("LOAD delta;")
+    with _quiet_stderr():
+        con.execute("INSTALL unity_catalog;")
+        con.execute("LOAD unity_catalog;")
+        con.execute("INSTALL delta;")
+        con.execute("LOAD delta;")
 
     token = get_oauth_token()
     # The secret is created without a name so the extension auto-resolves

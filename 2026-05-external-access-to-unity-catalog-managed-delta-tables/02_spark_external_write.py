@@ -11,7 +11,7 @@ coordinated across engines.
 """
 from pyspark.sql import Row
 
-from _common import build_spark, fq, print_banner
+from _common import build_spark, fq, print_banner, script_banner
 
 
 NEW_ORDER_ROWS = [
@@ -98,14 +98,19 @@ def main() -> None:
 
     spark.table(fq("orders_summary")).show(truncate=False)
 
-    print_banner("DESCRIBE HISTORY orders (shows the append commit)")
-    spark.sql(f"DESCRIBE HISTORY {fq('orders')}").show(5, truncate=False)
+    print_banner("DESCRIBE HISTORY orders (shows the DELETE + APPEND commits)")
+    spark.sql(f"DESCRIBE HISTORY {fq('orders')}").select(
+        "version", "timestamp", "operation", "engineInfo"
+    ).orderBy("version").show(20, truncate=False)
 
     print_banner("DESCRIBE HISTORY orders_summary (shows the CTAS commit)")
-    spark.sql(f"DESCRIBE HISTORY {fq('orders_summary')}").show(5, truncate=False)
+    spark.sql(f"DESCRIBE HISTORY {fq('orders_summary')}").select(
+        "version", "timestamp", "operation", "engineInfo"
+    ).orderBy("version").show(10, truncate=False)
 
     spark.stop()
 
 
 if __name__ == "__main__":
-    main()
+    with script_banner(__file__):
+        main()

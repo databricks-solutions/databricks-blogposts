@@ -9,7 +9,7 @@ Demonstrates:
   * SELECT from `orders`
   * DESCRIBE HISTORY of `orders` — every commit will be attributed to UC
 """
-from _common import UC_CATALOG, UC_SCHEMA, build_spark, fq, print_banner
+from _common import UC_CATALOG, UC_SCHEMA, build_spark, fq, print_banner, script_banner
 
 
 def main() -> None:
@@ -27,7 +27,9 @@ def main() -> None:
         print(f"  {t:<10s} {n:>12,d}")
 
     print_banner("DESCRIBE HISTORY orders")
-    spark.sql(f"DESCRIBE HISTORY {fq('orders')}").show(10, truncate=False)
+    spark.sql(f"DESCRIBE HISTORY {fq('orders')}").select(
+        "version", "timestamp", "operation", "engineInfo"
+    ).orderBy("version").show(20, truncate=False)
 
     # ---- Time travel ------------------------------------------------------
     # Delta SQL `VERSION AS OF N` reads the table as of commit version N.
@@ -47,4 +49,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    with script_banner(__file__):
+        main()
