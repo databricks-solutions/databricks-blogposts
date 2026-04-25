@@ -181,7 +181,7 @@ def build_spark(app_name: str = "uc-external-access-demo"):
       - Scala              {SCALA_VERSION}  (default 2.13)
       - delta-spark        {DELTA_SPARK_VERSION}  (default 4.2.0)
       - unitycatalog-spark {UNITY_CATALOG_SPARK_VERSION}  (default 0.4.1)
-      - hadoop-aws         {HADOOP_AWS_VERSION}  (default 3.4.0)
+      - hadoop-aws         {HADOOP_AWS_VERSION}  (default 3.4.2)
 
     Auth follows the UC Spark connector's OAuth mode — the connector fetches
     and refreshes its own M2M OAuth tokens against /oidc/v1/token, so no
