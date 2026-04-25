@@ -1,0 +1,11 @@
+# Pinned to the Delta Lake 4.2 release versions.
+# - Apache Spark 4.1
+# - Delta Spark 4.2.0
+# - unitycatalog-spark 0.4.1 (pulled by Spark via --packages, not pip)
+# - DuckDB 1.5.2 with the unity_catalog + delta core extensions
+#   (see https://duckdb.org/docs/current/core_extensions/unity_catalog).
+pyspark==4.1.1
+delta-spark==4.2.0
+duckdb==1.5.2
+pandas>=2.2.0
+databricks-sdk>=0.30.0
