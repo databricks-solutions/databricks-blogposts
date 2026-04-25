@@ -16,21 +16,29 @@ consistent transaction log no matter which engine wrote the rows.
 
 ## Quick start
 
+### 1. One-time setup
+
 ```bash
+# from the folder containing this README
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
 cp .env.example .env
-# Edit .env — fill in your workspace URL, CLI profile, secret scope
+# Edit .env — fill in your workspace URL, CLI profile, secret-scope
 # keys, warehouse id, and AWS region. See `.env.example` for what
 # each value means.
-
-python run_all.py        # idempotent end-to-end pipeline (~6 min)
 ```
 
-`run_all.py` runs in this order:
+### 2. Run the whole pipeline end-to-end
+
+```bash
+source .venv/bin/activate              # if not already in this shell
+python run_all.py                      # idempotent — ~6 minutes
+```
+
+`run_all.py` runs these in order:
 
 1. `run_setup.py` — DROP + CREATE the demo catalog, clone 8
    `samples.tpch` tables as managed Delta, apply grants.
@@ -39,11 +47,45 @@ python run_all.py        # idempotent end-to-end pipeline (~6 min)
 4. `03_spark_streaming.py` — external Spark Structured Streaming.
 5. `04_duckdb_read.py` — DuckDB SELECT + JOIN against UC tables.
 6. `05_duckdb_insert.py` — DuckDB INSERT (`VALUES` and `INSERT … SELECT`).
-7. `06_verify_cross_engine.py` — cross-engine `DESCRIBE HISTORY` showing
-   the mix of `engineInfo` values across the catalog.
+7. `06_verify_cross_engine.py` — cross-engine `DESCRIBE HISTORY`
+   showing the mix of `engineInfo` values across the catalog.
 
-Skip stages with the `SKIP_SCRIPTS` env var, e.g.
-`SKIP_SCRIPTS=streaming python run_all.py`.
+Skip stages with `SKIP_SCRIPTS`:
+
+```bash
+SKIP_SCRIPTS=streaming python run_all.py            # skip the 30s streaming step
+SKIP_SCRIPTS=setup,spark_read python run_all.py     # reuse current catalog state
+SKIP_SCRIPTS=duckdb_read,duckdb_insert python run_all.py   # spark only
+```
+
+Skip names map to the `STEPS` list in `run_all.py`:
+`setup`, `spark_read`, `spark_write`, `streaming`, `duckdb_read`,
+`duckdb_insert`, `verify`.
+
+### 3. Or run any script individually
+
+```bash
+source .venv/bin/activate
+
+python run_setup.py                  # DROP + CREATE catalog, clone TPCH, grants
+python 01_spark_external_read.py     # external Spark read
+python 02_spark_external_write.py    # external Spark APPEND + CTAS
+python 03_spark_streaming.py         # external Spark Structured Streaming (~30s)
+python 04_duckdb_read.py             # DuckDB SELECT + JOIN
+python 05_duckdb_insert.py           # DuckDB INSERT
+python 06_verify_cross_engine.py     # cross-engine DESCRIBE HISTORY
+```
+
+`run_setup.py` must run at least once before any other script. After
+that, the rest can run in any order — each one uses idempotent
+marker patterns or DROP+CREATE so you can re-run the same script as
+many times as you want without breaking state.
+
+Override the streaming duration:
+
+```bash
+STREAM_DURATION_SECONDS=120 python 03_spark_streaming.py
+```
 
 ## Prerequisites
 
@@ -76,18 +118,6 @@ Copy `.env.example` to `.env` and fill in:
 
 If you don't have a CLI profile locally, set `DATABRICKS_CLIENT_ID`
 and `DATABRICKS_CLIENT_SECRET` directly. See `.env.example`.
-
-## Run stages individually
-
-| Command | What it does |
-|---|---|
-| `python run_setup.py` | DROP + CREATE catalog, seed TPCH, apply grants. |
-| `python 01_spark_external_read.py` | External Spark reads the TPCH clones, dumps `DESCRIBE HISTORY orders`. |
-| `python 02_spark_external_write.py` | Removes prior marker rows, appends 2 new rows to `orders`, CTAS `orders_summary`. |
-| `python 03_spark_streaming.py` | Drops + recreates `orders_stream`, streams ~30s. Override duration with `STREAM_DURATION_SECONDS=60`. |
-| `python 04_duckdb_read.py` | DuckDB lists tables, SELECT, cross-table JOIN. |
-| `python 05_duckdb_insert.py` | DuckDB INSERT into the managed `orders` table — both `VALUES` and `INSERT … SELECT`. |
-| `python 06_verify_cross_engine.py` | Cross-engine `DESCRIBE HISTORY` verify across `orders`, `orders_summary`, `orders_stream`. |
 
 ## Cleanup
 
