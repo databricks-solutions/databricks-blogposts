@@ -436,17 +436,12 @@ kafka_options = {
 # MAGIC - `format("kafka")`: Use Kafka as streaming source
 # MAGIC - `subscribe`: Topic to consume from (vs. subscribePattern or assign)
 # MAGIC - `startingOffsets = "earliest"`: Begin from earliest available messages for full replay
-# MAGIC - `failOnDataLoss = "false"`: Continue processing if Kafka data is deleted/expired
 # MAGIC
 # MAGIC **Why `startingOffsets = "earliest"`?**
 # MAGIC - Integration testing: Replays backlog already present in the input topic
 # MAGIC - Demo workflow: Lets the stream process seeded test data without re-producing it
 # MAGIC - Operational note: Switch back to "latest" if you only want new events after startup
 # MAGIC
-# MAGIC **Why `failOnDataLoss = "false"`?**
-# MAGIC - Production resilience: Don't crash if Kafka retention expires old offsets
-# MAGIC - Trade-off: May skip messages if data loss occurs
-# MAGIC - For critical use cases, use "true" and monitor retention policies
 # MAGIC
 # MAGIC **Output Schema:**
 # MAGIC ```
@@ -473,7 +468,6 @@ df_raw = (
     .options(**kafka_options)                  # Apply connection settings
     .option("subscribe", INPUT_TOPIC)          # Subscribe to single topic
     .option("startingOffsets", "earliest")     # Start from earliest available messages
-    .option("failOnDataLoss", "false")         # Continue on data loss
     .load()
 )
 
