@@ -16,12 +16,7 @@
 
   "spark_conf": {
     "spark.sql.shuffle.partitions": "8",
-    "spark.databricks.streaming.realTimeMode.enabled": "true",
-    "spark.shuffle.manager": "org.apache.spark.shuffle.streaming.MultiShuffleManager",
-    "spark.sql.streaming.stateStore.providerClass": "com.databricks.sql.streaming.state.RocksDBStateStoreProvider",
-    "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled": "true",
-    "spark.databricks.delta.optimizeWrite.enabled": "true",
-    "spark.databricks.delta.autoCompact.enabled": "true"
+    "spark.databricks.streaming.realTimeMode.enabled": "true"
   },
 
   "spark_env_vars": {
