@@ -181,22 +181,6 @@ print(f"✓ Checkpoint location: {CHECKPOINT_LOCATION}")
 
 spark = SparkSession.builder.getOrCreate()
 
-# RocksDB State Store - Required for production stateful operations
-# Note: This truly stateless pipeline (no aggregations, no dedup, no state) doesn't use
-# a state store. These settings are included for future-proofing if stateful operations
-# are added later. RocksDB provides fast, reliable state management with checkpoint recovery.
-spark.conf.set(
-    "spark.sql.streaming.stateStore.providerClass",
-    "com.databricks.sql.streaming.state.RocksDBStateStoreProvider"
-)
-
-# Enable changelog checkpointing for faster recovery (when state is present)
-# Instead of writing full state snapshots, only writes incremental changes
-# This dramatically reduces checkpoint I/O and improves recovery time
-spark.conf.set(
-    "spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled",
-    "true"
-)
 
 # Reduce shuffle partitions for lower latency
 # Relevant if the pipeline includes operations that trigger a shuffle (joins, aggregations).
