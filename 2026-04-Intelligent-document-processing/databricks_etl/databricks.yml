@@ -1,0 +1,35 @@
+# Databricks asset bundle for Data Extraction ETL (jobs + DLT pipelines)
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+bundle:
+  name: data-extraction-etl
+
+include:
+  - resources/*.yml
+  - resources/*/*.yml
+
+variables:
+  catalog:
+    description: The catalog to use
+    default: <CATALOG>
+  schema:
+    description: The schema to use
+    default: <SCHEMA>
+  table_prefix:
+    description: Prefix for Delta tables (e.g. app_invoices_parsed) and workspace job/pipeline names (e.g. app_extract_invoices_etl).
+    default: <TABLE_PREFIX>
+  volume:
+    description: "UC volume root path. PDFs must be placed in the productmanuals subfolder: /Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>/productmanuals/"
+    default: /Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>/
+  warehouse_id:
+    description: SQL warehouse ID for Genie spaces (serverless SQL / Genie UI)
+    default: <SQL_WAREHOUSE_ID>
+  evaluation_experiment:
+    description: MLflow experiment path for product manual extraction quality evaluation
+    default: "/Shared/${var.table_prefix}_product_manuals_extraction_eval"
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace:
+    #  host: <WORKSPACE_URL>
