@@ -33,4 +33,5 @@
 /2026-02-platform-observability-dashboard @sashankkotta-db @pathak-rutuja
 /2026-02-realtime-streaming-fraud-feature-engineering-with-lakebase/*  @jpdatabricks
 /2026-04-processing-unstructured-data-in-volumes-with-UC-open-APIs/* @dipankarkush-db
+/2026-04-django-on-databricks-apps/* @tlgnr
 /2026-05-external-access-to-unity-catalog-managed-delta-tables/* @dipankarkush-db
