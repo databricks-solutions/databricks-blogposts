@@ -27,11 +27,9 @@ CREATE SCHEMA IF NOT EXISTS <CATALOG>.<SCHEMA>;
 CREATE VOLUME IF NOT EXISTS <CATALOG>.<SCHEMA>.<VOLUME_NAME>;
 ```
 
-3. **Create a `productmanuals` folder** inside the volume via the Databricks UI: navigate to **Catalog → `<VOLUME_NAME>` → Create folder**.
+3. **Upload your PDF files** directly into the volume root via the Databricks UI: navigate to **Catalog → Volumes → `<VOLUME_NAME>` → Upload to this volume**.
 
-4. **Upload your PDF files** into the `productmanuals` folder via the Databricks UI: navigate to **Catalog → Volumes → `<VOLUME_NAME>` → Upload to this volume**.
-
-> 💡 The pipeline reads from `{volume}/productmanuals` — this subfolder must contain at least one `.pdf` file before running the job. Use the sample files from [`../productmanuals/`](../productmanuals/) to get started.
+> 💡 The pipeline reads directly from the volume root (`{volume}`) — it must contain at least one `.pdf` file before running the job. Use the sample files from [`../productmanuals/`](../productmanuals/) to get started.
 
 > **Bundle root is `databricks_etl/`**, not the repo root. Open or `cd` into this directory before running any bundle commands.
 
@@ -46,7 +44,7 @@ Set these in [`databricks.yml`](databricks.yml) before deploying:
 | `catalog` | Unity Catalog catalog |
 | `schema` | Schema (database) |
 | `table_prefix` | Prefix for all Delta table and job display names |
-| `volume` | UC volume root path — PDFs must be placed in the `productmanuals` subfolder inside it, e.g. `/Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>/` |
+| `volume` | UC volume path where PDFs are stored, e.g. `/Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>` |
 | `warehouse_id` | SQL warehouse ID for Genie Space creation |
 | `evaluation_experiment` | MLflow experiment path for extraction quality evaluation (defaults to `/Shared/<table_prefix>_product_manuals_extraction_eval`) |
 

@@ -20,7 +20,7 @@ A full-stack app for uploading PDFs, triggering the extraction pipeline, queryin
 ---
 
 ## 🔧 Prerequisites
-
+/ uv needs to be installed (see [Install uv] (https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_1)
 - Databricks CLI installed and configured (see [Install the Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html#install-the-databricks-cli))
 - The ETL pipeline deployed and a job run completed (see [`../databricks_etl/README.md`](../databricks_etl/README.md))
 
@@ -39,6 +39,8 @@ Edit [`app.yml`](app.yml) before deploying. Set the following environment variab
 | `VOLUME_PATH` | Volume path for PDF uploads, e.g. `/Volumes/<catalog>/<schema>/<volume>/` |
 | `AI_EXTRACT_PROCESSED_TABLE` | Full table name (`catalog.schema.table`) for extraction results |
 | `AGENT_ENDPOINT` | Serving endpoint name for the Supervisor Agent |
+
+You can optionally edit [`databricks.yml`](databricks.yml) `variables.app_name` if you want a different app name in the workspace.
 
 ---
 
@@ -68,16 +70,12 @@ cd databricks_app && uv sync
 databricks bundle deploy -p <profile>
 ```
 
-The app is deployed with the name defined in [`databricks.yml`](databricks.yml) under `variables.app_name` (default: `intelligent-document-processing-app`).
+The app is deployed with the name defined in [`databricks.yml`](databricks.yml) under `variables.app_name`.
 
 ### 5. Start the app
 
-Open your workspace, navigate to **Compute → Apps**, find `intelligent-document-processing-app`, and click **Start**.
-
-### 6. Sync files
-
 ```bash
-databricks apps deploy intelligent-document-processing-app --source-code-path /Workspace/Users/<your-email@company.com>/.bundle/data-extraction-app/dev/files/.build
+databricks bundle run -p <profile>
 ```
 
 ---

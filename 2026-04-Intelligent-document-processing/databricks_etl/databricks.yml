@@ -18,8 +18,8 @@ variables:
     description: Prefix for Delta tables (e.g. app_invoices_parsed) and workspace job/pipeline names (e.g. app_extract_invoices_etl).
     default: <TABLE_PREFIX>
   volume:
-    description: "UC volume root path. PDFs must be placed in the productmanuals subfolder: /Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>/productmanuals/"
-    default: /Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>/
+    description: "UC volume path where PDFs are stored: /Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>"
+    default: /Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>
   warehouse_id:
     description: SQL warehouse ID for Genie spaces (serverless SQL / Genie UI)
     default: <SQL_WAREHOUSE_ID>

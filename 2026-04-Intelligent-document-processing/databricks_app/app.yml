@@ -5,7 +5,7 @@ env:
   - name: JOB_ID
     value: "<JOB_ID>"
   - name: VOLUME_PATH
-    value: "/Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>/"
+    value: "/Volumes/<CATALOG>/<SCHEMA>/<VOLUME_NAME>"
   - name: AI_EXTRACT_PROCESSED_TABLE
     value: "<CATALOG>.<SCHEMA>.<TABLE_PREFIX>_productmanuals_processed"
   - name: AGENT_ENDPOINT

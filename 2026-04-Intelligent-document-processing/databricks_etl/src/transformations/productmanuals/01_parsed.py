@@ -3,7 +3,7 @@ import pyspark.sql.functions as F
 
 # I/O variables
 table_prefix = spark.conf.get("table_prefix")
-input_volume_path = f"{spark.conf.get('volume')}/productmanuals"
+input_volume_path = spark.conf.get('volume')
 
 @dp.table(
     name=f"{table_prefix}_productmanuals_parsed",

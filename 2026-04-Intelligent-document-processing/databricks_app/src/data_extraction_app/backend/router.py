@@ -161,7 +161,7 @@ def list_files(
     ws: Annotated[WorkspaceClient, Depends(get_volume_obo_ws)],
 ):
     """List PDF files in the configured volume (using OBO token from X-Forwarded-Access-Token)."""
-    volume_path = f"{config.volume_path}/productmanuals"
+    volume_path = config.volume_path
     logger.info(f"[LIST] Listing files from volume: {volume_path}")
     logger.info(f"[LIST] Using host: {config.host}")
 
@@ -206,7 +206,7 @@ def upload_files(
     payload: FilesUploadIn,
 ):
     """Upload PDF files to the configured volume (using OBO token from X-Forwarded-Access-Token)."""
-    volume_path = f"{config.volume_path}/productmanuals"
+    volume_path = config.volume_path
     logger.info(f"[UPLOAD] Received upload request with {len(payload.files)} files")
     logger.info(f"[UPLOAD] Volume path: {volume_path}")
     logger.info(f"[UPLOAD] Host: {config.host}")
