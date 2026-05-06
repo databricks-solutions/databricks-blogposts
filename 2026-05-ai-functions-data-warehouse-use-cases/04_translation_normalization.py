@@ -85,9 +85,18 @@
 # MAGIC         'repurchase_intent (yes/no/unclear). ',
 # MAGIC         'Review: ', review_en
 # MAGIC       ),
-# MAGIC       responseFormat => 'STRUCT<overall_sentiment:STRING, packaging_mentioned:BOOLEAN, delivery_mentioned:BOOLEAN, repurchase_intent:STRING>'
-# MAGIC     ) AS attrs
+# MAGIC       responseFormat => 'STRUCT<attrs:STRUCT<overall_sentiment:STRING, packaging_mentioned:BOOLEAN, delivery_mentioned:BOOLEAN, repurchase_intent:STRING>>'
+# MAGIC     ) AS raw_attrs
 # MAGIC   FROM translated
+# MAGIC ),
+# MAGIC parsed AS (
+# MAGIC   SELECT
+# MAGIC     review_id,
+# MAGIC     product_id,
+# MAGIC     source_locale,
+# MAGIC     review_en,
+# MAGIC     from_json(raw_attrs, 'STRUCT<overall_sentiment:STRING, packaging_mentioned:BOOLEAN, delivery_mentioned:BOOLEAN, repurchase_intent:STRING>') AS attrs
+# MAGIC   FROM extracted
 # MAGIC )
 # MAGIC SELECT
 # MAGIC   review_id,
@@ -98,7 +107,7 @@
 # MAGIC   attrs.packaging_mentioned,
 # MAGIC   attrs.delivery_mentioned,
 # MAGIC   attrs.repurchase_intent
-# MAGIC FROM extracted;
+# MAGIC FROM parsed;
 
 # COMMAND ----------
 

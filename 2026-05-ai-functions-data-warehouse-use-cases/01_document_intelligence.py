@@ -77,7 +77,7 @@
 # MAGIC       'total_amount (decimal), currency_code (3-letter ISO code), payment_terms (string). ',
 # MAGIC       'Invoice text: ', parsed_text
 # MAGIC     ),
-# MAGIC     responseFormat => 'STRUCT<vendor_name:STRING, invoice_number:STRING, invoice_date:STRING, total_amount:DOUBLE, currency_code:STRING, payment_terms:STRING>'
+# MAGIC     responseFormat => 'STRUCT<invoice_data:STRUCT<vendor_name:STRING, invoice_number:STRING, invoice_date:STRING, total_amount:DOUBLE, currency_code:STRING, payment_terms:STRING>>'
 # MAGIC   ) AS extracted
 # MAGIC FROM demo_invoice_text;
 
@@ -102,19 +102,25 @@
 # MAGIC         'total_amount (decimal), currency_code (3-letter ISO code), payment_terms (string). ',
 # MAGIC         'Invoice text: ', parsed_text
 # MAGIC       ),
-# MAGIC       responseFormat => 'STRUCT<vendor_name:STRING, invoice_number:STRING, invoice_date:STRING, total_amount:DOUBLE, currency_code:STRING, payment_terms:STRING>'
+# MAGIC       responseFormat => 'STRUCT<invoice_data:STRUCT<vendor_name:STRING, invoice_number:STRING, invoice_date:STRING, total_amount:DOUBLE, currency_code:STRING, payment_terms:STRING>>'
 # MAGIC     ) AS extracted
 # MAGIC   FROM demo_invoice_text
+# MAGIC ),
+# MAGIC parsed AS (
+# MAGIC   SELECT
+# MAGIC     document_id,
+# MAGIC     from_json(extracted, 'STRUCT<vendor_name:STRING, invoice_number:STRING, invoice_date:STRING, total_amount:DOUBLE, currency_code:STRING, payment_terms:STRING>') AS invoice
+# MAGIC   FROM raw
 # MAGIC )
 # MAGIC SELECT
 # MAGIC   document_id,
-# MAGIC   extracted.vendor_name,
-# MAGIC   extracted.invoice_number,
-# MAGIC   extracted.invoice_date,
-# MAGIC   extracted.total_amount,
-# MAGIC   extracted.currency_code,
-# MAGIC   extracted.payment_terms
-# MAGIC FROM raw;
+# MAGIC   invoice.vendor_name,
+# MAGIC   invoice.invoice_number,
+# MAGIC   invoice.invoice_date,
+# MAGIC   invoice.total_amount,
+# MAGIC   invoice.currency_code,
+# MAGIC   invoice.payment_terms
+# MAGIC FROM parsed;
 
 # COMMAND ----------
 

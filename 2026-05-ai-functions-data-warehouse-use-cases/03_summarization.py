@@ -96,7 +96,7 @@
 # MAGIC       'risk_reason: one sentence explaining the risk if risk_flag is true, otherwise null. ',
 # MAGIC       'Transcript: ', transcript
 # MAGIC     ),
-# MAGIC     responseFormat => 'STRUCT<next_step:STRING, owner:STRING, deal_stage:STRING, risk_flag:BOOLEAN, risk_reason:STRING>'
+# MAGIC     responseFormat => 'STRUCT<call_summary:STRUCT<next_step:STRING, owner:STRING, deal_stage:STRING, risk_flag:BOOLEAN, risk_reason:STRING>>'
 # MAGIC   ) AS call_summary
 # MAGIC FROM demo_call_transcripts;
 
@@ -124,9 +124,17 @@
 # MAGIC         'risk_reason: one sentence explaining the risk if risk_flag is true, otherwise null. ',
 # MAGIC         'Transcript: ', transcript
 # MAGIC       ),
-# MAGIC       responseFormat => 'STRUCT<next_step:STRING, owner:STRING, deal_stage:STRING, risk_flag:BOOLEAN, risk_reason:STRING>'
-# MAGIC     ) AS s
+# MAGIC       responseFormat => 'STRUCT<call_summary:STRUCT<next_step:STRING, owner:STRING, deal_stage:STRING, risk_flag:BOOLEAN, risk_reason:STRING>>'
+# MAGIC     ) AS raw_summary
 # MAGIC   FROM demo_call_transcripts
+# MAGIC ),
+# MAGIC parsed AS (
+# MAGIC   SELECT
+# MAGIC     call_id,
+# MAGIC     account_id,
+# MAGIC     call_date,
+# MAGIC     from_json(raw_summary, 'STRUCT<next_step:STRING, owner:STRING, deal_stage:STRING, risk_flag:BOOLEAN, risk_reason:STRING>') AS s
+# MAGIC   FROM summarized
 # MAGIC )
 # MAGIC SELECT
 # MAGIC   call_id,
@@ -137,7 +145,7 @@
 # MAGIC   s.deal_stage,
 # MAGIC   s.risk_flag,
 # MAGIC   s.risk_reason
-# MAGIC FROM summarized
+# MAGIC FROM parsed
 # MAGIC ORDER BY s.risk_flag DESC, call_date;
 
 # COMMAND ----------
