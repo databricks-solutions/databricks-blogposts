@@ -39,16 +39,38 @@ USE CATALOG uc_ext_access_demo;
 USE SCHEMA tpch_managed;
 
 -- 2. Clone samples.tpch as managed Delta tables -------------------------------
--- CTAS into the managed schema produces UC managed Delta tables by default.
+-- CTAS into the managed schema produces UC managed Delta tables.
+-- delta.feature.catalogManaged='supported' is required for *any* supported
+-- external engine to write to these tables under the External Access Beta —
+-- that's the whole premise of the post. All supported partner clients
+-- (Delta Spark, Apache Flink, DuckDB, Trino, ...) commit through UC's
+-- catalog-commit path; non-catalog-managed tables are not a supported
+-- external-write target.
 
-CREATE OR REPLACE TABLE customer AS SELECT * FROM samples.tpch.customer;
-CREATE OR REPLACE TABLE lineitem AS SELECT * FROM samples.tpch.lineitem;
-CREATE OR REPLACE TABLE nation   AS SELECT * FROM samples.tpch.nation;
-CREATE OR REPLACE TABLE orders   AS SELECT * FROM samples.tpch.orders;
-CREATE OR REPLACE TABLE part     AS SELECT * FROM samples.tpch.part;
-CREATE OR REPLACE TABLE partsupp AS SELECT * FROM samples.tpch.partsupp;
-CREATE OR REPLACE TABLE region   AS SELECT * FROM samples.tpch.region;
-CREATE OR REPLACE TABLE supplier AS SELECT * FROM samples.tpch.supplier;
+CREATE OR REPLACE TABLE customer
+  TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')
+  AS SELECT * FROM samples.tpch.customer;
+CREATE OR REPLACE TABLE lineitem
+  TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')
+  AS SELECT * FROM samples.tpch.lineitem;
+CREATE OR REPLACE TABLE nation
+  TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')
+  AS SELECT * FROM samples.tpch.nation;
+CREATE OR REPLACE TABLE orders
+  TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')
+  AS SELECT * FROM samples.tpch.orders;
+CREATE OR REPLACE TABLE part
+  TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')
+  AS SELECT * FROM samples.tpch.part;
+CREATE OR REPLACE TABLE partsupp
+  TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')
+  AS SELECT * FROM samples.tpch.partsupp;
+CREATE OR REPLACE TABLE region
+  TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')
+  AS SELECT * FROM samples.tpch.region;
+CREATE OR REPLACE TABLE supplier
+  TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')
+  AS SELECT * FROM samples.tpch.supplier;
 
 -- Sanity check
 SELECT 'customer' AS table_name, count(*) AS row_count FROM customer
@@ -83,4 +105,4 @@ DESCRIBE EXTENDED orders;
 --     Catalog Managed Delta Table" preview (Settings > Previews).
 --   * Put your workspace host, the SP's client_id, and its OAuth secret
 --     into scripts/.env (see .env.example).
---   * Run scripts/01_spark_external_read.py from a local machine.
+--   * Run scripts/01_duckdb_read.py (or `python run_all.py -a`) from a local machine.

@@ -8,14 +8,15 @@ from outside Databricks, across multiple external engines, against
 Unity Catalog managed Delta tables:
 
 - **External Apache Spark 4.1.1 + Delta Lake 4.2.0 + Unity Catalog 0.4.1** — read, append, CTAS, and Structured Streaming writes.
-- **DuckDB 1.5.2** — SELECT, JOIN, INSERT (via the `unity_catalog` + `delta` core extensions).
+- **Apache Flink (Delta Flink Connector, sink-only, ships with Delta 4.2)** — datagen → UC managed Delta sink via catalog commits.
+- **DuckDB 1.5.1** — SELECT, JOIN, INSERT (via the `unity_catalog` + `delta` core extensions).
 
 Every commit produced by an external engine is coordinated by Unity
 Catalog, so writers don't step on each other and readers see a single,
 consistent transaction log no matter which engine wrote the rows.
 Cross-engine consistency is shown by `DESCRIBE HISTORY` at the end of
 the run, where every commit is attributed to the engine that produced
-it (Databricks Runtime, external Apache Spark, or DuckDB).
+it (Databricks Runtime, external Apache Spark, DuckDB, or Apache Flink).
 
 ## Prerequisites
 
@@ -84,35 +85,127 @@ log, which is the screenshot the blog uses:
 | # | Step | Script | `orders` |
 |---|------|--------|----------|
 | 1 | `setup`            | `run_setup.py`                | v0 (Databricks CTAS) |
-| 2 | `spark_read`       | `01_spark_external_read.py`   | — |
-| 3 | `spark_write`      | `02_spark_external_write.py`  | v1 (external Spark APPEND) |
-| 4 | `streaming`        | `03_spark_streaming.py`       | — (writes to `orders_stream`) |
-| 5 | `duckdb_read`      | `04_duckdb_read.py`           | — |
-| 6 | `duckdb_insert`    | `05_duckdb_insert.py`         | v2, v3 (DuckDB INSERTs) |
-| 7 | `spark_write_redo` | `02_spark_external_write.py`  | v4 (DELETE), v5 (APPEND) |
-| 8 | `verify`           | `06_verify_cross_engine.py`   | — (reads only) |
+| 2 | `duckdb_read`      | `01_duckdb_read.py`           | — |
+| 3 | `duckdb_insert`    | `02_duckdb_insert.py`         | v1, v2 (DuckDB INSERTs) |
+| 4 | `spark_read`       | `03_spark_external_read.py`   | — |
+| 5 | `spark_write`      | `04_spark_external_write.py`  | v3 (external Spark APPEND — empty DELETE elided on fresh catalog) |
+| 6 | `streaming`        | `05_spark_streaming.py`       | — (writes to `orders_stream`) |
+| 7 | `flink`            | `06_flink_streaming.py`       | v4 (Flink WRITE on `orders`) + commits on `orders_flink`. Flink-marker DELETE is conditional — skipped on fresh-catalog runs (no markers to clean) so `orders` history stays at 4 engines / 5 commits. |
+| 8 | `verify`           | `07_verify_cross_engine.py`   | — (reads only — shows 4 engines on `orders`) |
 | 9 | `cleanup`          | `run_cleanup.py`              | DROP catalog |
 
-The second pass of `02_spark_external_write.py` (step 7) is intentional
-— the first pass's DELETE is a no-op on a fresh catalog (no markers to
-delete), so the second pass creates the v4 DELETE commit and the v5
-WRITE commit that complete the 6-row mixed-engine history (Databricks
-Runtime + DuckDB + external Spark).
+By the end of step 7, `orders` has commits from FOUR engines —
+Databricks Runtime (v0 — setup CTAS), DuckDB (v1, v2 — INSERT VALUES +
+INSERT…SELECT), external Apache Spark (v3 — APPEND; the script's prior
+DELETE on a fresh catalog has nothing to match and is elided by the
+engine), and Apache Flink (v4 — small batch INSERT, attributed as
+`Kernel-<ver>/DeltaSink`) — all coordinated by Unity Catalog. That's
+the cross-engine attribution headline `verify` reads back via
+`DESCRIBE HISTORY`.
 
 The first run is ~6–8 minutes (most of it is Spark JVM startup + Ivy
 JAR resolution + the 30s streaming step). Subsequent runs are similar.
-Skip stages with `SKIP_SCRIPTS`:
+
+Pick which engine family to run with CLI flags — **at least one engine
+flag is required**. Running `python run_all.py` with no flags prints
+help and exits with an error (no implicit "run everything"; you must
+say so explicitly with `-a`). `setup`, `verify`, and `cleanup` always
+run unless you also drop them with the corresponding `--no-*` flag (or
+`--skip`). `python run_all.py --help` prints the full flag list.
 
 ```bash
-SKIP_SCRIPTS=streaming python run_all.py                  # skip the 30s streaming step
-SKIP_SCRIPTS=cleanup python run_all.py                    # leave the catalog in place to inspect afterwards
-SKIP_SCRIPTS=setup,spark_read python run_all.py           # reuse current catalog state
-SKIP_SCRIPTS=duckdb_read,duckdb_insert python run_all.py  # spark only
+python run_all.py --help                            # full usage (also shows valid step names)
+python run_all.py                                   # ERROR — engine flag required; help is printed
+python run_all.py -a                                # run every engine
+python run_all.py -f                                # flink only
+python run_all.py -s -d                             # spark + duckdb (no flink)
+python run_all.py -f --no-cleanup                   # flink, leave catalog in place
+python run_all.py -a --skip streaming               # everything except the 30s streaming step
+python run_all.py -s --no-setup                     # spark only against the existing catalog state
 ```
 
-Skip names map to the `STEPS` list in `run_all.py`:
-`setup`, `spark_read`, `spark_write`, `streaming`, `duckdb_read`,
-`duckdb_insert`, `spark_write_redo`, `verify`, `cleanup`.
+Engine flags: `-a/--all`, `-s/--spark`, `-f/--flink`, `-d/--duckdb`.
+Skip flags: `--skip name[,name...]`, `--no-setup`, `--no-verify`,
+`--no-cleanup`. Step names match the `STEPS` list in `run_all.py`:
+`setup`, `duckdb_read`, `duckdb_insert`, `spark_read`, `spark_write`,
+`streaming`, `flink`, `verify`, `cleanup`.
+
+The legacy env vars still work for backwards compatibility (CLI flags
+win when both are set):
+
+```bash
+RUN_ENGINES=flink python run_all.py                       # equivalent to: -f
+RUN_ENGINES=spark,duckdb python run_all.py                # equivalent to: -s -d
+SKIP_SCRIPTS=streaming python run_all.py                  # equivalent to: --skip streaming
+SKIP_SCRIPTS=cleanup RUN_ENGINES=flink python run_all.py  # equivalent to: -f --no-cleanup
+```
+
+The `flink` step renders `flink_sql/insert_orders_flink.sql` with the OAuth
+token and table coordinates substituted, and performs **two** Flink writes
+in one execution:
+
+1. **Flink-owned table** — DROP + CREATE `orders_flink` on Databricks (via
+   the SQL warehouse, since the Flink connector is sink-only and can't
+   issue DDL), then bulk-insert a bounded datagen stream into it from
+   Flink. Demonstrates a brand-new managed Delta table written entirely
+   from Flink.
+2. **Shared `orders` table** — also INSERT a small batch of rows into the
+   same `orders` table that external Spark and DuckDB write to, tagged
+   with `o_clerk='Clerk#external-flink-stream'`. After the run,
+   `DESCRIBE HISTORY orders` shows commits from FOUR engines — Databricks
+   Runtime (CTAS), external Apache Spark, DuckDB, and Apache Flink — all
+   coordinated by Unity Catalog.
+
+**Pipeline ordering note:** Both DuckDB steps run right after `setup`,
+before any other engine writes to `orders`. This is a structural choice
+— each DuckDB script opens a fresh `duckdb.connect()` so cross-step
+state never leaks regardless of order, but running them up front keeps
+the dependency graph linear and the cross-engine `DESCRIBE HISTORY`
+output at the end clean.
+
+**DuckDB version pin (1.5.1, not latest):** `requirements.txt` pins
+`duckdb==1.5.1` rather than the current 1.5.2. The `delta` extension
+build shipped with DuckDB 1.5.2 (`21dfabe`) regresses on UC catalog-
+managed Delta tables — every load fails with `Catalog-managed table
+requires max_catalog_version to be set`. The 1.5.1 build of the same
+extension (`df4a08d`) reads + writes UC managed Delta tables cleanly,
+and the `unity_catalog` extension (`0202409`) is bit-identical between
+the two releases. Move back to latest once the upstream `delta`
+extension is fixed. Tracked via `#managed-delta-external-access-beta`.
+
+**Flink connector setup (one-time):** The Delta Flink Connector ships on
+Maven Central as `io.delta:delta-flink` (4.2.0 at the time of writing —
+https://central.sonatype.com/artifact/io.delta/delta-flink). The
+published artifact is a thin JAR — its transitive deps (delta-kernel-*,
+hadoop-aws, AWS SDK bundle, parquet, ...) must also be on the Flink
+classpath. The companion helper `scripts/setup_flink_usrlib.sh` resolves
+the full set with `mvn dependency:copy-dependencies` and stages it for
+you. Prereqs: Java 17+, Maven (`brew install maven`), Docker.
+
+```bash
+# Once: clone delta-io/delta to get the docker-compose recipe
+git clone https://github.com/delta-io/delta ~/delta
+
+# Once: stage Flink connector + transitive deps into usrlib/
+bash scripts/setup_flink_usrlib.sh ~/delta/flink/docker/2.0/usrlib
+
+# Once: start the local Flink cluster
+cd ~/delta/flink/docker/2.0 && docker compose up -d
+```
+
+The script auto-detects a running Flink JobManager container (any Docker
+container with "jobmanager" in its name), `docker cp`'s the SQL in, and
+`docker exec`'s `bin/sql-client.sh -f` against it. Set
+`FLINK_DOCKER_CONTAINER` to pin a specific container if auto-detect is
+ambiguous, or `FLINK_SQL_CLIENT` to use a host-installed Flink. Preflight
+checks (Docker daemon up, container running, required JARs in usrlib/)
+run BEFORE any Databricks-side mutation, so a misconfigured Flink
+environment aborts the step cleanly with no partial state.
+
+For master builds (e.g. testing pre-release Flink connector features),
+the upstream `sbt flink/assembly` path still works — see
+https://github.com/delta-io/delta/tree/master/flink — but for the blog
+walkthrough, Maven Central is the recommended route.
 
 ### 4. Or run any script individually
 
@@ -120,12 +213,13 @@ Skip names map to the `STEPS` list in `run_all.py`:
 source .venv/bin/activate
 
 python run_setup.py                  # DROP + CREATE catalog, clone TPCH, grants
-python 01_spark_external_read.py     # external Spark read
-python 02_spark_external_write.py    # external Spark APPEND + CTAS
-python 03_spark_streaming.py         # external Spark Structured Streaming (~30s)
-python 04_duckdb_read.py             # DuckDB SELECT + JOIN
-python 05_duckdb_insert.py           # DuckDB INSERT
-python 06_verify_cross_engine.py     # cross-engine DESCRIBE HISTORY
+python 01_duckdb_read.py             # DuckDB SELECT + JOIN
+python 02_duckdb_insert.py           # DuckDB INSERT
+python 03_spark_external_read.py     # external Spark read
+python 04_spark_external_write.py    # external Spark APPEND + CTAS
+python 05_spark_streaming.py         # external Spark Structured Streaming (~30s)
+python 06_flink_streaming.py         # external Flink: render + execute SQL via local Docker
+python 07_verify_cross_engine.py     # cross-engine DESCRIBE HISTORY
 python run_cleanup.py                # DROP catalog + schema (when done)
 ```
 
@@ -138,7 +232,7 @@ START/END banners around its run for easy navigation.
 Override the streaming duration:
 
 ```bash
-STREAM_DURATION_SECONDS=120 python 03_spark_streaming.py
+STREAM_DURATION_SECONDS=120 python 05_spark_streaming.py
 ```
 
 ### 5. Cleanup
@@ -193,7 +287,7 @@ Or paste `99_cleanup.sql` into the Databricks SQL editor.
 | unitycatalog-spark | 0.4.1 | `UC_SPARK_VERSION` |
 | hadoop-aws | 3.4.2 | `HADOOP_AWS_VERSION` |
 | pyspark | 4.1.1 | pinned in `requirements.txt` |
-| duckdb | 1.5.2 | pinned in `requirements.txt` |
+| duckdb | 1.5.1 | pinned in `requirements.txt` (1.5.2's `delta` extension regresses on UC) |
 | AWS region | us-west-2 | `AWS_REGION` |
 
 Point Spark at a different Maven mirror with `SPARK_REPOSITORIES`
@@ -209,8 +303,9 @@ network layer — e.g.
 - **`Managed table creation requires table property
   'delta.feature.catalogManaged'='supported'`** — creating a managed
   Delta table from external Spark requires `USING DELTA TBLPROPERTIES
-  ('delta.feature.catalogManaged' = 'supported')`. Scripts 02 and 03
-  already include this; add it if you write new DDL.
+  ('delta.feature.catalogManaged' = 'supported')`. Scripts `04_spark_external_write.py`
+  (CTAS) and `05_spark_streaming.py` (CREATE TABLE) already include this;
+  add it if you write new DDL.
 - **`uri must be specified for Unity Catalog 'spark_catalog'`** —
   `spark_catalog` should stay on `DeltaCatalog`, not `UCSingleCatalog`.
   `_common.build_spark` sets this.
@@ -228,13 +323,13 @@ network layer — e.g.
 
 ## DuckDB operations covered
 
-`04_duckdb_read.py` exercises:
+`01_duckdb_read.py` exercises:
 
 - Listing tables — `SHOW TABLES FROM <catalog>.<schema>`
 - Standard SELECT against UC managed Delta tables
 - Cross-table JOIN
 
-`05_duckdb_insert.py` exercises:
+`02_duckdb_insert.py` exercises:
 
 - `INSERT INTO <managed table> ... VALUES (...)`
 - `INSERT INTO <managed table> ... SELECT ...`
@@ -244,9 +339,13 @@ for the full feature list as the extension evolves.
 
 ## Validated
 
-End-to-end pipeline (setup → Spark read/write/streaming → DuckDB
-read/insert → spark_write_redo → verify → cleanup) has been run
-successfully against a preview-enrolled Databricks workspace.
+End-to-end pipeline (setup → DuckDB read/insert → Spark read/write/streaming
+→ Flink → verify → cleanup) has been run successfully
+against a preview-enrolled Databricks workspace. The Flink step renders
+SQL with the OAuth bearer token + table coordinates substituted and
+executes it against a local Flink 2.0 cluster running in Docker (per
+`delta-io/delta` `flink/docker/2.0/`), with the Delta Flink Connector
+JARs staged via `setup_flink_usrlib.sh`.
 
 ## License
 

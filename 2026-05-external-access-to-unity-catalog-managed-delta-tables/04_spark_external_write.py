@@ -44,7 +44,7 @@ MARKER_CLERK = "Clerk#external-spark"
 
 
 def main() -> None:
-    spark = build_spark("02_spark_external_write")
+    spark = build_spark("04_spark_external_write")
 
     # ---- 0. Idempotency — remove any rows left by a prior run ---------------
     # The marker clerk uniquely identifies rows this script inserted, so

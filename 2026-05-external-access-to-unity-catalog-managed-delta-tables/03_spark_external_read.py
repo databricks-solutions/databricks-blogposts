@@ -13,7 +13,7 @@ from _common import UC_CATALOG, UC_SCHEMA, build_spark, fq, print_banner, script
 
 
 def main() -> None:
-    spark = build_spark("01_spark_external_read")
+    spark = build_spark("03_spark_external_read")
 
     print_banner(f"Tables in {UC_CATALOG}.{UC_SCHEMA}")
     spark.sql(f"SHOW TABLES IN {UC_CATALOG}.{UC_SCHEMA}").show(truncate=False)

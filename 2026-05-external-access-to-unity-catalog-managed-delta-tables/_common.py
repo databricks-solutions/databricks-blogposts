@@ -311,6 +311,14 @@ def script_banner(script_path: str):
     try:
         yield
         print(f"\n{bar}\n#  END    {name}  —  OK\n{bar}\n", flush=True)
+    except SystemExit as e:
+        # sys.exit(0) raises SystemExit(0) — that's a clean exit, not a failure.
+        code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+        if code == 0:
+            print(f"\n{bar}\n#  END    {name}  —  OK\n{bar}\n", flush=True)
+        else:
+            print(f"\n{bar}\n#  END    {name}  —  FAILED (rc={code})\n{bar}\n", flush=True)
+        raise
     except BaseException:
         print(f"\n{bar}\n#  END    {name}  —  FAILED\n{bar}\n", flush=True)
         raise
@@ -360,3 +368,5 @@ def attach_unity_catalog(con) -> None:
         );
         """
     )
+
+
