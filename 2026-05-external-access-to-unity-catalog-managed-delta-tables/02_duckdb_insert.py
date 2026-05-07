@@ -41,7 +41,7 @@ def main() -> None:
              '{MARKER_CLERK}', 0, 'duckdb single-row insert'),
             (9000000303, 3, 'O', 300.00, DATE '2026-04-23', '5-LOW',
              '{MARKER_CLERK}', 0, 'duckdb single-row insert');
-        """
+        """,
     )
 
     print_banner(f"DuckDB: INSERT INTO {orders} ... SELECT (bulk)")
@@ -52,7 +52,7 @@ def main() -> None:
             o_orderdate, o_orderpriority, o_clerk, o_shippriority, o_comment
         )
         SELECT
-            o_orderkey + 9_000_000_400 AS o_orderkey,
+            o_orderkey + 9000000400 AS o_orderkey,
             o_custkey,
             o_orderstatus,
             o_totalprice,
@@ -63,7 +63,7 @@ def main() -> None:
             'duckdb bulk insert from select' AS o_comment
         FROM {orders}
         WHERE o_orderkey BETWEEN 11396166 AND 11396175
-        """
+        """,
     )
 
     print_banner(f"DuckDB: rows now visible in {orders} for DuckDB markers")
@@ -74,13 +74,13 @@ def main() -> None:
         WHERE o_clerk LIKE '{MARKER_CLERK}%'
         GROUP BY o_clerk
         ORDER BY o_clerk
-        """
+        """,
     ).fetchall()
     for clerk, n in rows:
         print(f"  {clerk:<35s} {n}")
 
     print_banner(
-        "Next: run 06_verify_cross_engine.py to see Spark's DESCRIBE HISTORY "
+        "Next: run 07_verify_cross_engine.py to see Spark's DESCRIBE HISTORY "
         "reflect the DuckDB INSERT commits."
     )
 

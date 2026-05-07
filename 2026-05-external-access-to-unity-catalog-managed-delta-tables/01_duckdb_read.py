@@ -8,12 +8,19 @@ catalog and issue SELECTs against managed Delta tables. Demonstrates:
   * Cross-table JOIN
 
 Catalog commits coordinated by Unity Catalog mean DuckDB sees every row
-that any other engine (Databricks Runtime, external Spark) has
-committed.
+that any other engine (Databricks Runtime, external Apache Spark,
+DuckDB itself, Apache Flink) has committed.
 """
 import duckdb
 
-from _common import UC_CATALOG, UC_SCHEMA, attach_unity_catalog, fq, print_banner, script_banner
+from _common import (
+    UC_CATALOG,
+    UC_SCHEMA,
+    attach_unity_catalog,
+    fq,
+    print_banner,
+    script_banner,
+)
 
 
 def main() -> None:
@@ -43,7 +50,7 @@ def main() -> None:
         GROUP BY n.n_name
         ORDER BY customer_count DESC
         LIMIT 5
-        """
+        """,
     ).fetchdf()
     print(df.to_string(index=False))
 
