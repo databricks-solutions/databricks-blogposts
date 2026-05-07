@@ -1,0 +1,22 @@
+resources:
+  pipelines:
+    extract_productmanuals_etl:
+      name: ${var.table_prefix}_extract_productmanuals_etl
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      channel: preview
+      serverless: true
+      root_path: ../src/transformations
+
+      # Pipeline configuration: available as spark.conf <key> in Python (and ${key} in archived SQL)
+      configuration:
+        table_prefix: ${var.table_prefix}
+        volume: ${var.volume}
+
+      libraries:
+        - glob:
+            include: ../src/transformations/productmanuals/**
+
+      environment:
+        dependencies:
+          - --editable ${workspace.file_path}

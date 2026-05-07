@@ -1,0 +1,94 @@
+resources:
+  jobs:
+    extract_productmanuals_job:
+      name: ${var.table_prefix}_extract_productmanuals_job
+
+      permissions:
+        - group_name: users
+          level: CAN_MANAGE
+
+      #trigger:
+      #  pause_status: UNPAUSED
+      #  file_arrival:
+      #    url: ${var.volume}
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: table_prefix
+          default: ${var.table_prefix}
+        - name: volume
+          default: ${var.volume}
+        - name: create_agent
+          default: "true"
+        - name: evaluation_experiment
+          default: ${var.evaluation_experiment}
+
+      tasks:
+        - task_key: check_create_agent
+          condition_task:
+            op: EQUAL_TO
+            left: '{{job.parameters.create_agent}}'
+            right: "true"
+        - task_key: Extraction
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.extract_productmanuals_etl.id}
+        - task_key: create_or_update_knowledge_assistant
+          depends_on:
+            - task_key: check_create_agent
+              outcome: "true"
+          notebook_task:
+            notebook_path: ../src/knowledge_assistant/create_or_update_knowledge_assistant_productmanuals.ipynb
+            base_parameters:
+              table_prefix: ${var.table_prefix}
+              volume: ${var.volume}
+          environment_key: default
+        - task_key: create_genie_space
+          depends_on:
+            - task_key: Extraction
+          notebook_task:
+            notebook_path: ../src/genie_space/create_genie_space_productmanuals.ipynb
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              table_prefix: ${var.table_prefix}
+              warehouse_id: ${var.warehouse_id}
+          environment_key: default
+
+        - task_key: evaluate_extraction
+          depends_on:
+            - task_key: Extraction
+          notebook_task:
+            notebook_path: ../src/evaluation/evaluate_extraction.ipynb
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              table_prefix: ${var.table_prefix}
+              experiment: "{{job.parameters.evaluation_experiment}}"
+          environment_key: default
+
+        - task_key: create_supervisor_agent
+          depends_on:
+            - task_key: check_create_agent
+              outcome: "true"
+            - task_key: create_or_update_knowledge_assistant
+            - task_key: create_genie_space
+          notebook_task:
+            notebook_path: ../src/supervisor_agent/create_supervisor_agent_productmanuals.ipynb
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              table_prefix: ${var.table_prefix}
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - databricks-sdk>=0.103
+              - mlflow[databricks]>=3.1.0
+
+      performance_target: PERFORMANCE_OPTIMIZED
