@@ -57,7 +57,7 @@ Authenticates to Databricks using OAuth U2M (via the Databricks SDK), then downl
 
 - Python 3.11+
 - Databricks workspace with Unity Catalog access
-- Databricks SDK (`databricks-sdk`) for OAuth U2M authentication
+- Databricks SDK (`databricks-sdk` ≥ 0.108.0) for OAuth U2M authentication and the typed Volumes credential vending API (`w.temporary_volume_credentials`)
 
 ## Setup
 

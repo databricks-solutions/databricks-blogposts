@@ -1,7 +1,8 @@
 """Query Unity Catalog volume data using DuckDB.
 
 This module provides functionality to query parquet files from Unity Catalog volumes
-using DuckDB with temporary credentials obtained via the Volumes credential vending API.
+using DuckDB with temporary credentials obtained via the Volumes credential vending
+SDK (``w.temporary_volume_credentials.generate_temporary_volume_credentials``).
 
 Authentication uses Databricks OAuth U2M via the SDK.
 
@@ -80,14 +81,20 @@ def main() -> None:
 
     credentials = get_temporary_volume_credentials(w, volume_id)
 
-    aws_credentials = credentials.get("aws_temp_credentials", {})
-    aws_access_key_id = aws_credentials.get("access_key_id")
-    aws_secret_access_key = aws_credentials.get("secret_access_key")
-    aws_session_token = aws_credentials.get("session_token")
+    aws_credentials = credentials.aws_temp_credentials
+    if aws_credentials is None:
+        raise ValueError(
+            "Missing aws_temp_credentials in SDK response. "
+            f"Received: {credentials}"
+        )
+
+    aws_access_key_id = aws_credentials.access_key_id
+    aws_secret_access_key = aws_credentials.secret_access_key
+    aws_session_token = aws_credentials.session_token
 
     if not all([aws_access_key_id, aws_secret_access_key, aws_session_token]):
         raise ValueError(
-            "Missing AWS credentials in API response. "
+            "Missing AWS credentials in SDK response. "
             f"Received: {credentials}"
         )
 

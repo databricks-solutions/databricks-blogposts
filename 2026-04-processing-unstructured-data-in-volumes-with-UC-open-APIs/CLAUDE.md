@@ -34,9 +34,9 @@ Python 3.11+ with a `.env` file (copy from `.env.example`) containing `DATABRICK
 
 ## Architecture
 
-- **`credential_vending/get_temp_vol_cred.py`** — Shared auth and credential module. Creates a `WorkspaceClient()` for OAuth, then calls the UC REST API via `w.api_client.do()` (`/api/2.0/unity-catalog/volumes/` and `/api/2.0/unity-catalog/temporary-volume-credentials`) to get volume info and temporary AWS credentials. Imported by all query engine scripts.
-- **`query_engines/daft_download.py`** — Downloads image files from UC Volumes using Daft's `UnityCatalog` + `download()` API. Bridges OAuth to Daft by extracting a fresh access token from the SDK via `w.config.authenticate()`. This is the default download method used by the wrapper.
-- **`query_engines/duckdb_query.py`** — Queries parquet files from the volume's S3 storage location using DuckDB with httpfs extension and temporary AWS creds from `credential_vending`.
+- **`credential_vending/get_temp_vol_cred.py`** — Shared auth and credential module. Creates a `WorkspaceClient()` for OAuth, then uses typed SDK calls — `w.volumes.read(name=...)` (returns `VolumeInfo`) and `w.temporary_volume_credentials.generate_temporary_volume_credentials(operation=VolumeOperation.READ_VOLUME, volume_id=...)` (returns `GenerateTemporaryVolumeCredentialResponse`) — to get volume info and temporary AWS credentials. Imported by all query engine scripts.
+- **`query_engines/daft_download.py`** — Downloads image files from UC Volumes using Daft's `UnityCatalog` + `download()` API. Bridges OAuth to Daft by extracting a fresh access token from the SDK via `w.config.authenticate()` (strips the `Bearer ` prefix from the returned header). This is the default download method used by the wrapper.
+- **`query_engines/duckdb_query.py`** — Queries parquet files from the volume's S3 storage location using DuckDB with httpfs extension and temporary AWS creds from `credential_vending` (accessed as `credentials.aws_temp_credentials.access_key_id` etc.).
 - **`query_engines/ray_process.py`** — Reads images directly from S3 using Ray Data (`ray.data.read_images()`) with PyArrow S3FileSystem, processes image statistics in parallel via `map_batches()`. Contains its own `UnityCatalog` class that wraps a `WorkspaceClient`.
 - **`processing/huggingface_inference.py`** — Runs `google/vit-base-patch16-224` (classification) and `Salesforce/blip-image-captioning-base` (captioning) on local image files.
 - **`run_download_and_process.py`** — Orchestrator that shells out to `query_engines/daft_download.py` then `processing/huggingface_inference.py` via `subprocess.run()`.
@@ -46,4 +46,5 @@ Python 3.11+ with a `.env` file (copy from `.env.example`) containing `DATABRICK
 - Downloaded images (*.png, *.jpg, *.jpeg) in the root are gitignored — they are re-downloadable from the volume.
 - The `.env` file is gitignored; credentials must not be committed.
 - Three query engines (Daft, DuckDB, Ray) demonstrate different approaches to the same credential-vending pattern. Daft handles credentials internally (given an OAuth token); DuckDB and Ray use explicit AWS temp creds from `credential_vending/get_temp_vol_cred.py`.
+- The Volumes credential vending SDK lives at `w.temporary_volume_credentials.generate_temporary_volume_credentials(...)` and was added in newer `databricks-sdk` releases (≥ 0.108.0). If you see `AttributeError: 'WorkspaceClient' object has no attribute 'temporary_volume_credentials'`, upgrade the SDK.
 - Requirements are split per engine in `requirements/` so users only install what they need.
