@@ -135,8 +135,13 @@ def main() -> None:
     list_schemas(unity, catalog_name)
 
     volume_name = get_image_volume_path()
-    filenames_env = os.environ.get("IMAGE_FILENAMES", "Bliss_(Windows_XP).png,flower.jpg")
-    filenames = [f.strip() for f in filenames_env.split(",")]
+    filenames_env = os.environ.get("IMAGE_FILENAMES")
+    if not filenames_env:
+        raise ValueError(
+            "IMAGE_FILENAMES environment variable is not set. "
+            "Expected: comma-separated filenames in the volume."
+        )
+    filenames = [f.strip() for f in filenames_env.split(",") if f.strip()]
     file_paths = build_file_paths(volume_name, filenames)
 
     files_data = download_files_from_volume(unity, file_paths)

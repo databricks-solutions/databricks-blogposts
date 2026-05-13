@@ -15,6 +15,15 @@ from typing import Optional
 
 import duckdb  # type: ignore
 
+# DuckDB's .fetchdf() requires pandas. Fail fast with a clear message if missing.
+try:
+    import pandas  # type: ignore  # noqa: F401
+except ImportError as e:
+    raise ImportError(
+        "pandas is required for query_engines/duckdb_query.py "
+        "(used by DuckDB's .fetchdf()). Install with: pip install pandas"
+    ) from e
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from credential_vending import (
     load_environment,

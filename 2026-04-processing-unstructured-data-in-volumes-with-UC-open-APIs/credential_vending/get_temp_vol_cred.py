@@ -96,7 +96,7 @@ def get_full_volume_name(volume_name: str) -> str:
         volume_name: Short volume name (e.g. 'images').
 
     Returns:
-        str: Full three-level name (e.g. 'volumes_cv_demo.gold.images').
+        str: Full three-level name (e.g. '<your-catalog>.<your-schema>.images').
     """
     catalog, schema = _get_catalog_and_schema()
     return f"{catalog}.{schema}.{volume_name}"

@@ -26,7 +26,6 @@ from typing import Dict, Any, List, Tuple
 
 import ray
 import ray.data
-import numpy as np
 from pyarrow.fs import S3FileSystem
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -395,8 +394,13 @@ def main() -> None:
         unity = UnityCatalog(w)
 
         volume_path = get_image_volume_path()
-        filenames_env = os.environ.get("IMAGE_FILENAMES", "Bliss_(Windows_XP).png,flower.jpg")
-        filenames = [f.strip() for f in filenames_env.split(",")]
+        filenames_env = os.environ.get("IMAGE_FILENAMES")
+        if not filenames_env:
+            raise ValueError(
+                "IMAGE_FILENAMES environment variable is not set. "
+                "Expected: comma-separated filenames in the volume."
+            )
+        filenames = [f.strip() for f in filenames_env.split(",") if f.strip()]
 
         s3_paths, s3_filesystem = unity.build_file_paths(volume_path, filenames)
 
