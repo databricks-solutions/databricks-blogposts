@@ -31,8 +31,7 @@ def create_unity_catalog() -> UnityCatalog:
     """
     w = get_workspace_client()
     endpoint = w.config.host
-    headers = w.config.authenticate()
-    token = headers["Authorization"].removeprefix("Bearer ")
+    token = w.config.oauth_token().access_token
     return UnityCatalog(endpoint=endpoint, token=token)
 
 
