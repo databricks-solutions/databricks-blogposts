@@ -1,0 +1,35 @@
+# Databricks asset bundle for Data Extraction App
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+# See: https://docs.databricks.com/aws/en/dev-tools/bundles/apps-tutorial
+bundle:
+  name: data-extraction-app
+
+variables:
+  app_name:
+    description: Name for the deployed Databricks App.
+    default: document-processing-app
+
+resources:
+  apps:
+    data-extraction-app:
+      name: "${var.app_name}"
+      description: "Data Extraction App with PDF upload"
+      source_code_path: ${workspace.file_path}/.build
+      user_api_scopes:
+        - sql
+        - files.files
+        - serving.serving-endpoints
+        - dashboards.genie
+
+artifacts:
+  app:
+    build: uv run apx build
+
+sync:
+  include:
+    - ".build/**"
+
+targets:
+  dev:
+    mode: development
+    default: true

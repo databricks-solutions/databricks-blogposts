@@ -1,0 +1,75 @@
+[project]
+name = "data-extraction-app"
+dynamic = ["version"]
+description = "Data Extraction App with PDF upload"
+readme = "../README.md"
+authors = [{ name = "nikolaos.servos@databricks.com" }]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.119.0",
+    "python-dotenv>=1.0.0",
+    "uvicorn>=0.37.0",
+    "databricks-sdk[openai]>=0.74.0",
+    "python-multipart>=0.0.9",
+    "databricks-sql-connector>=3.0.0",
+    "mlflow>=2.9.0",
+    "pyyaml>=6.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "ty>=0.0.12",
+    "apx==0.2.6",
+    "pytest",
+    "ruff",
+]
+
+[tool.apx.metadata]
+app-name = "data-extraction-app"
+app-slug = "data_extraction_app"
+app-entrypoint = "data_extraction_app.backend.app:app"
+api-prefix = "/api"
+metadata-path = "src/data_extraction_app/_metadata.py"
+
+[tool.apx.ui]
+root = "src/data_extraction_app/ui"
+
+[tool.apx.ui.registries]
+"@animate-ui" = "https://animate-ui.com/r/{name}.json"
+"@ai-elements" = "https://registry.ai-sdk.dev/{name}.json"
+"@svgl" = "https://svgl.app/r/{name}.json"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+fallback-version = "0.0.0"
+
+[tool.uv]
+
+[[tool.uv.index]]
+name = "apx-index"
+url = "https://databricks-solutions.github.io/apx/simple"
+
+[tool.uv.sources]
+
+[tool.uv.sources.apx]
+index = "apx-index"
+
+[tool.hatch.build.hooks.version]
+path = "src/data_extraction_app/_version.py"
+template = '''
+version = "{version}"
+'''
+
+[tool.hatch.build]
+artifacts = ["src/data_extraction_app/__dist__", "src/data_extraction_app/_metadata.py"]
+exclude = ["src/data_extraction_app/ui"]
+
+[tool.ruff]
+line-length = 120
