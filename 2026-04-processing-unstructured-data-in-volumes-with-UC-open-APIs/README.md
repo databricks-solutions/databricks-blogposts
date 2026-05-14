@@ -41,7 +41,7 @@ Authenticates to Databricks using OAuth U2M (via the Databricks SDK), then downl
 ├── processing/                         # Downstream ML inference
 │   └── huggingface_inference.py
 ├── requirements/                       # Split by engine/use case
-│   ├── base.txt                        # databricks-sdk, python-dotenv
+│   ├── base.txt                        # databricks-sdk, python-dotenv, unitycatalog
 │   ├── daft.txt
 │   ├── duckdb.txt
 │   ├── ray.txt
