@@ -3,3 +3,4 @@
 # vending API (w.temporary_volume_credentials.generate_temporary_volume_credentials).
 databricks-sdk>=0.108.0
 python-dotenv
+unitycatalog
