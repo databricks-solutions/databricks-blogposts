@@ -8,7 +8,7 @@ This project demonstrates three approaches to accessing Unity Catalog Volumes vi
 
 ### Step 1: Download images from Unity Catalog
 
-Authenticates to Databricks using OAuth U2M (via the Databricks SDK), then downloads image files from `/Volumes/volumes_cv_demo/gold/images` using one of three query engines:
+Authenticates to Databricks using OAuth U2M (via the Databricks SDK), then downloads image files from `/Volumes/<your-catalog>/<your-schema>/<your-image-volume>` using one of three query engines:
 
 | Engine | Script | Best for |
 |--------|--------|----------|
@@ -57,7 +57,7 @@ Authenticates to Databricks using OAuth U2M (via the Databricks SDK), then downl
 
 - Python 3.11+
 - Databricks workspace with Unity Catalog access
-- Databricks SDK (`databricks-sdk`) for OAuth U2M authentication
+- Databricks SDK (`databricks-sdk` ≥ 0.108.0) for OAuth U2M authentication and the typed Volumes credential vending API (`w.temporary_volume_credentials`)
 
 ## Setup
 

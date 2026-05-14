@@ -1,13 +1,17 @@
 """Process images from Databricks Unity Catalog Volumes using Ray Data.
 
 This script demonstrates how to:
-1. Get temporary credentials for Unity Catalog volumes via the credential vending API
+1. Get temporary credentials for Unity Catalog volumes via the Volumes
+   credential vending SDK
+   (``w.temporary_volume_credentials.generate_temporary_volume_credentials``)
 2. Use ray.data.read_images() to read images directly from S3 with those credentials
 3. Process images in parallel using Ray Data's map_batches()
 
 The key flow:
 - UnityCatalog uses the Databricks SDK (OAuth U2M) for authentication
-- get_temporary_volume_credentials() returns AWS STS credentials
+- get_temporary_volume_credentials() returns a typed
+  ``GenerateTemporaryVolumeCredentialResponse`` whose ``aws_temp_credentials``
+  field carries the AWS STS credentials
 - These credentials are used to create a PyArrow S3FileSystem
 - ray.data.read_images() reads images directly from S3 (no local download needed)
 
@@ -22,7 +26,6 @@ from typing import Dict, Any, List, Tuple
 
 import ray
 import ray.data
-import numpy as np
 from pyarrow.fs import S3FileSystem
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -86,7 +89,7 @@ class UnityCatalog:
     def _get_s3_filesystem(self, volume_name: str) -> Tuple[S3FileSystem, str]:
         """Get S3FileSystem with credentials for the volume.
 
-        Calls the Unity Catalog credential vending API to get temporary
+        Uses the Unity Catalog Volumes credential vending SDK to get temporary
         AWS credentials for accessing the volume's S3 storage.
 
         Args:
@@ -99,13 +102,16 @@ class UnityCatalog:
 
         credentials = get_temporary_volume_credentials(self.w, volume_id)
 
-        aws_creds = credentials.get("aws_temp_credentials", {})
-        access_key = aws_creds.get("access_key_id")
-        secret_key = aws_creds.get("secret_access_key")
-        session_token = aws_creds.get("session_token")
+        aws_creds = credentials.aws_temp_credentials
+        if aws_creds is None:
+            raise ValueError(f"Missing aws_temp_credentials in SDK response: {credentials}")
+
+        access_key = aws_creds.access_key_id
+        secret_key = aws_creds.secret_access_key
+        session_token = aws_creds.session_token
 
         if not all([access_key, secret_key, session_token]):
-            raise ValueError(f"Missing AWS credentials in response: {credentials}")
+            raise ValueError(f"Missing AWS credentials in SDK response: {credentials}")
 
         s3_filesystem = S3FileSystem(
             region=os.environ.get("AWS_REGION", "us-east-1"),
@@ -388,8 +394,13 @@ def main() -> None:
         unity = UnityCatalog(w)
 
         volume_path = get_image_volume_path()
-        filenames_env = os.environ.get("IMAGE_FILENAMES", "Bliss_(Windows_XP).png,flower.jpg")
-        filenames = [f.strip() for f in filenames_env.split(",")]
+        filenames_env = os.environ.get("IMAGE_FILENAMES")
+        if not filenames_env:
+            raise ValueError(
+                "IMAGE_FILENAMES environment variable is not set. "
+                "Expected: comma-separated filenames in the volume."
+            )
+        filenames = [f.strip() for f in filenames_env.split(",") if f.strip()]
 
         s3_paths, s3_filesystem = unity.build_file_paths(volume_path, filenames)
 
