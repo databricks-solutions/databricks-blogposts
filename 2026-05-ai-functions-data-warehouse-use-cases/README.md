@@ -14,11 +14,11 @@ Five copy-paste-ready SQL notebooks demonstrating production-grade AI Functions 
 
 | Notebook | Pattern | Functions Used |
 |---|---|---|
-| `01_document_intelligence.py` | Extract structured fields from PDF invoices | `ai_parse_document`, `ai_query` |
+| `01_document_intelligence.py` | Extract structured fields from PDF invoices | `ai_parse_document`, `ai_extract` |
 | `02_communication_triage.py` | Classify support tickets by intent + urgency | `ai_classify` |
-| `03_summarization.py` | Extract structured decisions from call transcripts | `ai_query` with `STRUCT<>` response format |
-| `04_translation_normalization.py` | Translate + extract attributes from multilingual reviews | `ai_translate`, `ai_query` |
-| `05_sentiment_analysis.py` | Sentiment + topic tagging for NPS/feedback | `ai_analyze_sentiment`, `ai_classify` |
+| `03_summarization.py` | Extract structured decisions + generative next-step from call transcripts | `ai_extract`, `ai_query` |
+| `04_translation_normalization.py` | Translate + extract attributes from multilingual reviews | `ai_translate`, `ai_extract` |
+| `05_sentiment_analysis.py` | Sentiment + topic tagging for NPS/feedback | `ai_classify` |
 
 ---
 

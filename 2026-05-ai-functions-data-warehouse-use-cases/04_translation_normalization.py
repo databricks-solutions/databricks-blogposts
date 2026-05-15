@@ -42,15 +42,18 @@
 # COMMAND ----------
 
 # MAGIC %sql
+# MAGIC -- ai_extract v2.1 takes a JSON STRING for the schema (instead of v1's ARRAY of labels)
+# MAGIC -- and returns a VARIANT shaped like {"response": {field: {"value": ...}}, "error_message": null}.
+# MAGIC -- Access individual fields via path syntax, e.g. attributes:response:overall_sentiment:value::STRING.
 # MAGIC SELECT
 # MAGIC   review_id,
 # MAGIC   product_id,
 # MAGIC   source_locale,
 # MAGIC   ai_translate(review_text, 'en') AS review_en,
-# MAGIC   ai_extract(
+# MAGIC   CAST(ai_extract(
 # MAGIC     ai_translate(review_text, 'en'),
-# MAGIC     ARRAY('overall_sentiment', 'packaging_issue', 'delivery_issue', 'customer_service_mentioned', 'would_repurchase')
-# MAGIC   ) AS attributes
+# MAGIC     '["overall_sentiment","packaging_issue","delivery_issue","customer_service_mentioned","would_repurchase"]'
+# MAGIC   ) AS STRING) AS attributes
 # MAGIC FROM demo_product_reviews;
 
 # COMMAND ----------
@@ -61,6 +64,8 @@
 # COMMAND ----------
 
 # MAGIC %sql
+# MAGIC -- ai_extract v2.1 also accepts a typed JSON schema, which lets you ask for typed fields
+# MAGIC -- (here: BOOLEAN for packaging_mentioned and delivery_mentioned).
 # MAGIC WITH translated AS (
 # MAGIC   SELECT
 # MAGIC     review_id,
@@ -75,39 +80,21 @@
 # MAGIC     product_id,
 # MAGIC     source_locale,
 # MAGIC     review_en,
-# MAGIC     ai_query(
-# MAGIC       'databricks-claude-sonnet-4',
-# MAGIC       CONCAT(
-# MAGIC         'From this product review, extract: ',
-# MAGIC         'overall_sentiment (positive/negative/mixed), ',
-# MAGIC         'packaging_mentioned (true/false), ',
-# MAGIC         'delivery_mentioned (true/false), ',
-# MAGIC         'repurchase_intent (yes/no/unclear). ',
-# MAGIC         'Review: ', review_en
-# MAGIC       ),
-# MAGIC       responseFormat => 'STRUCT<attrs:STRUCT<overall_sentiment:STRING, packaging_mentioned:BOOLEAN, delivery_mentioned:BOOLEAN, repurchase_intent:STRING>>'
-# MAGIC     ) AS raw_attrs
+# MAGIC     ai_extract(
+# MAGIC       review_en,
+# MAGIC       '{"overall_sentiment":{"type":"string"},"packaging_mentioned":{"type":"boolean"},"delivery_mentioned":{"type":"boolean"},"repurchase_intent":{"type":"string"}}'
+# MAGIC     ) AS attrs
 # MAGIC   FROM translated
-# MAGIC ),
-# MAGIC parsed AS (
-# MAGIC   SELECT
-# MAGIC     review_id,
-# MAGIC     product_id,
-# MAGIC     source_locale,
-# MAGIC     review_en,
-# MAGIC     from_json(raw_attrs, 'STRUCT<overall_sentiment:STRING, packaging_mentioned:BOOLEAN, delivery_mentioned:BOOLEAN, repurchase_intent:STRING>') AS attrs
-# MAGIC   FROM extracted
 # MAGIC )
 # MAGIC SELECT
 # MAGIC   review_id,
 # MAGIC   product_id,
 # MAGIC   source_locale,
-# MAGIC   LEFT(review_en, 100) AS review_en_preview,
-# MAGIC   attrs.overall_sentiment,
-# MAGIC   attrs.packaging_mentioned,
-# MAGIC   attrs.delivery_mentioned,
-# MAGIC   attrs.repurchase_intent
-# MAGIC FROM parsed;
+# MAGIC   attrs:response:overall_sentiment:value::STRING    AS overall_sentiment,
+# MAGIC   attrs:response:packaging_mentioned:value::BOOLEAN AS packaging_mentioned,
+# MAGIC   attrs:response:delivery_mentioned:value::BOOLEAN  AS delivery_mentioned,
+# MAGIC   attrs:response:repurchase_intent:value::STRING   AS repurchase_intent
+# MAGIC FROM extracted;
 
 # COMMAND ----------
 

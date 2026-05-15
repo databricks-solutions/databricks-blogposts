@@ -76,7 +76,11 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 2: Extract structured fields with `ai_query` + STRUCT response format
+# MAGIC ## Step 2: Pair `ai_extract` (for structured fields) with `ai_query` (for the generative next-step)
+# MAGIC
+# MAGIC `ai_extract` pulls out fields that exist in the text for example owner, deal stage, risk flag, risk reason.
+# MAGIC `ai_query` with `databricks-gpt-oss-120b` generates the one-sentence next step.
+# MAGIC `ai_extract` returns a `VARIANT` shaped like `{"response": {field: {"value": ...}}, "error_message": null}`.
 
 # COMMAND ----------
 
@@ -85,19 +89,22 @@
 # MAGIC   call_id,
 # MAGIC   account_id,
 # MAGIC   call_date,
+# MAGIC   CAST(ai_extract(
+# MAGIC     transcript,
+# MAGIC     '{
+# MAGIC       "owner": {"type": "string", "description": "First name of the person responsible for the next step"},
+# MAGIC       "deal_stage": {"type": "enum", "labels": ["discovery", "evaluation", "negotiation", "technical_validation", "closed_won", "closed_lost", "renewal"]},
+# MAGIC       "risk_flag": {"type": "boolean", "description": "true if there is a deal risk, false otherwise"},
+# MAGIC       "risk_reason": {"type": "string", "description": "One sentence explaining the risk if risk_flag is true, otherwise null"}
+# MAGIC     }'
+# MAGIC   ) AS STRING) AS facts,
 # MAGIC   ai_query(
-# MAGIC     'databricks-claude-sonnet-4',
+# MAGIC     'databricks-gpt-oss-120b',
 # MAGIC     CONCAT(
-# MAGIC       'From this sales call transcript, extract the following. Return null for any field not found. ',
-# MAGIC       'next_step: one clear sentence describing the agreed next action. ',
-# MAGIC       'owner: first name of the person responsible for the next step (customer or rep). ',
-# MAGIC       'deal_stage: one of [discovery, evaluation, negotiation, technical_validation, closed_won, closed_lost, renewal]. ',
-# MAGIC       'risk_flag: true if there is a deal risk, false otherwise. ',
-# MAGIC       'risk_reason: one sentence explaining the risk if risk_flag is true, otherwise null. ',
+# MAGIC       'In one sentence, what is the agreed next step from this sales call transcript? ',
 # MAGIC       'Transcript: ', transcript
-# MAGIC     ),
-# MAGIC     responseFormat => 'STRUCT<call_summary:STRUCT<next_step:STRING, owner:STRING, deal_stage:STRING, risk_flag:BOOLEAN, risk_reason:STRING>>'
-# MAGIC   ) AS call_summary
+# MAGIC     )
+# MAGIC   ) AS next_step
 # MAGIC FROM demo_call_transcripts;
 
 # COMMAND ----------
@@ -113,19 +120,22 @@
 # MAGIC     call_id,
 # MAGIC     account_id,
 # MAGIC     call_date,
+# MAGIC     ai_extract(
+# MAGIC       transcript,
+# MAGIC       '{
+# MAGIC         "owner": {"type": "string", "description": "First name of the person responsible for the next step"},
+# MAGIC         "deal_stage": {"type": "enum", "labels": ["discovery", "evaluation", "negotiation", "technical_validation", "closed_won", "closed_lost", "renewal"]},
+# MAGIC         "risk_flag": {"type": "boolean", "description": "true if there is a deal risk, false otherwise"},
+# MAGIC         "risk_reason": {"type": "string", "description": "One sentence explaining the risk if risk_flag is true, otherwise null"}
+# MAGIC       }'
+# MAGIC     ) AS facts,
 # MAGIC     ai_query(
-# MAGIC       'databricks-claude-sonnet-4',
+# MAGIC       'databricks-gpt-oss-120b',
 # MAGIC       CONCAT(
-# MAGIC         'From this sales call transcript, extract the following. Return null for any field not found. ',
-# MAGIC         'next_step: one clear sentence describing the agreed next action. ',
-# MAGIC         'owner: first name of the person responsible (customer or rep). ',
-# MAGIC         'deal_stage: one of [discovery, evaluation, negotiation, technical_validation, closed_won, closed_lost, renewal]. ',
-# MAGIC         'risk_flag: true if there is a deal risk, false otherwise. ',
-# MAGIC         'risk_reason: one sentence explaining the risk if risk_flag is true, otherwise null. ',
+# MAGIC         'In one sentence, what is the agreed next step from this sales call transcript? ',
 # MAGIC         'Transcript: ', transcript
-# MAGIC       ),
-# MAGIC       responseFormat => 'STRUCT<call_summary:STRUCT<next_step:STRING, owner:STRING, deal_stage:STRING, risk_flag:BOOLEAN, risk_reason:STRING>>'
-# MAGIC     ) AS raw_summary
+# MAGIC       )
+# MAGIC     ) AS next_step
 # MAGIC   FROM demo_call_transcripts
 # MAGIC ),
 # MAGIC parsed AS (
@@ -133,20 +143,22 @@
 # MAGIC     call_id,
 # MAGIC     account_id,
 # MAGIC     call_date,
-# MAGIC     from_json(raw_summary, 'STRUCT<next_step:STRING, owner:STRING, deal_stage:STRING, risk_flag:BOOLEAN, risk_reason:STRING>') AS s
+# MAGIC     next_step,
+# MAGIC     facts:response:owner:value::STRING       AS owner,
+# MAGIC     facts:response:deal_stage:value::STRING  AS deal_stage,
+# MAGIC     facts:response:risk_flag:value::BOOLEAN  AS risk_flag,
+# MAGIC     facts:response:risk_reason:value::STRING AS risk_reason
 # MAGIC   FROM summarized
 # MAGIC )
 # MAGIC SELECT
 # MAGIC   call_id,
 # MAGIC   account_id,
-# MAGIC   call_date,
-# MAGIC   s.next_step,
-# MAGIC   s.owner,
-# MAGIC   s.deal_stage,
-# MAGIC   s.risk_flag,
-# MAGIC   s.risk_reason
+# MAGIC   deal_stage,
+# MAGIC   risk_flag,
+# MAGIC   risk_reason,
+# MAGIC    next_step
 # MAGIC FROM parsed
-# MAGIC ORDER BY s.risk_flag DESC, call_date;
+# MAGIC ORDER BY risk_flag DESC, call_date;
 
 # COMMAND ----------
 

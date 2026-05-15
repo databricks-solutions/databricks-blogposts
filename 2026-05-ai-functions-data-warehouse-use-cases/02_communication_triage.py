@@ -1,9 +1,9 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Pattern 2: Customer Communication Triage — Classifying Tickets and Calls at Scale
+# MAGIC # Pattern 2: Customer Communication Triage: Classifying Tickets and Calls at Scale
 # MAGIC
 # MAGIC **What this notebook does:** Uses `ai_classify` to tag support tickets with intent category and urgency level
-# MAGIC in a single SQL query — no model to train, no labels to maintain.
+# MAGIC in a single SQL query without the need to train the modle , no labels to maintain.
 # MAGIC
 # MAGIC **What you need to run this:**
 # MAGIC - Databricks SQL warehouse (Serverless recommended) or DBR 14.3+
@@ -40,7 +40,8 @@
 # MAGIC %md
 # MAGIC ## Step 2: Classify intent and urgency in one query
 # MAGIC
-# MAGIC `ai_classify` picks the best matching label from your array. Change the labels any time — no retraining.
+# MAGIC `ai_classify` picks the best matching label from a JSON list you provide. Change the labels any time, no retraining required.
+# MAGIC The function returns a `VARIANT` with shape `{"response": [label], "error_message": null}`; we extract the label with `:response[0]::STRING`.
 
 # COMMAND ----------
 
@@ -51,12 +52,12 @@
 # MAGIC   ticket_body,
 # MAGIC   ai_classify(
 # MAGIC     ticket_body,
-# MAGIC     ARRAY('billing_issue', 'technical_outage', 'product_question', 'cancel_request', 'feature_request', 'praise', 'sales_inquiry', 'onboarding')
-# MAGIC   ) AS intent,
+# MAGIC     '["billing_issue","technical_outage","product_question","cancel_request","feature_request","praise","sales_inquiry","onboarding"]'
+# MAGIC   ):response[0]::STRING AS intent,
 # MAGIC   ai_classify(
 # MAGIC     ticket_body,
-# MAGIC     ARRAY('critical', 'high', 'medium', 'low')
-# MAGIC   ) AS urgency
+# MAGIC     '["critical","high","medium","low"]'
+# MAGIC   ):response[0]::STRING AS urgency
 # MAGIC FROM demo_support_tickets;
 
 # COMMAND ----------
@@ -74,12 +75,12 @@
 # MAGIC     ticket_body,
 # MAGIC     ai_classify(
 # MAGIC       ticket_body,
-# MAGIC       ARRAY('billing_issue', 'technical_outage', 'product_question', 'cancel_request', 'feature_request', 'praise', 'sales_inquiry', 'onboarding')
-# MAGIC     ) AS intent,
+# MAGIC       '["billing_issue","technical_outage","product_question","cancel_request","feature_request","praise","sales_inquiry","onboarding"]'
+# MAGIC     ):response[0]::STRING AS intent,
 # MAGIC     ai_classify(
 # MAGIC       ticket_body,
-# MAGIC       ARRAY('critical', 'high', 'medium', 'low')
-# MAGIC     ) AS urgency
+# MAGIC       '["critical","high","medium","low"]'
+# MAGIC     ):response[0]::STRING AS urgency
 # MAGIC   FROM demo_support_tickets
 # MAGIC )
 # MAGIC SELECT
@@ -121,5 +122,5 @@
 # MAGIC ## What to do next
 # MAGIC - Replace `demo_support_tickets` with your live `bronze.support_tickets` table
 # MAGIC - Schedule this as a nightly SQL job and `MERGE INTO` a `gold.ticket_classifications` table
-# MAGIC - Update the label arrays by changing the SQL, not retraining a model
-# MAGIC - Add `ai_classify(ticket_body, ARRAY('en', 'fr', 'de', 'es', 'other'))` to auto-detect language if you have multilingual tickets
+# MAGIC - Update the label lists by changing the SQL, not retraining a model
+# MAGIC - Add `ai_classify(ticket_body, '["en","fr","de","es","other"]'):response[0]::STRING` to auto-detect language if you have multilingual tickets
