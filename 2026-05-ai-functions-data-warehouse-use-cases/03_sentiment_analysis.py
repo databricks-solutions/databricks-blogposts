@@ -1,16 +1,13 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Pattern 5: Customer Feedback Sentiment Analysis — Closing the Loop on What Users Actually Think
+# MAGIC # Use Case 3: Customer Feedback Sentiment Analysis: Closing the Loop on What Users Actually Think
 # MAGIC
-# MAGIC **What this notebook does:** Uses `ai_analyze_sentiment` + `ai_classify` to turn raw NPS verbatims and
-# MAGIC support responses into structured feedback signals — polarity, topic, and urgency in one query.
+# MAGIC **What this notebook does:** Uses `ai_classify` (v2) to turn raw NPS verbatims and support responses into
+# MAGIC structured feedback signals like sentiment, topic, and urgency all in one query, with labels you define.
 # MAGIC
 # MAGIC **What you need to run this:**
 # MAGIC - Databricks SQL warehouse (Serverless recommended) or DBR 14.3+
 # MAGIC - Unity Catalog + AI Functions enabled
-# MAGIC
-# MAGIC **Why this pattern:** Running in 1,642 distinct customer workspaces (per Databricks internal usage data, April 2026).
-# MAGIC Highest adoption in SaaS, retail (post-purchase surveys), and contact-center analytics teams.
 # MAGIC
 # MAGIC **Estimated cost:** < 0.3 DBU per run (12 rows)
 
@@ -45,8 +42,10 @@
 # MAGIC %md
 # MAGIC ## Step 2: Add sentiment + topic classification in one query
 # MAGIC
-# MAGIC `ai_analyze_sentiment` returns `positive`, `negative`, or `mixed` — no score, just polarity.
-# MAGIC Use alongside `ai_classify` for topic and urgency tagging.
+# MAGIC `ai_classify` lets you define the exact labels that matter for your business. We pass the four standard
+# MAGIC sentiment labels (`positive`, `negative`, `neutral`, `mixed`), or you could replace them with workflow-specific
+# MAGIC labels like `churn_signal` or `pricing_pain`. The function returns a `VARIANT` with shape
+# MAGIC `{"response": [label], "error_message": null}`; we extract the label with `:response[0]::STRING`.
 
 # COMMAND ----------
 
@@ -55,17 +54,18 @@
 # MAGIC   response_id,
 # MAGIC   channel,
 # MAGIC   nps_score,
-# MAGIC   ai_analyze_sentiment(verbatim_text)                                          AS sentiment,
 # MAGIC   ai_classify(
 # MAGIC     verbatim_text,
-# MAGIC     ARRAY('pricing_complaint', 'performance_issue', 'support_experience',
-# MAGIC           'feature_request', 'cancel_signal', 'general_praise', 'billing_issue',
-# MAGIC           'documentation_gap')
-# MAGIC   )                                                                              AS topic,
+# MAGIC     '["positive","negative","neutral","mixed"]'
+# MAGIC   ):response[0]::STRING                                                          AS sentiment,
 # MAGIC   ai_classify(
 # MAGIC     verbatim_text,
-# MAGIC     ARRAY('high_urgency', 'medium_urgency', 'low_urgency')
-# MAGIC   )                                                                              AS urgency,
+# MAGIC     '["pricing_complaint","performance_issue","support_experience","feature_request","cancel_signal","general_praise","billing_issue","documentation_gap"]'
+# MAGIC   ):response[0]::STRING                                                          AS topic,
+# MAGIC   ai_classify(
+# MAGIC     verbatim_text,
+# MAGIC     '["high_urgency","medium_urgency","low_urgency"]'
+# MAGIC   ):response[0]::STRING                                                          AS urgency,
 # MAGIC   LEFT(verbatim_text, 80)                                                        AS verbatim_preview
 # MAGIC FROM demo_nps_responses;
 
@@ -86,17 +86,18 @@
 # MAGIC     channel,
 # MAGIC     nps_score,
 # MAGIC     verbatim_text,
-# MAGIC     ai_analyze_sentiment(verbatim_text) AS sentiment,
 # MAGIC     ai_classify(
 # MAGIC       verbatim_text,
-# MAGIC       ARRAY('pricing_complaint', 'performance_issue', 'support_experience',
-# MAGIC             'feature_request', 'cancel_signal', 'general_praise', 'billing_issue',
-# MAGIC             'documentation_gap')
-# MAGIC     ) AS topic,
+# MAGIC       '["positive","negative","neutral","mixed"]'
+# MAGIC     ):response[0]::STRING AS sentiment,
 # MAGIC     ai_classify(
 # MAGIC       verbatim_text,
-# MAGIC       ARRAY('high_urgency', 'medium_urgency', 'low_urgency')
-# MAGIC     ) AS urgency
+# MAGIC       '["pricing_complaint","performance_issue","support_experience","feature_request","cancel_signal","general_praise","billing_issue","documentation_gap"]'
+# MAGIC     ):response[0]::STRING AS topic,
+# MAGIC     ai_classify(
+# MAGIC       verbatim_text,
+# MAGIC       '["high_urgency","medium_urgency","low_urgency"]'
+# MAGIC     ):response[0]::STRING AS urgency
 # MAGIC   FROM demo_nps_responses
 # MAGIC )
 # MAGIC SELECT
@@ -113,8 +114,7 @@
 # MAGIC     WHEN topic = 'feature_request'                      THEN '🔵 Product team: add to backlog'
 # MAGIC     WHEN sentiment = 'positive'                         THEN '🟢 Potential reference: loop in CAM'
 # MAGIC     ELSE '⚪ Standard: no action required'
-# MAGIC   END AS action,
-# MAGIC   LEFT(verbatim_text, 100) AS verbatim_preview
+# MAGIC   END AS action
 # MAGIC FROM classified
 # MAGIC ORDER BY
 # MAGIC   CASE topic WHEN 'cancel_signal' THEN 1 ELSE 2 END,
@@ -142,9 +142,10 @@
 # MAGIC | NPS-009 | mobile_app | 6 | mixed | performance_issue | medium_urgency | ⚪ Standard |
 # MAGIC
 # MAGIC ## Key behavior to verify
-# MAGIC - `ai_analyze_sentiment` returns `positive`, `negative`, or `mixed` — NOT a numeric score
-# MAGIC - A high NPS score (e.g., 7/10) with a `mixed` sentiment is valid — the model captures nuance the score misses
-# MAGIC - `ai_classify` and `ai_analyze_sentiment` are independent calls — combine them for compound filters
+# MAGIC - `ai_classify` (v2) returns a `VARIANT` of shape `{"response": [label], "error_message": null}`; extract the label with `:response[0]::STRING`
+# MAGIC - A high NPS score (e.g., 7/10) with a `mixed` sentiment is valid: the labels capture nuance the score misses
+# MAGIC - Each `ai_classify` call is independent; stack them for compound filters like negative-sentiment + cancel-signal
+# MAGIC - Swap in business-specific labels (`churn_signal`, `pricing_pain`) when the four standard sentiment values don't carry your alerting semantics
 # MAGIC
 # MAGIC ## What to do next
 # MAGIC - Point this at `bronze.nps_responses` and schedule it nightly in your existing pipeline

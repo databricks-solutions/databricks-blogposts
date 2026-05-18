@@ -1,15 +1,15 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Pattern 1: Document Intelligence — Turning PDFs into Rows
+# MAGIC # Use Case 2: Document Intelligence: Turning PDFs into Rows
 # MAGIC
-# MAGIC **What this notebook does:** Demonstrates how to use `ai_parse_document` + `ai_query` to extract structured
-# MAGIC data from PDF documents stored in cloud storage — no OCR service, no Python pre-processing.
+# MAGIC **What this notebook does:** Demonstrates how to use `ai_parse_document` + `ai_extract` (v2.1) to extract
+# MAGIC structured data from PDF documents stored in cloud storage. No OCR service, no Python pre-processing.
 # MAGIC
 # MAGIC **What you need to run this:**
 # MAGIC - A Databricks SQL warehouse (Serverless recommended) or compute cluster with DBR 14.3+
 # MAGIC - Unity Catalog enabled on your workspace
-# MAGIC - AI Functions enabled (Settings → Workspace Admin → AI Functions)
-# MAGIC - The dummy data below does not require real PDFs — it simulates parsed document content
+# MAGIC - AI Functions enabled (Settings, Workspace Admin, AI Functions)
+# MAGIC - The dummy data below does not require real PDFs; it simulates parsed document content
 # MAGIC
 # MAGIC **Estimated cost:** < 0.5 DBU per run (5 rows, short documents)
 
@@ -19,8 +19,7 @@
 # MAGIC ## Step 1: Create dummy invoice data
 # MAGIC
 # MAGIC In production, `ai_parse_document` reads binary PDF content directly from cloud storage.
-# MAGIC For this demo, we simulate the *output* of `ai_parse_document` — the extracted raw text —
-# MAGIC so you can see how `ai_query` processes it without needing real PDFs.
+# MAGIC For this demo, we simulate the *output* of `ai_parse_document`, the extracted raw text, so you can see how `ai_query` processes it without needing real PDFs.
 
 # COMMAND ----------
 
@@ -59,68 +58,63 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 2: Extract structured fields with `ai_query`
+# MAGIC ## Step 2: Extract structured fields with `ai_extract`
 # MAGIC
-# MAGIC `responseFormat => 'STRUCT<...>'` tells the model to return typed columns, not a raw string.
-# MAGIC Databricks automatically parses the JSON response into the named struct fields.
+# MAGIC `ai_extract` (v2.1) takes a JSON STRING for the schema and returns a `VARIANT` shaped like
+# MAGIC `{"response": {field: {"value": ...}}, "error_message": null}`. Access individual extracted fields
+# MAGIC via path syntax, e.g. `extracted:response:vendor_name:value::STRING`.
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC SELECT
 # MAGIC   document_id,
-# MAGIC   ai_query(
-# MAGIC     'databricks-claude-sonnet-4',
-# MAGIC     CONCAT(
-# MAGIC       'Extract these fields from the invoice text. Return null for any field not found. ',
-# MAGIC       'Fields: vendor_name (string), invoice_number (string), invoice_date (string in YYYY-MM-DD format), ',
-# MAGIC       'total_amount (decimal), currency_code (3-letter ISO code), payment_terms (string). ',
-# MAGIC       'Invoice text: ', parsed_text
-# MAGIC     ),
-# MAGIC     responseFormat => 'STRUCT<invoice_data:STRUCT<vendor_name:STRING, invoice_number:STRING, invoice_date:STRING, total_amount:DOUBLE, currency_code:STRING, payment_terms:STRING>>'
-# MAGIC   ) AS extracted
+# MAGIC   CAST(ai_extract(
+# MAGIC     parsed_text,
+# MAGIC     '{
+# MAGIC       "vendor_name": {"type": "string"},
+# MAGIC       "invoice_number": {"type": "string"},
+# MAGIC       "invoice_date": {"type": "string", "description": "Date in YYYY-MM-DD format"},
+# MAGIC       "total_amount": {"type": "number", "description": "Total invoice amount as a plain number without currency symbols or thousands separators"},
+# MAGIC       "currency_code": {"type": "string", "description": "3-letter ISO currency code"},
+# MAGIC       "payment_terms": {"type": "string"}
+# MAGIC     }'
+# MAGIC   ) AS STRING) AS extracted
 # MAGIC FROM demo_invoice_text;
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 3: Flatten the struct into columns
-# MAGIC
-# MAGIC The struct result can be unpacked with dot notation for downstream use in dashboards or tables.
+# MAGIC ## Step 3: Flatten the VARIANT into typed columns
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC WITH raw AS (
+# MAGIC WITH extracted AS (
 # MAGIC   SELECT
 # MAGIC     document_id,
-# MAGIC     ai_query(
-# MAGIC       'databricks-claude-sonnet-4',
-# MAGIC       CONCAT(
-# MAGIC         'Extract these fields from the invoice text. Return null for any field not found. ',
-# MAGIC         'Fields: vendor_name (string), invoice_number (string), invoice_date (string in YYYY-MM-DD format), ',
-# MAGIC         'total_amount (decimal), currency_code (3-letter ISO code), payment_terms (string). ',
-# MAGIC         'Invoice text: ', parsed_text
-# MAGIC       ),
-# MAGIC       responseFormat => 'STRUCT<invoice_data:STRUCT<vendor_name:STRING, invoice_number:STRING, invoice_date:STRING, total_amount:DOUBLE, currency_code:STRING, payment_terms:STRING>>'
-# MAGIC     ) AS extracted
+# MAGIC     ai_extract(
+# MAGIC       parsed_text,
+# MAGIC       '{
+# MAGIC         "vendor_name": {"type": "string"},
+# MAGIC         "invoice_number": {"type": "string"},
+# MAGIC         "invoice_date": {"type": "string", "description": "Date in YYYY-MM-DD format"},
+# MAGIC         "total_amount": {"type": "number", "description": "Total invoice amount as a plain number without currency symbols or thousands separators"},
+# MAGIC         "currency_code": {"type": "string", "description": "3-letter ISO currency code"},
+# MAGIC         "payment_terms": {"type": "string"}
+# MAGIC       }'
+# MAGIC     ) AS attrs
 # MAGIC   FROM demo_invoice_text
-# MAGIC ),
-# MAGIC parsed AS (
-# MAGIC   SELECT
-# MAGIC     document_id,
-# MAGIC     from_json(extracted, 'STRUCT<vendor_name:STRING, invoice_number:STRING, invoice_date:STRING, total_amount:DOUBLE, currency_code:STRING, payment_terms:STRING>') AS invoice
-# MAGIC   FROM raw
 # MAGIC )
 # MAGIC SELECT
 # MAGIC   document_id,
-# MAGIC   invoice.vendor_name,
-# MAGIC   invoice.invoice_number,
-# MAGIC   invoice.invoice_date,
-# MAGIC   invoice.total_amount,
-# MAGIC   invoice.currency_code,
-# MAGIC   invoice.payment_terms
-# MAGIC FROM parsed;
+# MAGIC   attrs:response:vendor_name:value::STRING     AS vendor_name,
+# MAGIC   attrs:response:invoice_number:value::STRING  AS invoice_number,
+# MAGIC   attrs:response:invoice_date:value::STRING    AS invoice_date,
+# MAGIC   attrs:response:total_amount:value::DOUBLE    AS total_amount,
+# MAGIC   attrs:response:currency_code:value::STRING   AS currency_code,
+# MAGIC   attrs:response:payment_terms:value::STRING   AS payment_terms
+# MAGIC FROM extracted;
 
 # COMMAND ----------
 
@@ -135,7 +129,7 @@
 # MAGIC | INV-004 | Dupont Industrie | F-2026-155 | 2026-04-17 | 1680.00 | EUR | null |
 # MAGIC | INV-005 | Apex Consulting Group | ACG-2026-Q2-003 | 2026-04-18 | 16535.40 | USD | null |
 # MAGIC
-# MAGIC Note: The model handles English, German, French, and Australian English invoices in a single query — no language detection step required.
+# MAGIC Note: The model handles English, German, French, and Australian English invoices in a single query. Thus no language detection step required.
 # MAGIC
 # MAGIC ## What to do next
 # MAGIC - Replace `demo_invoice_text` with `read_files('s3://your-bucket/invoices/', format => 'binaryFile')` and add `ai_parse_document(content)` to read real PDFs
