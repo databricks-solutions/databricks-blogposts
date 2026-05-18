@@ -1,15 +1,15 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Pattern 1: Document Intelligence: Turning PDFs into Rows
+# MAGIC # Use Case 2: Document Intelligence: Turning PDFs into Rows
 # MAGIC
-# MAGIC **What this notebook does:** Demonstrates how to use `ai_parse_document` + `ai_query` to extract structured
-# MAGIC data from PDF documents stored in cloud storage: no OCR service, no Python pre-processing.
+# MAGIC **What this notebook does:** Demonstrates how to use `ai_parse_document` + `ai_extract` (v2.1) to extract
+# MAGIC structured data from PDF documents stored in cloud storage. No OCR service, no Python pre-processing.
 # MAGIC
 # MAGIC **What you need to run this:**
 # MAGIC - A Databricks SQL warehouse (Serverless recommended) or compute cluster with DBR 14.3+
 # MAGIC - Unity Catalog enabled on your workspace
-# MAGIC - AI Functions enabled (Settings → Workspace Admin → AI Functions)
-# MAGIC - The dummy data below does not require real PDFs — it simulates parsed document content
+# MAGIC - AI Functions enabled (Settings, Workspace Admin, AI Functions)
+# MAGIC - The dummy data below does not require real PDFs; it simulates parsed document content
 # MAGIC
 # MAGIC **Estimated cost:** < 0.5 DBU per run (5 rows, short documents)
 

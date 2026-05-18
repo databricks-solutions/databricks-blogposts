@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Pattern 5: Customer Feedback Sentiment Analysis: Closing the Loop on What Users Actually Think
+# MAGIC # Use Case 3: Customer Feedback Sentiment Analysis: Closing the Loop on What Users Actually Think
 # MAGIC
 # MAGIC **What this notebook does:** Uses `ai_classify` (v2) to turn raw NPS verbatims and support responses into
 # MAGIC structured feedback signals like sentiment, topic, and urgency all in one query, with labels you define.
@@ -43,7 +43,7 @@
 # MAGIC ## Step 2: Add sentiment + topic classification in one query
 # MAGIC
 # MAGIC `ai_classify` lets you define the exact labels that matter for your business. We pass the four standard
-# MAGIC sentiment labels (`positive`, `negative`, `neutral`, `mixed`) — but you could replace them with workflow-specific
+# MAGIC sentiment labels (`positive`, `negative`, `neutral`, `mixed`), or you could replace them with workflow-specific
 # MAGIC labels like `churn_signal` or `pricing_pain`. The function returns a `VARIANT` with shape
 # MAGIC `{"response": [label], "error_message": null}`; we extract the label with `:response[0]::STRING`.
 
@@ -143,8 +143,8 @@
 # MAGIC
 # MAGIC ## Key behavior to verify
 # MAGIC - `ai_classify` (v2) returns a `VARIANT` of shape `{"response": [label], "error_message": null}`; extract the label with `:response[0]::STRING`
-# MAGIC - A high NPS score (e.g., 7/10) with a `mixed` sentiment is valid — the labels capture nuance the score misses
-# MAGIC - Each `ai_classify` call is independent — stack them for compound filters like negative-sentiment + cancel-signal
+# MAGIC - A high NPS score (e.g., 7/10) with a `mixed` sentiment is valid: the labels capture nuance the score misses
+# MAGIC - Each `ai_classify` call is independent; stack them for compound filters like negative-sentiment + cancel-signal
 # MAGIC - Swap in business-specific labels (`churn_signal`, `pricing_pain`) when the four standard sentiment values don't carry your alerting semantics
 # MAGIC
 # MAGIC ## What to do next

@@ -1,9 +1,9 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Pattern 4: Inline Translation and Normalization for Multilingual Data
+# MAGIC # Use Case 4: Inline Translation and Normalization for Multilingual Data
 # MAGIC
 # MAGIC **What this notebook does:** Uses `ai_translate` + `ai_extract` to translate product reviews from multiple languages
-# MAGIC into English and extract structured attributes — in a single SQL query with no external translation API.
+# MAGIC into English and extract structured attributes in a single SQL query, with no external translation API.
 # MAGIC
 # MAGIC **What you need to run this:**
 # MAGIC - Databricks SQL warehouse (Serverless recommended) or DBR 14.3+
@@ -22,7 +22,7 @@
 # MAGIC %sql
 # MAGIC CREATE OR REPLACE TEMP VIEW demo_product_reviews AS
 # MAGIC SELECT * FROM VALUES
-# MAGIC   ('REV-001', 'PROD-A', 'en', 'Great product, super fast delivery. One small issue — the packaging was damaged but the item inside was fine. Would buy again.'),
+# MAGIC   ('REV-001', 'PROD-A', 'en', 'Great product, super fast delivery. One small issue: the packaging was damaged but the item inside was fine. Would buy again.'),
 # MAGIC   ('REV-002', 'PROD-A', 'de', 'Sehr gutes Produkt, schnelle Lieferung. Die Verpackung war etwas zerknittert, aber das Gerät selbst war einwandfrei. Gerne wieder.'),
 # MAGIC   ('REV-003', 'PROD-B', 'fr', 'Déçu par la qualité. Le produit est arrivé avec une rayure sur le côté. Le service client a mis 5 jours à répondre. Je ne recommande pas.'),
 # MAGIC   ('REV-004', 'PROD-B', 'es', 'Producto excelente, exactamente lo que esperaba. La batería dura mucho más de lo indicado. Entrega rápida. Muy satisfecho.'),

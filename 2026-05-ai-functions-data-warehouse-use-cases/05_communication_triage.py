@@ -1,9 +1,9 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Pattern 2: Customer Communication Triage: Classifying Tickets and Calls at Scale
+# MAGIC # Use Case 5: Customer Communication Triage: Classifying Tickets and Calls at Scale
 # MAGIC
-# MAGIC **What this notebook does:** Uses `ai_classify` to tag support tickets with intent category and urgency level
-# MAGIC in a single SQL query without the need to train the modle , no labels to maintain.
+# MAGIC **What this notebook does:** Uses `ai_classify` (v2) to tag support tickets with intent category and urgency level
+# MAGIC in a single SQL query. No model to train, no labels to maintain externally.
 # MAGIC
 # MAGIC **What you need to run this:**
 # MAGIC - Databricks SQL warehouse (Serverless recommended) or DBR 14.3+
@@ -21,7 +21,7 @@
 # MAGIC %sql
 # MAGIC CREATE OR REPLACE TEMP VIEW demo_support_tickets AS
 # MAGIC SELECT * FROM VALUES
-# MAGIC   ('TKT-001', 'premium', 'I was charged twice for my subscription this month. Please fix this immediately — I need this resolved today.'),
+# MAGIC   ('TKT-001', 'premium', 'I was charged twice for my subscription this month. Please fix this immediately. I need this resolved today.'),
 # MAGIC   ('TKT-002', 'basic', 'The dashboard keeps timing out when I try to export more than 1000 rows. Has been happening for 3 days.'),
 # MAGIC   ('TKT-003', 'enterprise', 'We are evaluating your product against competitors. Can you send me pricing for 500 seats?'),
 # MAGIC   ('TKT-004', 'basic', 'I am cancelling my subscription. Your support response time is unacceptable.'),
@@ -95,8 +95,7 @@
 # MAGIC     WHEN intent = 'billing_issue' THEN 'Billing team → 4-hour SLA'
 # MAGIC     WHEN intent = 'technical_outage' AND urgency IN ('high', 'critical') THEN 'Engineering → 1-hour SLA'
 # MAGIC     ELSE 'Standard queue → 24-hour SLA'
-# MAGIC   END AS routing_decision,
-# MAGIC   LEFT(ticket_body, 60) AS ticket_preview
+# MAGIC   END AS routing_decision
 # MAGIC FROM classified
 # MAGIC ORDER BY
 # MAGIC   CASE urgency WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END;
