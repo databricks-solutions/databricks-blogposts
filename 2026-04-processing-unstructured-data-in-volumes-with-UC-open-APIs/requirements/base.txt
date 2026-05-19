@@ -1,3 +1,6 @@
 # Core dependencies (required by all scripts)
-databricks-sdk
+# databricks-sdk >= 0.108.0 is required for the typed Volumes credential
+# vending API (w.temporary_volume_credentials.generate_temporary_volume_credentials).
+databricks-sdk>=0.108.0
 python-dotenv
+unitycatalog

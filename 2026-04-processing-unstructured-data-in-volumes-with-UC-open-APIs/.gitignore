@@ -22,3 +22,18 @@ venv/
 # IDE
 .idea/
 .vscode/
+
+# Local-only working files (not for public repo)
+CLAUDE.md
+USE_CASE.md
+BlogContent/
+
+# Google Drive shortcut/pointer files (created when working in a synced Drive folder)
+*.gdoc
+*.gsheet
+*.gslides
+*.gjam
+*.gdraw
+*.gform
+*.gsite
+*.glink

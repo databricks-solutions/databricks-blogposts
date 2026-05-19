@@ -1,5 +1,5 @@
 # Dependencies for query_engines/ray_process.py
+# (numpy is pulled in transitively by ray[data])
 -r base.txt
 ray[data]
 pyarrow
-numpy

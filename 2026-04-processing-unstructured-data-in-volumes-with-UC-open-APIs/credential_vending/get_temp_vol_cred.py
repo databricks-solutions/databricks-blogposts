@@ -6,12 +6,29 @@ Unity Catalog volumes using the Databricks SDK with OAuth U2M authentication.
 Authentication is handled automatically by the Databricks SDK unified auth.
 Set DATABRICKS_HOST in your environment or .env file. On first run, the SDK
 will open a browser for OAuth consent; subsequent runs use cached credentials.
+
+The Volumes credential vending workflow is implemented entirely through typed
+SDK calls:
+
+- ``w.volumes.read(name)`` returns a ``VolumeInfo`` object with ``volume_id``
+  and ``storage_location``.
+- ``w.temporary_volume_credentials.generate_temporary_volume_credentials(...)``
+  returns a ``GenerateTemporaryVolumeCredentialResponse`` whose
+  ``aws_temp_credentials`` field carries the short-lived AWS STS credentials.
+
+See:
+  https://databricks-sdk-py.readthedocs.io/en/latest/workspace/catalog/volumes.html
+  https://databricks-sdk-py.readthedocs.io/en/latest/workspace/catalog/temporary_volume_credentials.html
 """
 
 import os
-from typing import Dict, Any, Tuple
+from typing import Tuple
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.catalog import (
+    GenerateTemporaryVolumeCredentialResponse,
+    VolumeOperation,
+)
 
 
 def load_environment() -> None:
@@ -39,7 +56,7 @@ def get_volume_info_by_name(
     w: WorkspaceClient,
     volume_name: str
 ) -> Tuple[str, str]:
-    """Get volume_id and storage_location by calling API with volume name.
+    """Get volume_id and storage_location for a volume via the SDK.
 
     Args:
         w: Authenticated WorkspaceClient.
@@ -48,11 +65,8 @@ def get_volume_info_by_name(
     Returns:
         Tuple[str, str]: A tuple containing (volume_id, storage_location).
     """
-    resp = w.api_client.do(
-        "GET",
-        f"/api/2.0/unity-catalog/volumes/{volume_name}",
-    )
-    return resp["volume_id"], resp.get("storage_location", "")
+    info = w.volumes.read(name=volume_name)
+    return info.volume_id, info.storage_location or ""
 
 
 def _get_catalog_and_schema() -> Tuple[str, str]:
@@ -82,7 +96,7 @@ def get_full_volume_name(volume_name: str) -> str:
         volume_name: Short volume name (e.g. 'images').
 
     Returns:
-        str: Full three-level name (e.g. 'volumes_cv_demo.gold.images').
+        str: Full three-level name (e.g. '<your-catalog>.<your-schema>.images').
     """
     catalog, schema = _get_catalog_and_schema()
     return f"{catalog}.{schema}.{volume_name}"
@@ -139,27 +153,23 @@ def get_image_volume_path() -> str:
 def get_temporary_volume_credentials(
     w: WorkspaceClient,
     volume_id: str,
-    operation: str = "READ_VOLUME"
-) -> Dict[str, Any]:
+    operation: VolumeOperation = VolumeOperation.READ_VOLUME,
+) -> GenerateTemporaryVolumeCredentialResponse:
     """Get temporary credentials for accessing a Unity Catalog volume.
 
     Args:
         w: Authenticated WorkspaceClient.
         volume_id: Volume ID.
-        operation: Operation type (default: 'READ_VOLUME').
+        operation: Operation type (default: ``VolumeOperation.READ_VOLUME``).
 
     Returns:
-        Dict[str, Any]: Response containing temporary credentials.
+        GenerateTemporaryVolumeCredentialResponse: Typed response containing
+        cloud-specific temporary credentials (e.g., ``aws_temp_credentials``).
     """
-    resp = w.api_client.do(
-        "POST",
-        "/api/2.0/unity-catalog/temporary-volume-credentials",
-        body={
-            "volume_id": volume_id,
-            "operation": operation,
-        },
+    return w.temporary_volume_credentials.generate_temporary_volume_credentials(
+        operation=operation,
+        volume_id=volume_id,
     )
-    return resp
 
 
 def main() -> None:
