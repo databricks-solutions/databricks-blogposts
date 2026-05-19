@@ -1,0 +1,27 @@
+# Minimal Gemini CLI sandbox
+FROM node:20-bookworm
+
+# Install Gemini CLI
+# Note: unpinned version resolves to latest at build time. Pin for reproducibility, e.g.:
+# RUN npm install -g @google/gemini-cli@0.x
+RUN npm install -g @google/gemini-cli
+
+# --- Add project-specific dependencies below (e.g., Go, Terraform, Python, Rust) ---
+
+
+# --- End project-specific dependencies ---
+
+# Create non-root user with a fixed uid so --tmpfs uid=1001 in docker run
+# always matches this user
+RUN useradd -m -s /bin/bash -u 1001 agent \
+    && mkdir -p /home/agent/.gemini \
+    && chown -R agent:agent /home/agent
+
+# Set working directory
+WORKDIR /workspace
+
+# Switch to non-root user
+USER agent
+
+# Default command
+ENTRYPOINT ["gemini"]
