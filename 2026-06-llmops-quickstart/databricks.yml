@@ -1,0 +1,38 @@
+bundle:
+  name: llmops-quickstart
+
+include:
+  - resources/*.yml
+
+workspace:
+  root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+
+variables:
+  catalog_name:
+    description: "Unity Catalog catalog name (must already exist)"
+    default: main
+  schema_name:
+    description: "Unity Catalog schema name (created by the bundle if absent)"
+    default: llmops_quickstart
+  model_name:
+    description: "Registered model name in Unity Catalog"
+    default: support_ticket_classifier
+  llm_endpoint:
+    description: "Databricks Foundation Model API endpoint used by the agent"
+    default: databricks-claude-sonnet-4-6
+  environment:
+    description: "Deployment environment label"
+    default: dev
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      environment: dev
+
+  prod:
+    mode: production
+    variables:
+      schema_name: llmops_quickstart_prod
+      environment: prod

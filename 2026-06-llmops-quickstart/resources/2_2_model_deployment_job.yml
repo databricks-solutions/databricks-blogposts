@@ -1,0 +1,39 @@
+resources:
+  jobs:
+    model_deployment_job:
+      name: "LLMOps Quickstart - 2.2 Model Deployment [${var.environment}]"
+      description: "Deploys the Champion model version to a Mosaic AI Model Serving endpoint."
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - "databricks-openai"
+
+      parameters:
+        - name: catalog_name
+          default: "${var.catalog_name}"
+        - name: schema_name
+          default: "${var.schema_name}"
+        - name: model_name
+          default: "${var.model_name}"
+        - name: experiment_name
+          default: "${resources.experiments.llmops_experiment.name}"
+
+      tasks:
+        - task_key: model_deployment
+          environment_key: default
+          notebook_task:
+            notebook_path: "../notebooks/2_model_build_and_deploy/model_deployment.py"
+            base_parameters:
+              catalog_name: "{{job.parameters.catalog_name}}"
+              schema_name: "{{job.parameters.schema_name}}"
+              model_name: "{{job.parameters.model_name}}"
+              experiment_name: "{{job.parameters.experiment_name}}"
+
+      timeout_seconds: 3600
+      max_concurrent_runs: 1
+      tags:
+        Project: llmops-quickstart
+        Environment: "${var.environment}"

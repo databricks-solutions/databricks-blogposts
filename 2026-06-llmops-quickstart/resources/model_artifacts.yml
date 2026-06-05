@@ -1,0 +1,10 @@
+resources:
+  schemas:
+    llmops_schema:
+      catalog_name: "${var.catalog_name}"
+      name: "${var.schema_name}"
+      comment: "LLMOps Quickstart schema — support ticket classification"
+
+  experiments:
+    llmops_experiment:
+      name: "/Users/${workspace.current_user.userName}/${bundle.target}_${var.model_name}"
