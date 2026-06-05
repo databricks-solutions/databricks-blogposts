@@ -8,6 +8,8 @@ Use case: a **customer support ticket classifier** that uses a Databricks Founda
 
 > 📝 **Blog post:** _link to be added once published on the [Databricks Community](https://community.databricks.com/) platform._
 
+> ⚠️ **Disclaimer:** This is **not production-ready code**. It is provided **as-is**, for educational purposes, and support is available on a **best-effort basis**. If you run into problems, please [open an issue](https://github.com/databricks-solutions/databricks-blogposts/issues).
+
 This example accompanies the blog post and is intended for **educational purposes**. It is unofficial and unsupported (see [Licensing](#licensing)).
 
 ---
