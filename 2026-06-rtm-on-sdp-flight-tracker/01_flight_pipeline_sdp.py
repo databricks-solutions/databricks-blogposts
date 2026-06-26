@@ -82,6 +82,7 @@ def _geofence_expr():
 
 # Native Lakebase external sink: write straight to the operational store the
 # app reads, instead of landing results in a table for analytics.
+# NOTE: the Lakebase jdbcStreaming sink is in Private Preview; its options/API may change before GA.
 dp.create_sink(
     name="lakebase_sink",
     format="jdbcStreaming",
@@ -104,7 +105,7 @@ dp.create_sink(
         # checkpoint cadence for state + offsets, NOT a micro-batch size
         "pipelines.trigger.interval": "5 minutes",
         "spark.sql.shuffle.partitions":     "4",
-        "spark.sql.streaming.jdbc.enabled": "true",
+        "spark.sql.streaming.jdbc.enabled": "true",  # jdbcStreaming Lakebase sink (Private Preview)
     },
 )
 def kafka_streaming_flow():

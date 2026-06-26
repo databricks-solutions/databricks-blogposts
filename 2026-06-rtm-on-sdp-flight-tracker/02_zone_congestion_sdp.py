@@ -199,6 +199,7 @@ ALERT_SCHEMA = StructType([
 
 # Native Lakebase external sink: write results straight to the operational store
 # the app reads, instead of landing them in a table for analytics.
+# NOTE: the Lakebase jdbcStreaming sink is in Private Preview; its options/API may change before GA.
 dp.create_sink(
     name="zone_alerts_sdp_sink",
     format="jdbcStreaming",
@@ -217,9 +218,9 @@ dp.create_sink(
     spark_conf={
         "pipelines.trigger":          "RealTime",   # turn RTM on
         # checkpoint cadence for state + offsets, NOT a micro-batch size
-        "pipelines.trigger.interval": "1 minute",
+        "pipelines.trigger.interval": "5 minutes",   # 5 min is the recommended RTM default
         "spark.sql.shuffle.partitions":     "4",
-        "spark.sql.streaming.jdbc.enabled": "true",
+        "spark.sql.streaming.jdbc.enabled": "true",  # jdbcStreaming Lakebase sink (Private Preview)
     },
 )
 def zone_congestion_flow():
