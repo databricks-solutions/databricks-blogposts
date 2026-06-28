@@ -22,7 +22,8 @@ spark = SparkSession.builder.getOrCreate()
 # Per-row processing time (epoch seconds). MUST be nondeterministic, else Spark
 # constant-folds it to one value per batch, and an RTM batch lives for the whole
 # trigger duration, so a plain current_timestamp() would read stale.
-_enrichment_now = udf(lambda: time.time(), DoubleType()).asNondeterministic()
+# Arrow-optimized Python UDF (useArrow=True): faster than a classic Python UDF.
+_enrichment_now = udf(lambda: time.time(), DoubleType(), useArrow=True).asNondeterministic()
 
 # COMMAND ----------
 

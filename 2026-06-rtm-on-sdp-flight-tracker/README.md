@@ -39,6 +39,7 @@ pipeline **configuration**:
 spark.databricks.streaming.realTimeMode.enabled = true
 pipelines.externalSink.enabled                  = true
 spark.sql.streaming.jdbc.enabled                = true   # enables the jdbcStreaming Lakebase sink (Private Preview)
+spark.sql.execution.arrow.maxRecordsPerBatch    = 1      # minimize latency for the Arrow-optimized UDF (RTM)
 
 # source + sink params read by the notebooks (use a Databricks secret for the conn string)
 eh_namespace      = <your-eventhubs-namespace>          # Kafka source (Azure Event Hubs here)
@@ -49,6 +50,8 @@ lakebase_db       = <your-database>
 
 Per-flow trigger config is already set in the `@dp.update_flow` decorators
 (`pipelines.trigger: "RealTime"`).
+
+The enrichment uses an Arrow-optimized Python UDF (`useArrow=True`), which is faster than a classic Python UDF in Real-Time Mode.
 
 ## License
 
