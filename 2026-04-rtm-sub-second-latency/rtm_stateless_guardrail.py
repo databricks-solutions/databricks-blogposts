@@ -157,21 +157,14 @@ print(f"✓ Checkpoint location: {CHECKPOINT_LOCATION}")
 # MAGIC
 # MAGIC **Key Configurations:**
 # MAGIC
-# MAGIC 1. **RocksDB State Store**: Note: This truly stateless pipeline (no aggregations, no dedup, no state) doesn't use a state store.
-# MAGIC    These settings are included for future-proofing.
-# MAGIC    - If you later add aggregations or transformWithState, having RocksDB already configured avoids a checkpoint-incompatible change.
-# MAGIC
-# MAGIC 2. **Changelog Checkpointing**: Relevant when stateful operations are present. Reduces checkpoint latency by writing incremental state changes.
-# MAGIC
-# MAGIC 3. **Reduced Shuffle Partitions**: Lower latency for small-to-medium data volumes
+# MAGIC 1. **Reduced Shuffle Partitions**: Lower latency for small-to-medium data volumes
 # MAGIC    - Default 200 partitions causes overhead for sub-second processing
 # MAGIC    - 8 partitions balances parallelism vs. overhead
 # MAGIC    - Adjust based on cluster size and data volume
 # MAGIC
 # MAGIC **Expected Output:**
-# MAGIC - RocksDB provider confirmed
 # MAGIC - RTM enabled: `true`
-# MAGIC - Shuffle manager: `DatabricksShuffleManager` (set at cluster level)
+# MAGIC - Shuffle partitions: `8`
 
 # COMMAND ----------
 
@@ -192,26 +185,19 @@ spark.conf.set("spark.sql.shuffle.partitions", "8")
 
 # Verify configurations applied successfully
 print("RTM Configuration Applied:")
-print(f"  - RocksDB Provider: {spark.conf.get('spark.sql.streaming.stateStore.providerClass')}")
-print(f"  - Changelog Checkpointing: {spark.conf.get('spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled')}")
 print(f"  - RTM Enabled (realTimeMode): {spark.conf.get('spark.databricks.streaming.realTimeMode.enabled', 'UNSET')}")
-print(f"  - RTM Enabled (legacy realTime): {spark.conf.get('spark.databricks.streaming.realTime.enabled', 'UNSET')}")
-print(f"  - Shuffle Manager: {spark.conf.get('spark.shuffle.manager', 'UNSET')} (set at cluster level)")
 print(f"  - Shuffle Partitions: {spark.conf.get('spark.sql.shuffle.partitions')}")
 
 # CRITICAL: Verify RTM is actually enabled on this cluster
 rtm_mode_enabled = spark.conf.get("spark.databricks.streaming.realTimeMode.enabled", "false")
-rtm_legacy_enabled = spark.conf.get("spark.databricks.streaming.realTime.enabled", "false")
-if rtm_mode_enabled != "true" and rtm_legacy_enabled != "true":
+if rtm_mode_enabled != "true":
     raise RuntimeError(
         "❌ Real-Time Mode NOT enabled on this cluster!\n"
         "\n"
         "Required cluster configuration:\n"
-        "  spark.databricks.streaming.realTimeMode.enabled = true (preferred)\n"
-        "  or spark.databricks.streaming.realTime.enabled = true\n"
-        "  spark.shuffle.manager = org.apache.spark.shuffle.streaming.MultiShuffleManager\n"
+        "  spark.databricks.streaming.realTimeMode.enabled = true\n"
         "\n"
-        "Fix: Edit cluster → Advanced Options → Spark Config and add above settings.\n"
+        "Fix: Edit cluster → Advanced Options → Spark Config and add the setting above.\n"
         "See: cluster_config.template.json for complete configuration example"
     )
 print("✅ RTM Verification Passed - cluster is configured correctly")
@@ -473,7 +459,6 @@ df_raw = (
 
 print(f"✓ Reading from Kafka topic: {INPUT_TOPIC}")
 print(f"✓ Starting from: earliest offsets")
-print(f"✓ Data loss handling: continue processing")
 
 # COMMAND ----------
 

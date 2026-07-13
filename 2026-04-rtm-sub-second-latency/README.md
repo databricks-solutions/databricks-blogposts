@@ -30,25 +30,6 @@ Real-Time Mode eliminates micro-batch scheduling overhead by processing records 
 
 > **Critical**: RTM has strict compute requirements. Use dedicated clusters with fixed worker count, no Photon, and `outputMode("update")`.
 
-## Supported Operations
-
-| Supported | NOT Supported |
-|-----------|---------------|
-| Stateless transformations | forEachBatch |
-| Aggregations (count, sum) | Stream-stream joins |
-| Tumbling/Sliding windows | Session windows |
-| Deduplication (dropDuplicates) | mapPartitions |
-| Stream-table joins (broadcast) | mapGroupsWithState |
-| transformWithState | Self-union (same source) |
-| Union of multiple streams | |
-| foreachWriter (custom sinks) | |
-
-## Supported Sources & Sinks
-
-**Sources:** Kafka, AWS MSK, Event Hubs (Kafka connector), Kinesis (EFO mode only)
-
-**Sinks:** Kafka, Event Hubs, Delta Lake, foreachWriter (for JDBC/custom)
-
 ## Files
 
 | File | Description |
@@ -216,26 +197,6 @@ Required slots = source_partitions + (shuffle_partitions x number_of_stages)
 - Set `maxPartitions` to consolidate Kafka partitions per task
 - Use `spark.sql.shuffle.partitions` = 8-20 (not default 200)
 
-## State Store Configuration
-
-### RocksDB for All Streaming Jobs
-
-Even for "stateless" pipelines, configure RocksDB as the state store provider:
-
-```python
-spark.conf.set("spark.sql.streaming.stateStore.providerClass",
-    "com.databricks.sql.streaming.state.RocksDBStateStoreProvider")
-
-spark.conf.set("spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled",
-    "true")
-```
-
-**Why:**
-- Better performance for any stateful operations
-- Faster checkpoint recovery with changelog checkpointing
-- Required if you ever add stateful operations (aggregations, dedup, joins)
-- Consistent behavior across all streaming pipelines
-
 ## Kafka Configuration
 
 ### Timeout Settings
@@ -276,14 +237,16 @@ KAFKA_USERNAME = "my-username"  # NEVER DO THIS
 
 ### Monitoring Alerts
 
-Set up alerts for:
+RTM latency metrics are emitted in the `StreamingQueryProgress` event. Use a `StreamingQueryListener` or inspect `query.lastProgress` to publish these percentiles to your monitoring system:
 
-| Metric | Alert Threshold | Action |
-|--------|-----------------|--------|
-| `inputRowsPerSecond` == 0 | > 5 minutes | Check Kafka connectivity |
-| `processedRowsPerSecond` < `inputRowsPerSecond` | Sustained | Scale cluster or increase partitions |
-| Batch duration | > 1 second for RTM | Check for data skew or resource contention |
-| Query status | Not active | Page on-call |
+| Metric | What It Measures | Alert Signal |
+|--------|------------------|--------------|
+| `processingLatencyMs` | Time from when RTM reads a record until it is processed or written downstream | P95/P99 above your service target |
+| `sourceQueuingLatencyMs` | Time from source append, such as Kafka log append, until RTM first reads the record | Rising P95/P99 indicates source backlog |
+| `e2eLatencyMs` | End-to-end time from source append until downstream write completes | P95/P99 above your user-facing latency target |
+| `inputRowsPerSecond` | Source arrival rate | `0` for more than 5 minutes |
+| `processedRowsPerSecond` | Processing throughput | Sustained lag behind input rate |
+| Query status | Query liveness | Not active |
 
 ### Dynamic Topic Routing
 

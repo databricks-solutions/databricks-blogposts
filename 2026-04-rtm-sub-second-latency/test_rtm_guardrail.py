@@ -157,12 +157,10 @@ def test_spark_configs():
         if spark is None:
             return False
 
-        # Test setting RTM configurations
+        # Test setting the two RTM-related configurations used by this demo.
         configs_to_test = [
             ("spark.sql.shuffle.partitions", "8"),
-            ("spark.sql.streaming.stateStore.providerClass",
-             "com.databricks.sql.streaming.state.RocksDBStateStoreProvider"),
-            ("spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled", "true"),
+            ("spark.databricks.streaming.realTimeMode.enabled", "true"),
         ]
 
         all_passed = True
