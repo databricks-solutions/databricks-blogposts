@@ -1,0 +1,4 @@
+# Dependencies for query_engines/daft_download.py
+-r base.txt
+daft
+getdaft

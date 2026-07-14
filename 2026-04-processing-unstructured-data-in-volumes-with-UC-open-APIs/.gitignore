@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Downloaded images (re-downloadable from UC Volumes)
+*.jpg
+*.jpeg
+*.png
+!assets/*.png
+!sample_data/*.png
+!sample_data/*.jpg
+
+# IDE
+.idea/
+.vscode/
+
+# Local-only working files (not for public repo)
+CLAUDE.md
+USE_CASE.md
+BlogContent/
+
+# Google Drive shortcut/pointer files (created when working in a synced Drive folder)
+*.gdoc
+*.gsheet
+*.gslides
+*.gjam
+*.gdraw
+*.gform
+*.gsite
+*.glink

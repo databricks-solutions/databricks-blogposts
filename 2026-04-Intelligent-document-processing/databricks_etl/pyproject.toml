@@ -1,0 +1,28 @@
+[project]
+name = "data-extraction-etl"
+version = "0.1.0"
+description = "DLT pipelines and notebooks for data extraction"
+requires-python = ">=3.11"
+dependencies = [
+    "databricks-dlt",
+    "databricks-sdk>=0.103",
+    "mlflow>=2.9.0",
+]
+
+[dependency-groups]
+dev = [
+    "databricks-connect>=15.4,<15.5",
+    "ipykernel",
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["data_extraction_etl"]
+
+[tool.ruff]
+line-length = 120

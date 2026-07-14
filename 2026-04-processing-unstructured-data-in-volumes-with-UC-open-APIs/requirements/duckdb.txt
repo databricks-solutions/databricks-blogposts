@@ -1,0 +1,4 @@
+# Dependencies for query_engines/duckdb_query.py
+-r base.txt
+duckdb
+pandas
