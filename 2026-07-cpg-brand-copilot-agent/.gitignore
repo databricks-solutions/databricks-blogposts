@@ -1,0 +1,58 @@
+# ---- OS / editor cruft ----
+.DS_Store
+**/.DS_Store
+*.swp
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.ipynb_checkpoints/
+
+# ---- Secrets / local env ----
+.env
+.env.local
+**/.env
+**/.env.local
+
+# Deployment config with real workspace values (single source of truth — keep local)
+deployment/config.env
+**/config.env
+
+# ---- Databricks bundle local state ----
+# Holds terraform state, the terraform binary, plans, and sync-snapshots.
+# These embed workspace hosts, app URLs, and resource IDs — never commit.
+**/.databricks/
+
+# ---- Terraform ----
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfplan
+
+# ---- MLflow local runs ----
+**/mlruns/
+
+# ---- Large / generated artifacts ----
+**/*.backup.*
+*.backup-*
+*.deploybak
+load-test-runs/
+
+# ---- PowerPoint decks (binary; may contain workspace screenshots/URLs/PII) ----
+*.pptx
+
+# ---- Docs folder (excluded from this repo per request) ----
+/docs/
+
+# ---- Kept local, but not pushed to the repo (template extras / second build) ----
+# NOTE: agent_app/README.md is intentionally NOT ignored — agent_app/pyproject.toml declares
+# `readme = "README.md"`, so the Databricks App container build fails without it.
+agent_app/.github/
+agent_app/.claude/
+build_e2/
