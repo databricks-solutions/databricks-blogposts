@@ -18,8 +18,12 @@ variables:
     description: "Registered model name in Unity Catalog"
     default: support_ticket_classifier
   llm_endpoint:
+    # Any Databricks Foundation Model API endpoint works. Good 2026 options:
+    #   databricks-claude-sonnet-5    (default — most capable)
+    #   databricks-claude-sonnet-4-6  (solid, lower cost)
+    #   databricks-claude-haiku-4-5   (cheapest/fastest; may miss the accuracy gate on this task)
     description: "Databricks Foundation Model API endpoint used by the agent"
-    default: databricks-claude-sonnet-4-6
+    default: databricks-claude-sonnet-5
   environment:
     description: "Deployment environment label"
     default: dev

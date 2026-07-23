@@ -15,7 +15,7 @@ dbutils.widgets.text("catalog_name", "main")
 dbutils.widgets.text("schema_name", "llmops_quickstart")
 dbutils.widgets.text("model_name", "support_ticket_classifier")
 dbutils.widgets.text("experiment_name", f"/Users/{dbutils.notebook.entry_point.getDbutils().notebook().getContext().userName().get()}/llmops_quickstart")
-dbutils.widgets.text("llm_endpoint", "databricks-claude-sonnet-4-6")
+dbutils.widgets.text("llm_endpoint", "databricks-claude-sonnet-5")
 
 catalog_name = dbutils.widgets.get("catalog_name")
 schema_name = dbutils.widgets.get("schema_name")
@@ -51,7 +51,7 @@ with mlflow.start_run(run_name=f"build_{timestamp}") as run:
         model_config={"llm_endpoint": llm_endpoint},
         resources=resources,
         pip_requirements=[
-            "mlflow",
+            "mlflow>=3.4.0",
             "databricks-openai",
             "databricks-agents",
             "databricks-sdk",

@@ -2,7 +2,7 @@ resources:
   jobs:
     model_build_evaluation_job:
       name: "LLMOps Quickstart - 2.1 Model Build & Evaluation [${var.environment}]"
-      description: "Logs the agent to MLflow, evaluates it, and promotes to Champion if the accuracy threshold is met."
+      description: "Logs the agent to MLflow, evaluates it with mlflow.genai.evaluate, and registers a Challenger if the accuracy threshold is met."
 
       # databricks-agents, mlflow, databricks-sdk, and pydantic are all included in Env v5.
       # Only databricks-openai needs to be added.

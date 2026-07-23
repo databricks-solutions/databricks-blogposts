@@ -1,1 +1,3 @@
-llm_endpoint: "databricks-claude-sonnet-4-6"
+# Foundation Model API endpoint the agent calls. Overridden per-target by the
+# `llm_endpoint` bundle variable; this value is the dev-time default.
+llm_endpoint: "databricks-claude-sonnet-5"
