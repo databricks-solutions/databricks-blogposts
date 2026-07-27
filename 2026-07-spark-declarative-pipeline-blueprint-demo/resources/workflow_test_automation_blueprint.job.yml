@@ -1,0 +1,24 @@
+resources:
+  jobs:
+    workflow_test_automation_blueprint_job:
+      name: workflow_test_automation_blueprint_job
+
+      trigger:
+        periodic:
+          interval: 1
+          unit: DAYS
+
+      tasks:
+        - task_key: notebook_task
+          python_wheel_task:
+            entry_point: main
+            package_name: ps_test_blueprint
+            parameters: ["main","default"]
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: '3'
+            dependencies:
+              - ../dist/*.whl
