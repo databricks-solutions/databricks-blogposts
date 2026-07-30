@@ -31,9 +31,10 @@ This quickstart assumes you are comfortable with:
 - The general idea of an LLM prompt and response
 
 You do not need prior MLflow, agent, or Declarative Automation Bundles experience —
-each is introduced as you reach it. If you want a deeper grounding first, the
-Databricks Academy has a course on DevOps with Declarative Automation Bundles and
-one on agent evaluation.
+each is introduced as you reach it. For a deeper grounding first, see the Databricks
+Academy courses [DevOps Essentials for Data Engineering](https://customer-academy.databricks.com/learn/course/external/view/classroom/3640/devops-essentials-for-data-engineering)
+(CI/CD and bundles) and [Building Agentic Applications on Databricks](https://customer-academy.databricks.com/learn/courses/5856/building-agentic-applications-on-databricks)
+(agents, MLflow tracing, and evaluation). Academy pages require a free sign-in.
 
 ## Prerequisites
 
