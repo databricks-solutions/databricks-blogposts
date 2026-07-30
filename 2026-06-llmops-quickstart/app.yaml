@@ -1,0 +1,15 @@
+command: ["uv", "run", "start-server"]
+# databricks apps listen by default on port 8000
+
+env:
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: MLFLOW_REGISTRY_URI
+    value: "databricks-uc"
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: "experiment"
+  # The UAIG model service (or Foundation Model endpoint) the agent calls.
+  # Set to the model service's fully-qualified name once created, e.g.
+  # cedip_fevm_classic_stable_catalog.default.databricks-claude-sonnet-5
+  - name: LLM_MODEL
+    value: "databricks-claude-sonnet-5"

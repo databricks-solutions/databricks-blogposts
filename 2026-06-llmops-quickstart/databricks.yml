@@ -4,9 +4,6 @@ bundle:
 include:
   - resources/*.yml
 
-workspace:
-  root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
-
 variables:
   catalog_name:
     description: "Unity Catalog catalog name (must already exist)"
@@ -14,19 +11,44 @@ variables:
   schema_name:
     description: "Unity Catalog schema name (created by the bundle if absent)"
     default: llmops_quickstart
-  model_name:
-    description: "Registered model name in Unity Catalog"
-    default: support_ticket_classifier
-  llm_endpoint:
-    # Any Databricks Foundation Model API endpoint works. Good 2026 options:
-    #   databricks-claude-sonnet-5    (default — most capable)
-    #   databricks-claude-sonnet-4-6  (solid, lower cost)
-    #   databricks-claude-haiku-4-5   (cheapest/fastest; may miss the accuracy gate on this task)
-    description: "Databricks Foundation Model API endpoint used by the agent"
-    default: databricks-claude-sonnet-5
+  llm_model:
+    # Fully-qualified name of the UAIG model service the agent calls, e.g.
+    #   <catalog>.default.claude-sonnet-5   (most capable)
+    #   <catalog>.default.gpt-oss-120b      (open model)
+    # Create the model service once in the AI Gateway UI (code creation isn't
+    # available during the beta), then set this to its fully-qualified name.
+    description: "Fully-qualified name of the UAIG model service the agent calls"
+    default: main.default.claude-sonnet-5
   environment:
     description: "Deployment environment label"
     default: dev
+
+resources:
+  apps:
+    ticket_classifier:
+      name: "llmops-quickstart-classifier"
+      description: "Support ticket classifier agent (LLMOps Quickstart)"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-server"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+          - name: LLM_MODEL
+            value: "${var.llm_model}"
+      resources:
+        - name: "experiment"
+          experiment:
+            experiment_id: "${resources.experiments.llmops_experiment.id}"
+            permission: "CAN_MANAGE"
+
+  experiments:
+    llmops_experiment:
+      name: "/Users/${workspace.current_user.userName}/${bundle.target}_llmops_quickstart"
 
 targets:
   dev:

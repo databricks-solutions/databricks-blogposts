@@ -6,7 +6,7 @@
 # MAGIC %md
 # MAGIC # Data Ingestion
 # MAGIC
-# MAGIC Creates sample customer support tickets in a Unity Catalog Delta table.
+# MAGIC Creates sample customer support tickets in a Unity Catalog managed table.
 # MAGIC These records serve as both the evaluation dataset and batch inference input.
 
 # COMMAND ----------

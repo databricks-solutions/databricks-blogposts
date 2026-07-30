@@ -1,166 +1,197 @@
 # LLMOps Quickstart for Databricks
 
-A minimal but complete end-to-end LLMOps example on Databricks, demonstrating the full lifecycle of an LLM-powered application:
+A minimal but complete LLMOps example on Databricks. It carries one small LLM
+application through its whole lifecycle:
 
-**Data Ingestion → Agent Build → Evaluation → Approval → Deployment (governed) → Inference**
+**Data ingestion → agent build → evaluation → approval → deployment → inference**
 
-Use case: a **customer support ticket classifier** that uses a Databricks Foundation Model to categorize free-text tickets into `billing`, `technical_issue`, `feature_request`, `account_management`, or `other`.
+The application is a customer support ticket classifier. Given the free text of a
+ticket, it returns one of five categories: `billing`, `technical_issue`,
+`feature_request`, `account_management`, or `other`. The agent runs as a
+**Databricks App** and calls its LLM through a **Unity AI Gateway (UAIG) model
+service**.
 
-It uses current (2026) Databricks LLMOps building blocks:
+It uses the 2026 building blocks for LLMOps on Databricks:
 
-- **MLflow 3 GenAI evaluation** (`mlflow.genai.evaluate`) with scorers and tracing
-- **Challenger → Champion** model aliases with a human approval gate
-- **Unity AI Gateway** payload logging on the served endpoint — every request/response written to a Delta inference table for audit and monitoring (with notes on adding PII guardrails at the foundation-model layer)
+- **Agent served as a Databricks App** — a FastAPI agent server (MLflow GenAI
+  `@invoke` handler), not a Model Serving endpoint.
+- **UAIG model services** — the agent calls a governed model service by its
+  fully-qualified name, so access control, rate limits, and payload logging live
+  in Unity Catalog rather than in the app.
+- **MLflow 3 GenAI evaluation** — `mlflow.genai.evaluate` with scorers and tracing
+  gates promotion.
 
----
+## What you should know first
+
+This quickstart assumes you are comfortable with:
+
+- Python and the command line
+- Unity Catalog basics (catalogs, schemas, tables, grants)
+- Running the Databricks CLI against a workspace
+- The general idea of an LLM prompt and response
+
+You do not need prior MLflow, agent, or Declarative Automation Bundles experience —
+each is introduced as you reach it. If you want a deeper grounding first, the
+Databricks Academy has a course on DevOps with Declarative Automation Bundles and
+one on agent evaluation.
 
 ## Prerequisites
 
-- [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) v0.200+
-- A Databricks workspace (AWS, Azure, or GCP) with:
+- The [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) and
+  [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+- A Databricks workspace with:
   - Unity Catalog enabled
-  - Foundation Model APIs enabled (for the default `databricks-claude-sonnet-5` endpoint)
-  - Permissions to create schemas, registered models, jobs, and Model Serving endpoints
-  - Unity Catalog privileges on your target catalog for the identity the jobs run as. The jobs run on serverless compute, whose runtime identity needs the relevant catalog/schema privileges (e.g. `USE CATALOG`) — being a workspace admin in the UI isn't always enough. If a job fails with `PERMISSION_DENIED: ... does not have USE CATALOG on Catalog '<name>'`, grant the appropriate privileges to that identity following your organization's access policies.
-
----
-
-## Quickstart
-
-### 1. Authenticate
-
-```bash
-databricks auth login --host https://<your-workspace>.cloud.databricks.com
-```
-
-Or configure a named profile:
-
-```bash
-databricks configure --profile my-profile
-```
-
-### 2. Clone and deploy
-
-```bash
-git clone https://github.com/CEDipEngineering/LLMOps-Quickstart.git
-cd LLMOps-Quickstart
-
-databricks bundle deploy
-```
-
-This creates the Unity Catalog schema, MLflow experiment, and all jobs in your workspace under your user directory.
-
-> **Using a named profile?** Prefix all commands with `--profile my-profile`.
-
-### 3. Run the pipeline
-
-Run each job in order:
-
-```bash
-# Step 1 — ingest sample support tickets into a Delta table
-databricks bundle run data_preprocessing_job
-
-# Step 2 — build and evaluate the classifier; register as Challenger if accuracy >= 80%
-databricks bundle run model_build_evaluation_job
-
-# Step 3 — approve the Challenger (promote to Champion) and deploy it, with AI Gateway.
-#          Deployment does nothing until you approve: pass approved=true.
-databricks bundle run model_deployment_job --params approved=true
-
-# Step 4 — run batch inference over all tickets
-databricks bundle run batch_inference_job
-```
-
-> **The approval gate:** step 2 only registers a **Challenger**. Nothing ships until a
-> human reviews the metrics and re-runs step 3 with `--params approved=true`, which
-> promotes the Challenger to **Champion** and then deploys it.
-
----
+  - Foundation Model APIs and UAIG model services enabled
+  - Databricks Apps enabled
+  - Unity Catalog privileges for the identity the jobs and app run as (the serverless
+    runtime identity needs the relevant catalog/schema grants; being a workspace admin
+    in the UI isn't always enough)
+- A UAIG model service for the LLM. During the model services beta you create it once
+  in the AI Gateway UI (code creation isn't available yet), then reference it by its
+  fully-qualified name, for example `qs_catalog.default.claude-sonnet-5`.
 
 ## Configuration
 
-All configuration is exposed as bundle variables with sensible defaults. No edits to source files are needed for most workspaces.
+Settings are bundle variables with sensible defaults:
 
 | Variable | Default | Description |
 |---|---|---|
 | `catalog_name` | `main` | Unity Catalog catalog (must already exist) |
 | `schema_name` | `llmops_quickstart` | UC schema (created by the bundle) |
-| `model_name` | `support_ticket_classifier` | Registered model name |
-| `llm_endpoint` | `databricks-claude-sonnet-5` | Foundation Model API endpoint used by the agent |
+| `llm_model` | `main.default.claude-sonnet-5` | Fully-qualified name of the UAIG model service the agent calls |
 
-Any Foundation Model API endpoint works. Good 2026 options: `databricks-claude-sonnet-5` (default — most capable), `databricks-claude-sonnet-4-6` (solid, lower cost), `databricks-claude-haiku-4-5` (cheapest/fastest, but may miss the accuracy gate on this task).
+`main` is a common catalog name, so you may already have one. To keep the quickstart
+self-contained and aligned with the companion
+[MLOps Quickstart](https://github.com/databricks-solutions/mlops-quickstart), you can
+point it at a dedicated catalog, e.g. `qs_catalog.llmops_quickstart`.
 
-Override variables at deploy time:
+Override at deploy time:
 
 ```bash
 databricks bundle deploy \
-  -v catalog_name=my_catalog \
-  -v llm_endpoint=databricks-claude-sonnet-5
+  -v catalog_name=qs_catalog \
+  -v llm_model=qs_catalog.default.gpt-oss-120b
 ```
 
-Or add persistent overrides to `databricks.yml` under the target's `variables:` block.
+## Run it
 
-### Production target
+### 1. Deploy the bundle
 
 ```bash
-databricks bundle deploy --target prod
-databricks bundle run --target prod data_preprocessing_job
-# ... etc.
+databricks bundle deploy \
+  -v catalog_name=qs_catalog \
+  -v llm_model=qs_catalog.default.claude-sonnet-5
 ```
 
-The `prod` target uses `llmops_quickstart_prod` as the schema name.
+A bundle ([Declarative Automation Bundles](https://docs.databricks.com/dev-tools/bundles/index.html),
+or DABs) is a folder of YAML plus the notebooks and files its jobs and apps need.
+`deploy` creates the schema, the MLflow experiment, the data-ingestion job, and the
+app.
 
----
+### 2. Ingest the data
 
-## Project Structure
+```bash
+databricks bundle run data_preprocessing_job -v catalog_name=qs_catalog
+```
+
+This writes 30 hand-labelled support tickets (six per category) to a Unity Catalog
+managed table, `support_tickets`. It doubles as the evaluation set.
+
+### 3. Evaluate the agent
+
+```bash
+uv sync
+uv run agent-evaluate
+```
+
+`mlflow.genai.evaluate` runs the agent over the 30 tickets with two scorers: a
+deterministic `exact_match` scorer (the promotion gate) and the out-of-the-box
+`Correctness` LLM judge (shown for demonstration). Every prediction is captured as an
+MLflow Trace. The command exits non-zero if exact-match accuracy is below the
+threshold (default 80%), so it works as a CI gate.
+
+Set `CATALOG_NAME` and `SCHEMA_NAME` (and `LLM_MODEL`) in your `.env` first — see
+`.env.example`.
+
+### 4. Approve and deploy the app
+
+Evaluation is the gate; a person decides to ship. Once you have reviewed the eval run
+and you are satisfied, deploy the app:
+
+```bash
+databricks apps deploy llmops-quickstart-classifier \
+  --source-code-path "/Workspace/Users/<you>/.bundle/llmops-quickstart/dev/files"
+```
+
+The app is a FastAPI agent server. It exposes the classifier at `/invocations` and
+sends every request to the LLM through the model service, so the AI Gateway governs
+and logs the traffic.
+
+### 5. Inference
+
+Send a ticket to the running app:
+
+```python
+from databricks.sdk import WorkspaceClient
+
+w = WorkspaceClient()
+resp = w.api_client.do(
+    "POST",
+    f"/api/2.0/apps/{app_url}/invocations",
+    body={"ticket": "I was billed twice for my annual plan."},
+)
+print(resp["category"])   # billing
+```
+
+For batch scoring, read `support_tickets` and call the app for each row.
+
+## Local development
+
+Run the agent server on your machine before deploying:
+
+```bash
+cp .env.example .env    # then fill in profile, experiment id, and LLM_MODEL
+uv run start-server     # serves on http://localhost:8000
+```
+
+Test it:
+
+```bash
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{"ticket": "The mobile app crashes on iOS 17"}'
+# {"category": "technical_issue"}
+```
+
+## Project structure
 
 ```
+agent_server/
+  agent.py              # @invoke ticket classifier; calls the model service
+  evaluate_agent.py     # mlflow.genai.evaluate with the exact_match gate
+  start_server.py       # FastAPI agent server entry point
 notebooks/
   1_data_preprocessing/
-    data_ingestion.py         # Creates support_tickets Delta table (30 labelled rows)
-  2_model_build_and_deploy/
-    quickstart_agent.py       # MLflow ChatAgent definition
-    model_config.yml          # Default agent config (llm_endpoint)
-    model_build.py            # Logs agent to MLflow
-    model_evaluation.py       # mlflow.genai.evaluate; registers Challenger if accuracy >= threshold
-    model_approval.py         # Human gate: promotes Challenger -> Champion on approval
-    model_deployment.py       # Deploys Champion to Model Serving + Unity AI Gateway
-  3_inference/
-    batch_inference.py        # Batch predictions written to inference_results table
-    realtime_inference.py     # Live queries via OpenAI-compatible API
+    data_ingestion.py   # writes the support_tickets UC managed table
 resources/
-  model_artifacts.yml         # UC schema + MLflow experiment resources
   1_data_preprocessing_job.yml
-  2_1_model_build_evaluation_job.yml
-  2_2_model_deployment_job.yml
-  3_batch_inference_job.yml
-databricks.yml                # Bundle entry point — targets, variables
+app.yaml                # app runtime config (command + env)
+databricks.yml          # bundle: app resource, experiment, variables, targets
+pyproject.toml          # dependencies (managed with uv)
 ```
-
----
-
-## How It Works
-
-1. **Data Ingestion** — 30 hand-labelled support tickets (6 per category) are written to a Delta table in Unity Catalog.
-2. **Model Build** — `quickstart_agent.py` is logged as an MLflow `ChatAgent` model. The configured LLM endpoint is baked into the model artifact via `mlflow.models.ModelConfig`.
-3. **Evaluation** — `mlflow.genai.evaluate()` runs the agent over all 30 tickets with two scorers: a deterministic **`exact_match`** scorer (the promotion gate) and the built-in **`Correctness`** LLM judge (shown for demonstration). Every prediction is captured as an MLflow **Trace**. If exact-match accuracy meets the threshold (default 80%), the version is registered in Unity Catalog and aliased **Challenger**.
-4. **Approval** — `model_approval.py` shows the Challenger's metrics (and the current Champion's, if any). Passing `approved=true` promotes the Challenger to **Champion**; otherwise the job stops and nothing deploys.
-5. **Deployment** — The Champion version is deployed to a Mosaic AI Model Serving endpoint via `databricks.agents.deploy()`, then **Unity AI Gateway** payload logging is enabled on it: every request/response is written to a Delta inference table (`agent_inference_payload`) for audit and monitoring. (Guardrails and rate limits attach to foundation/open-model endpoints, not custom agent endpoints — see below.)
-6. **Inference** — Batch inference loads the Champion model directly; real-time inference queries the serving endpoint via the OpenAI-compatible API. Every real-time call is logged to the inference table.
-
-### Adding PII guardrails and rate limits
-
-AI Gateway **guardrails** (PII detection/redaction, safety) and **rate limits** apply to endpoints that serve a foundation or open model directly — not to custom agent endpoints. To govern the LLM the agent calls, create a Model Serving endpoint for an open model (e.g. `system.ai.llama_v3_3_70b_instruct`) with an `ai_gateway` block that sets `guardrails` and `rate_limits`, then point `llm_endpoint` at it. The agent's own endpoint keeps the inference-table logging shown above.
-
----
 
 ## Before you call it done
 
 - [ ] `databricks bundle validate` passes
-- [ ] All four jobs run green in order
-- [ ] Evaluation registered a **Challenger** (exact-match accuracy ≥ threshold)
-- [ ] Approval promoted Challenger → **Champion**
-- [ ] Serving endpoint is **Ready**
-- [ ] The endpoint shows **AI Gateway** inference-table logging enabled
-- [ ] The `agent_inference_payload` table exists and receives rows after a query
-- [ ] `--target prod` deploys into its own schema
+- [ ] The ingestion job wrote `support_tickets`
+- [ ] `uv run agent-evaluate` passes the threshold, with traces in the experiment
+- [ ] The app is deployed and `/invocations` returns a category
+- [ ] The model service shows the agent's traffic (governance and logging)
+- [ ] The `prod` target deploys into its own schema
+
+## Notes
+
+- The `llm_model` value is the only thing you change to switch models — point it at
+  a different model service (e.g. `qs_catalog.default.gpt-oss-120b`).
+- The Databricks Apps build installs dependencies from the workspace package proxy.
+  If a build fails on a transient package-download error, retry the deploy.
