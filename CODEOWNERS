@@ -41,3 +41,5 @@
 /2026-05-coding-agent-sandboxes/* @jlieow
 /2026-06-rtm-on-sdp-flight-tracker/* @apingledbx
 /2026-07-cpg-brand-copilot-agent/* @sashankkotta-db @AyaskDatabricks
+/2026-07-spark-declarative-pipeline-blueprint-demo/* @karimhamed-db @taras-cha
+/2026-07-sdp-foreachbatch-sink/* @jarmstrongdbrx
