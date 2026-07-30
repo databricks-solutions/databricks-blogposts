@@ -1,0 +1,127 @@
+bundle:
+  name: northstar_brand_copilot
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deployment variables — the SINGLE place to configure this app.
+#
+# Set them once in deployment/config.env (deploy.sh sources it and exports the
+# matching BUNDLE_VAR_* automatically), or pass them inline:
+#     databricks bundle deploy --var="catalog=...,warehouse_id=...,genie_space_id=...,experiment_id=..."
+# or via environment:  export BUNDLE_VAR_catalog=...   (one per variable)
+#
+# Variables without a `default` are REQUIRED — `bundle validate`/`deploy` fails
+# until they are provided.
+# ─────────────────────────────────────────────────────────────────────────────
+variables:
+  catalog:
+    description: "Unity Catalog catalog holding the CPG tables + Vector Search index"
+  schema:
+    description: "Schema within the catalog"
+    default: "northstar_cpg"
+  warehouse_id:
+    description: "SQL warehouse ID the agent uses for Genie / SQL"
+  genie_space_id:
+    description: "Genie space ID"
+  experiment_id:
+    description: "MLflow experiment ID (tracing + model logging)"
+  lakebase_instance_name:
+    description: "Lakebase (Postgres) instance for long-term memory"
+    default: "northstar-lakebase"
+  model_endpoint:
+    description: "Foundation Model serving endpoint for the agent LLM"
+    default: "databricks-claude-sonnet-4-5"
+  embedding_endpoint:
+    description: "Embedding serving endpoint for Vector Search"
+    default: "databricks-gte-large-en"
+
+resources:
+  apps:
+    agent_langgraph:
+      name: "northstar-brand-copilot"
+      description: "NorthStar Brand Copilot — CPG brand & sales assistant (LangGraph + Genie + Vector Search + Lakebase)"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-server"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: API_PROXY
+            value: "http://localhost:8000/invocations"
+          - name: CHAT_APP_PORT
+            value: "3000"
+          - name: CHAT_PROXY_TIMEOUT_SECONDS
+            value: "300"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+          # --- Agent configuration ---
+          - name: MODEL_ENDPOINT
+            value: "${var.model_endpoint}"
+          - name: GENIE_SPACE_ID
+            value: "${var.genie_space_id}"
+          - name: VS_CATALOG
+            value: "${var.catalog}"
+          - name: VS_SCHEMA
+            value: "${var.schema}"
+          - name: WAREHOUSE_ID
+            value: "${var.warehouse_id}"
+          # --- Lakebase long-term memory ---
+          - name: LAKEBASE_INSTANCE_NAME
+            value_from: "database"
+          - name: EMBEDDING_ENDPOINT
+            value: "${var.embedding_endpoint}"
+          - name: EMBEDDING_DIMS
+            value: "1024"
+
+      # Resources this app's service principal can access
+      resources:
+        - name: 'experiment'
+          experiment:
+            experiment_id: "${var.experiment_id}"
+            permission: 'CAN_MANAGE'
+
+        - name: 'llm'
+          serving_endpoint:
+            name: "${var.model_endpoint}"
+            permission: 'CAN_QUERY'
+
+        - name: 'embedding'
+          serving_endpoint:
+            name: "${var.embedding_endpoint}"
+            permission: 'CAN_QUERY'
+
+        - name: 'genie_space'
+          genie_space:
+            name: 'NorthStar Brand Copilot — Sales & Promotions'
+            space_id: "${var.genie_space_id}"
+            permission: 'CAN_RUN'
+
+        - name: 'vector_index'
+          uc_securable:
+            securable_full_name: "${var.catalog}.${var.schema}.documents_index"
+            securable_type: 'TABLE'
+            permission: 'SELECT'
+
+        - name: 'database'
+          database:
+            instance_name: "${var.lakebase_instance_name}"
+            database_name: 'databricks_postgres'
+            permission: 'CAN_CONNECT_AND_CREATE'
+
+        - name: 'warehouse'
+          sql_warehouse:
+            id: "${var.warehouse_id}"
+            permission: 'CAN_USE'
+
+targets:
+  dev:
+    mode: development
+    default: true
+
+  prod:
+    mode: production
+    resources:
+      apps:
+        agent_langgraph:
+          name: northstar-brand-copilot

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NorthStar Brand Copilot</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{ --lava:#FF3621; --navy:#1B3139; --blue:#2272B4; --green:#00A972;
+         --amber:#FFAB00; --gray:#5A666B; --lgray:#F5F5F3; --line:#E3E6E8; }
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{font-family:'DM Sans',Segoe UI,Arial,sans-serif;color:var(--navy);background:var(--lgray)}
+  header{background:var(--navy);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px}
+  header .dot{width:14px;height:14px;border-radius:3px;background:var(--lava)}
+  header h1{font-size:18px;margin:0;font-weight:700}
+  header .sub{color:#9fb0b6;font-size:12px;margin-left:6px}
+  .tabs{display:flex;gap:4px;background:#fff;border-bottom:1px solid var(--line);padding:0 18px}
+  .tab{padding:14px 18px;cursor:pointer;font-weight:600;color:var(--gray);border-bottom:3px solid transparent}
+  .tab.active{color:var(--navy);border-bottom-color:var(--lava)}
+  main{padding:22px;max-width:1180px;margin:0 auto}
+  .hidden{display:none}
+  /* dashboard */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .kpi .v{font-size:26px;font-weight:700;color:var(--navy)}
+  .kpi .l{font-size:12px;color:var(--gray);margin-top:4px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card h3{margin:0 0 12px;font-size:14px;color:var(--navy)}
+  .card .bar{height:4px;width:38px;background:var(--lava);border-radius:2px;margin-bottom:12px}
+  canvas{max-height:260px}
+  /* chat */
+  #chat{display:flex;flex-direction:column;height:calc(100vh - 190px);background:#fff;
+        border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  #msgs{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+  .msg{max-width:78%;padding:12px 14px;border-radius:12px;line-height:1.45;white-space:pre-wrap}
+  .me{align-self:flex-end;background:var(--navy);color:#fff;border-bottom-right-radius:3px}
+  .bot{align-self:flex-start;background:var(--lgray);color:var(--navy);border-bottom-left-radius:3px}
+  .bot table{border-collapse:collapse;margin:6px 0} .bot td,.bot th{border:1px solid var(--line);padding:4px 8px;font-size:13px}
+  .composer{display:flex;gap:10px;padding:14px;border-top:1px solid var(--line)}
+  .composer input{flex:1;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px}
+  .composer button{background:var(--lava);color:#fff;border:0;border-radius:10px;padding:0 20px;font-weight:700;cursor:pointer}
+  .composer button:disabled{opacity:.5;cursor:default}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 12px}
+  .chip{font-size:12px;color:var(--navy);background:var(--lgray);border:1px solid var(--line);
+        border-radius:16px;padding:6px 12px;cursor:pointer}
+  .hint{color:var(--gray);font-size:13px;text-align:center;margin-top:30px}
+</style>
+</head>
+<body>
+  <header>
+    <span class="dot"></span>
+    <h1>NorthStar Brand Copilot</h1>
+    <span class="sub">CPG Brand &amp; Sales Intelligence · Databricks</span>
+  </header>
+  <div class="tabs">
+    <div class="tab active" data-tab="dash" onclick="showTab('dash')">📊 Dashboard</div>
+    <div class="tab" data-tab="chat" onclick="showTab('chat')">💬 Assistant</div>
+  </div>
+
+  <main>
+    <!-- DASHBOARD -->
+    <section id="dash">
+      <div class="kpis" id="kpis"></div>
+      <div class="grid">
+        <div class="card"><div class="bar"></div><h3>Sell-out revenue — last 26 weeks</h3><canvas id="c_trend"></canvas></div>
+        <div class="card"><div class="bar"></div><h3>Avg trade-promotion ROI by type</h3><canvas id="c_roi"></canvas></div>
+        <div class="card"><div class="bar"></div><h3>Sell-out revenue by category</h3><canvas id="c_cat"></canvas></div>
+        <div class="card"><div class="bar"></div><h3>Top retailers by revenue</h3><canvas id="c_ret"></canvas></div>
+        <div class="card" style="grid-column:1 / span 2"><div class="bar"></div><h3>Brand dollar share — latest month</h3><canvas id="c_share"></canvas></div>
+      </div>
+      <p class="hint" id="dash_status">Loading analytics…</p>
+    </section>
+
+    <!-- ASSISTANT -->
+    <section id="chat" class="hidden">
+      <div id="msgs">
+        <div class="hint">Ask about sales &amp; promotions (Genie), product specs &amp; reviews (Vector Search),
+          or ask me to remember a decision (Lakebase).</div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="composer">
+        <input id="q" placeholder="Ask the NorthStar Brand Copilot…" onkeydown="if(event.key==='Enter')send()" />
+        <button id="sendbtn" onclick="send()">Send</button>
+      </div>
+    </section>
+  </main>
+
+<script>
+const USER = "demo-user@northstar.com";
+const LAVA="#FF3621", NAVY="#1B3139", BLUE="#2272B4", GREEN="#00A972", AMBER="#FFAB00", PURP="#8A63D2";
+const PALETTE=[LAVA,BLUE,GREEN,AMBER,PURP,"#FF7A66","#56A8E0","#00C99A","#FFC34D","#A98AE0"];
+let dashLoaded=false;
+
+function showTab(t){
+  document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active',e.dataset.tab===t));
+  document.getElementById('dash').classList.toggle('hidden',t!=='dash');
+  document.getElementById('chat').classList.toggle('hidden',t!=='chat');
+  if(t==='dash' && !dashLoaded) loadDashboard();
+}
+
+async function loadDashboard(){
+  dashLoaded=true;
+  try{
+    const r = await fetch('/api/analytics'); const d = await r.json();
+    if(d.error){ document.getElementById('dash_status').textContent='Analytics error: '+d.error; return; }
+    document.getElementById('kpis').innerHTML = d.kpis.map(k=>
+      `<div class="kpi"><div class="v">${k.value}</div><div class="l">${k.label}</div></div>`).join('');
+    const noLegend={plugins:{legend:{display:false}}};
+    new Chart(c_trend,{type:'line',data:{labels:d.revenue_trend.labels,
+      datasets:[{data:d.revenue_trend.values,borderColor:LAVA,backgroundColor:'rgba(255,54,33,.08)',fill:true,tension:.3,pointRadius:0}]},
+      options:{...noLegend,responsive:true}});
+    new Chart(c_roi,{type:'bar',data:{labels:d.roi_by_type.labels,
+      datasets:[{data:d.roi_by_type.avg_roi,backgroundColor:d.roi_by_type.avg_roi.map(v=>v<0?LAVA:GREEN)}]},
+      options:{...noLegend}});
+    new Chart(c_cat,{type:'doughnut',data:{labels:d.sales_by_category.labels,
+      datasets:[{data:d.sales_by_category.values,backgroundColor:PALETTE}]},options:{plugins:{legend:{position:'right'}}}});
+    new Chart(c_ret,{type:'bar',data:{labels:d.top_retailers.labels,
+      datasets:[{data:d.top_retailers.values,backgroundColor:BLUE}]},options:{...noLegend,indexAxis:'y'}});
+    new Chart(c_share,{type:'bar',data:{labels:d.share_by_brand.labels,
+      datasets:[{label:'$ share %',data:d.share_by_brand.values,backgroundColor:NAVY}]},options:{...noLegend}});
+    document.getElementById('dash_status').textContent='';
+  }catch(e){ document.getElementById('dash_status').textContent='Failed to load analytics: '+e; }
+}
+
+const SUGGESTIONS=[
+  "Which 5 trade promotions had the most negative ROI last quarter?",
+  "What allergens are in Aurora Oat Milk and what do consumers dislike?",
+  "How has Aurora's dollar share in Beverages trended?",
+  "Remember: cut BOGO at Walgreens and shift West-region funds to Feature+Display."
+];
+document.getElementById('chips').innerHTML = SUGGESTIONS.map(s=>`<span class="chip" onclick="ask(this.textContent)">${s}</span>`).join('');
+function ask(t){ document.getElementById('q').value=t; send(); }
+
+const history=[];
+function addMsg(text, cls){
+  const m=document.getElementById('msgs');
+  const d=document.createElement('div'); d.className='msg '+cls;
+  if(cls==='bot') d.innerHTML=renderMd(text); else d.textContent=text;
+  m.appendChild(d); m.scrollTop=m.scrollHeight; return d;
+}
+function renderMd(t){ // minimal: bold + tables + line breaks
+  t=t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  t=t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+  return t;
+}
+async function send(){
+  const inp=document.getElementById('q'); const q=inp.value.trim(); if(!q) return;
+  inp.value=''; document.getElementById('sendbtn').disabled=true;
+  addMsg(q,'me'); history.push({role:'user',content:q});
+  const thinking=addMsg('…','bot');
+  try{
+    const res=await fetch('/invocations',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({input:history,custom_inputs:{user_id:USER}})});
+    const data=await res.json();
+    let text='';
+    for(const item of (data.output||[])){
+      if(item.type==='message' && item.content){
+        let t=''; for(const c of item.content){ if(c.type==='output_text') t+=(c.text||''); }
+        if(t) text=t; // keep last assistant message
+      }
+    }
+    if(!text) text='(no response)';
+    thinking.innerHTML=renderMd(text);
+    history.push({role:'assistant',content:text});
+  }catch(e){ thinking.textContent='Error: '+e; }
+  document.getElementById('sendbtn').disabled=false;
+  document.getElementById('msgs').scrollTop=document.getElementById('msgs').scrollHeight;
+}
+// preload dashboard on first paint
+loadDashboard();
+</script>
+</body>
+</html>
