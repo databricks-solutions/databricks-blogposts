@@ -148,12 +148,13 @@ warehouse_analysis = spark.sql("""
         GROUP BY usage_metadata.warehouse_id
     ),
     wh_queries AS (
-        SELECT warehouse_id,
+        SELECT compute.warehouse_id AS warehouse_id,
                COUNT(*) AS queries_30d,
                COUNT(DISTINCT DATE(start_time)) AS query_days
         FROM system.query.history
         WHERE start_time >= DATEADD(DAY, -30, CURRENT_DATE())
-        GROUP BY warehouse_id
+            AND compute.warehouse_id IS NOT NULL
+        GROUP BY compute.warehouse_id
     )
     SELECT
         wc.warehouse_id, wc.cost_30d, wc.billing_days,

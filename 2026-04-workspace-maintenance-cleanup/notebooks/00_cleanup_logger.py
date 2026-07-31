@@ -8,14 +8,13 @@ from datetime import datetime
 class CleanupLogger:
     """Log every cleanup action to a Delta table for auditability."""
 
-    def __init__(self, spark, catalog="maintenance", schema="cleanup"):
+    def __init__(self, spark, catalog="finops", schema="cleanup"):
         self.spark = spark
         self.table = f"{catalog}.{schema}.cleanup_log"
         self.entries = []
         self._ensure_table(catalog, schema)
 
     def _ensure_table(self, catalog, schema):
-        self.spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
         self.spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
         self.spark.sql(f"""
             CREATE TABLE IF NOT EXISTS {self.table} (

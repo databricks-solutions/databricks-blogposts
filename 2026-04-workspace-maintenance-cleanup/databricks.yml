@@ -1,6 +1,9 @@
 bundle:
   name: workspace-cleanup
 
+workspace:
+  host: https://<your-workspace>.azuredatabricks.net
+
 variables:
   environment:
     default: dev
