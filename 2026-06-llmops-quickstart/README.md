@@ -51,6 +51,8 @@ Academy courses [DevOps Essentials for Data Engineering](https://customer-academ
   in the AI Gateway UI (code creation isn't available yet), then reference it by its
   fully-qualified name, for example `qs_catalog.default.claude-sonnet-5`.
 
+![Creating a Unity AI Gateway model service in the UI](docs/img/create_model_service.gif)
+
 ## Configuration
 
 Settings are bundle variables with sensible defaults:
@@ -110,6 +112,11 @@ deterministic `exact_match` scorer (the promotion gate) and the out-of-the-box
 `Correctness` LLM judge (shown for demonstration). Every prediction is captured as an
 MLflow Trace. The command exits non-zero if exact-match accuracy is below the
 threshold (default 80%), so it works as a CI gate.
+
+Open the **Experiments** tab and click into a trace to see each prediction's inputs,
+outputs, expectations, and scorer results:
+
+![Inspecting an evaluation trace in the Experiments UI](docs/img/evaluation_traces.gif)
 
 Set `CATALOG_NAME` and `SCHEMA_NAME` (and `LLM_MODEL`) in your `.env` first — see
 `.env.example`.
