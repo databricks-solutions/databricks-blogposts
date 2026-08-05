@@ -24,11 +24,12 @@ variables:
     default: dev
   prod_service_principal:
     # Application ID (or username) of the identity that deploys the prod target.
-    # Pins the prod bundle root to one fixed, restricted location so the deploy
-    # does not follow whoever happens to run it. Override with
+    # Pins the prod bundle root to one fixed location so the deploy does not follow
+    # whoever happens to run it. Only the prod target uses it — set it with
     #   --var="prod_service_principal=<your-sp-application-id>"
-    description: "Identity that runs the prod deploy"
-    default: ""
+    # The placeholder default keeps dev usable with no flags; prod overrides it.
+    description: "Identity that runs the prod deploy (set this for --target prod)"
+    default: "CHANGE_ME"
 
 resources:
   apps:

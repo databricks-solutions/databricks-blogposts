@@ -12,6 +12,7 @@ decide whether to promote.
 
 import asyncio
 import os
+from pathlib import Path
 
 import mlflow
 from databricks.sdk import WorkspaceClient
@@ -19,13 +20,24 @@ from dotenv import load_dotenv
 from mlflow.genai.agent_server import get_invoke_function
 from mlflow.genai.scorers import Correctness, scorer
 
-load_dotenv(dotenv_path=".env", override=True)
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
 # Import the agent so the @invoke-registered function is discoverable.
 from agent_server import agent  # noqa: E402, F401
 
-CATALOG = os.getenv("CATALOG_NAME", "main")
-SCHEMA = os.getenv("SCHEMA_NAME", "llmops_quickstart")
+# No defaults for the table location: evaluating whichever schema happens to be the
+# default is worse than failing, because a passing score against the wrong data looks
+# like a green gate. Set these in .env (see .env.example) or the CI environment.
+try:
+    CATALOG = os.environ["CATALOG_NAME"]
+    SCHEMA = os.environ["SCHEMA_NAME"]
+except KeyError as missing:
+    raise SystemExit(
+        f"{missing.args[0]} is not set. Point CATALOG_NAME and SCHEMA_NAME at the "
+        "catalog and schema you deployed the bundle to, so the evaluation reads the "
+        "support_tickets table it created. See .env.example."
+    ) from None
+
 ACCURACY_THRESHOLD = float(os.getenv("ACCURACY_THRESHOLD", "0.8"))
 
 
@@ -76,6 +88,12 @@ def evaluate():
     assert invoke_fn is not None, (
         "No @invoke-registered function found. Ensure the handler is decorated with @invoke()."
     )
+
+    if not os.getenv("MLFLOW_EXPERIMENT_ID"):
+        raise SystemExit(
+            "MLFLOW_EXPERIMENT_ID is not set, so there is nowhere to log the traces and "
+            "scores. Set it to the experiment the bundle created. See .env.example."
+        )
 
     eval_dataset = _load_eval_dataset()
     print(f"Evaluating on {len(eval_dataset)} labelled tickets.")

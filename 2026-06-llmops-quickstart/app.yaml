@@ -1,6 +1,9 @@
 command: ["uv", "run", "start-server"]
 # databricks apps listen by default on port 8000
 
+# These are defaults for a standalone `databricks apps deploy`. When you deploy
+# through the bundle, the app resource's `config.env` in databricks.yml overrides
+# what is set here.
 env:
   - name: MLFLOW_TRACKING_URI
     value: "databricks"
@@ -8,8 +11,8 @@ env:
     value: "databricks-uc"
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
-  # The UAIG model service (or Foundation Model endpoint) the agent calls.
-  # Set to the model service's fully-qualified name once created, e.g.
-  # cedip_fevm_classic_stable_catalog.default.databricks-claude-sonnet-5
+  # Fully-qualified name of the UAIG model service the agent calls. Point this at
+  # the model service you created in the AI Gateway UI, for example
+  # qs_catalog.default.claude-sonnet-5
   - name: LLM_MODEL
-    value: "databricks-claude-sonnet-5"
+    value: "main.default.claude-sonnet-5"

@@ -9,10 +9,10 @@ During the UAIG model services beta you create the model service once in the UI
 (code creation isn't available yet), then point LLM_MODEL at its fully-qualified
 name, for example:
 
-    LLM_MODEL=cedip_fevm_classic_stable_catalog.default.claude-sonnet-5
+    LLM_MODEL=qs_catalog.default.claude-sonnet-5
 
-Model services are queried through the AI Gateway, not the per-endpoint serving
-path, so the OpenAI client points at {host}/ai-gateway/mlflow/v1.
+Model services are queried through the AI Gateway's chat-completions route
+({host}/ai-gateway/mlflow/v1/chat/completions), not the per-endpoint serving path.
 """
 
 import os
