@@ -22,11 +22,20 @@ variables:
   environment:
     description: "Deployment environment label"
     default: dev
+  prod_service_principal:
+    # Application ID (or username) of the identity that deploys the prod target.
+    # Pins the prod bundle root to one fixed, restricted location so the deploy
+    # does not follow whoever happens to run it. Override with
+    #   --var="prod_service_principal=<your-sp-application-id>"
+    description: "Identity that runs the prod deploy"
+    default: ""
 
 resources:
   apps:
     ticket_classifier:
-      name: "llmops-quickstart-classifier"
+      # Suffixed with the target so dev and prod can coexist in one workspace
+      # (development mode does not prefix app names the way it does jobs).
+      name: "llmops-quickstart-classifier-${bundle.target}"
       description: "Support ticket classifier agent (LLMOps Quickstart)"
       source_code_path: ./
       config:
@@ -59,6 +68,13 @@ targets:
 
   prod:
     mode: production
+    # Pin prod to one fixed location so the deploy lands in the same place
+    # regardless of who runs it, instead of following the deployer's home folder.
+    # Point this at the identity your CI deploys as. Keep it under /Workspace/Users
+    # rather than /Workspace/Shared, which would be writable by all workspace users.
+    # (Apps require run_as to match the owner, so the deploying identity owns the app.)
+    workspace:
+      root_path: /Workspace/Users/${var.prod_service_principal}/.bundle/${bundle.name}/${bundle.target}
     variables:
       schema_name: llmops_quickstart_prod
       environment: prod

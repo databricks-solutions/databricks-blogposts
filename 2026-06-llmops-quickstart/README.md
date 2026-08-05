@@ -21,6 +21,20 @@ It uses the 2026 building blocks for LLMOps on Databricks:
 - **MLflow 3 GenAI evaluation** — `mlflow.genai.evaluate` with scorers and tracing
   gates promotion.
 
+![The LLMOps lifecycle: ingestion, agent, evaluation, approval, deployment, inference](docs/img/llmops-lifecycle.png)
+
+## How the pieces fit together
+
+![Architecture: the app calls a UAIG model service; evaluation logs traces to an MLflow experiment](docs/img/llmops-architecture.png)
+
+Both diagrams are generated from the Mermaid sources next to them
+(`docs/img/*.mmd`). To regenerate after a change:
+
+```bash
+npx @mermaid-js/mermaid-cli -i docs/img/llmops-lifecycle.mmd \
+  -o docs/img/llmops-lifecycle.png -w 2600 -b white
+```
+
 ## What you should know first
 
 This quickstart assumes you are comfortable with:
@@ -62,6 +76,7 @@ Settings are bundle variables with sensible defaults:
 | `catalog_name` | `main` | Unity Catalog catalog (must already exist) |
 | `schema_name` | `llmops_quickstart` | UC schema (created by the bundle) |
 | `llm_model` | `main.default.claude-sonnet-5` | Fully-qualified name of the UAIG model service the agent calls |
+| `prod_service_principal` | *(empty)* | Identity the `prod` target deploys as. Pins the prod bundle root to one fixed location instead of the deployer's home folder. Only needed for `--target prod`. |
 
 `main` is a common catalog name, so you may already have one. To keep the quickstart
 self-contained and aligned with the companion
@@ -72,8 +87,8 @@ Override at deploy time:
 
 ```bash
 databricks bundle deploy \
-  -v catalog_name=qs_catalog \
-  -v llm_model=qs_catalog.default.gpt-oss-120b
+  --var="catalog_name=qs_catalog" \
+  --var="llm_model=qs_catalog.default.gpt-oss-120b"
 ```
 
 ## Run it
@@ -82,8 +97,8 @@ databricks bundle deploy \
 
 ```bash
 databricks bundle deploy \
-  -v catalog_name=qs_catalog \
-  -v llm_model=qs_catalog.default.claude-sonnet-5
+  --var="catalog_name=qs_catalog" \
+  --var="llm_model=qs_catalog.default.claude-sonnet-5"
 ```
 
 A bundle ([Declarative Automation Bundles](https://docs.databricks.com/dev-tools/bundles/index.html),
@@ -94,7 +109,7 @@ app.
 ### 2. Ingest the data
 
 ```bash
-databricks bundle run data_preprocessing_job -v catalog_name=qs_catalog
+databricks bundle run data_preprocessing_job --var="catalog_name=qs_catalog"
 ```
 
 This writes 30 hand-labelled support tickets (six per category) to a Unity Catalog
@@ -127,9 +142,14 @@ Evaluation is the gate; a person decides to ship. Once you have reviewed the eva
 and you are satisfied, deploy the app:
 
 ```bash
-databricks apps deploy llmops-quickstart-classifier \
-  --source-code-path "/Workspace/Users/<you>/.bundle/llmops-quickstart/dev/files"
+databricks apps deploy llmops-quickstart-classifier-dev \
+  --source-code-path "$(databricks bundle summary -o json | \
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["workspace"]["file_path"])')"
 ```
+
+The source path is wherever the bundle uploaded its files, which depends on the
+target and the identity that deployed it — read it from `bundle summary` rather
+than hardcoding it.
 
 The app is a FastAPI agent server. It exposes the classifier at `/invocations` and
 sends every request to the LLM through the model service, so the AI Gateway governs
@@ -139,16 +159,24 @@ and logs the traffic.
 
 Send a ticket to the running app:
 
+A Databricks App is a web server with its own hostname, so you call the app's URL
+directly — there is no `/api/2.0/apps/.../invocations` control-plane endpoint. Look
+the URL up with the SDK, then POST to its `/invocations` route:
+
 ```python
+import requests
 from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
-resp = w.api_client.do(
-    "POST",
-    f"/api/2.0/apps/{app_url}/invocations",
-    body={"ticket": "I was billed twice for my annual plan."},
+app = w.apps.get("llmops-quickstart-classifier-dev")
+
+resp = requests.post(
+    f"{app.url}/invocations",
+    headers={"Authorization": f"Bearer {w.config.oauth_token().access_token}"},
+    json={"ticket": "I was billed twice for my annual plan."},
+    timeout=60,
 )
-print(resp["category"])   # billing
+print(resp.json()["category"])   # billing
 ```
 
 For batch scoring, read `support_tickets` and call the app for each row.
