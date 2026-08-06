@@ -76,7 +76,6 @@ Settings are bundle variables with sensible defaults:
 | `catalog_name` | `main` | Unity Catalog catalog (must already exist) |
 | `schema_name` | `llmops_quickstart` | UC schema (created by the bundle) |
 | `llm_model` | `main.default.claude-sonnet-5` | Fully-qualified name of the UAIG model service the agent calls |
-| `prod_service_principal` | `CHANGE_ME` | Identity the `prod` target deploys as. Pins the prod bundle root to one fixed location instead of the deployer's home folder. Set it for `--target prod`; `dev` ignores it. |
 
 `main` is a common catalog name, so you may already have one. To keep the quickstart
 self-contained and aligned with the companion

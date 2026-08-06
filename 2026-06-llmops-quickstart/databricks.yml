@@ -22,14 +22,6 @@ variables:
   environment:
     description: "Deployment environment label"
     default: dev
-  prod_service_principal:
-    # Application ID (or username) of the identity that deploys the prod target.
-    # Pins the prod bundle root to one fixed location so the deploy does not follow
-    # whoever happens to run it. Only the prod target uses it — set it with
-    #   --var="prod_service_principal=<your-sp-application-id>"
-    # The placeholder default keeps dev usable with no flags; prod overrides it.
-    description: "Identity that runs the prod deploy (set this for --target prod)"
-    default: "CHANGE_ME"
 
 resources:
   apps:
@@ -60,22 +52,27 @@ resources:
     llmops_experiment:
       name: "/Users/${workspace.current_user.userName}/${bundle.target}_llmops_quickstart"
 
+# Setting root_path explicitly pins the deploy to one location instead of letting it
+# follow whoever ran it. This mirrors the MLOps Quickstart so the two are consistent.
+#
+# For a real prod setup, prefer a static folder with controlled access, created the
+# same way on every workspace — for example
+#   /Workspace/Bundles/${bundle.name}/${bundle.target}
+# so the location does not depend on any one user's home folder. Avoid
+# /Workspace/Shared, which is writable by all workspace users.
 targets:
   dev:
     mode: development
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     default: true
     variables:
       environment: dev
 
   prod:
     mode: production
-    # Pin prod to one fixed location so the deploy lands in the same place
-    # regardless of who runs it, instead of following the deployer's home folder.
-    # Point this at the identity your CI deploys as. Keep it under /Workspace/Users
-    # rather than /Workspace/Shared, which would be writable by all workspace users.
-    # (Apps require run_as to match the owner, so the deploying identity owns the app.)
     workspace:
-      root_path: /Workspace/Users/${var.prod_service_principal}/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
       schema_name: llmops_quickstart_prod
       environment: prod
