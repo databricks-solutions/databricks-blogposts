@@ -1,0 +1,47 @@
+bundle:
+  name: genie_agent_cicd
+  engine: direct  # genie_spaces require the direct deployment engine
+
+sync:
+  include:
+    - build/**
+
+# Standard deploy: metric view job + Genie Agent only.
+include:
+  - resources/metric_view.job.yml
+  - resources/tpcds_retail.genie_space.yml
+
+variables:
+  catalog:
+    description: Target Unity Catalog catalog.
+    default: serverless_stable_dvmvgw_catalog
+  schema:
+    description: Target schema for tables and metric view.
+    default: genie
+  warehouse_id:
+    description: SQL warehouse used to create the metric view and Genie Agent.
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      profile: DEFAULT
+    variables:
+      catalog: serverless_stable_dvmvgw_catalog
+      schema: genie
+      warehouse_id:
+        lookup:
+          warehouse: Serverless Starter Warehouse
+
+  prod:
+    default: true
+    mode: development
+    workspace:
+      profile: prod
+    variables:
+      catalog: <prod_catalog>
+      schema: <prod_schema>
+      warehouse_id:
+        lookup:
+          warehouse: <prod_warehouse>

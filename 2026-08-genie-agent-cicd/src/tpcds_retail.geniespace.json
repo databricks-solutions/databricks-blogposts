@@ -1,0 +1,574 @@
+{
+  "benchmarks": {
+    "questions": [
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, MEASURE(`Average Order Value`) AS aov FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE `Sale Year` = 2002 AND Category IS NOT NULL GROUP BY Category ORDER BY aov DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000032",
+        "question": [
+          "What is the average order value by category in 2002?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Customer Count`) AS customers FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel ORDER BY customers DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000031",
+        "question": [
+          "How many customers purchased per channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT `Sale Year`, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE Channel = 'Web' GROUP BY `Sale Year` ORDER BY `Sale Year`"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000030",
+        "question": [
+          "What were Web channel total sales per year?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE Category = 'Electronics' GROUP BY Channel ORDER BY total_sales DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000029",
+        "question": [
+          "What were total sales for the Electronics category by channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, MEASURE(`Units Sold`) AS units, MEASURE(`Order Count`) AS orders FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE `Sale Year` = 2001 AND Category IS NOT NULL GROUP BY Category ORDER BY units DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000028",
+        "question": [
+          "What is units sold and order count by category in 2001?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, Channel, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Category, Channel ORDER BY Category, Channel"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000027",
+        "question": [
+          "What are total sales by category and channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, `Sale Year`, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel, `Sale Year` ORDER BY Channel, `Sale Year`"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000026",
+        "question": [
+          "What are total sales by channel and year?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, MEASURE(`Total Profit`) AS profit FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE Category IS NOT NULL GROUP BY Category ORDER BY profit DESC LIMIT 1"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000025",
+        "question": [
+          "Which category had the highest profit?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Brand, MEASURE(`Units Sold`) AS units FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Brand ORDER BY units DESC LIMIT 10"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000024",
+        "question": [
+          "What are the top 10 brands by units sold?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Category ORDER BY total_sales DESC LIMIT 5"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000023",
+        "question": [
+          "What are the top 5 categories by total sales?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT MEASURE(`Average Order Value`) AS aov FROM ${catalog}.${schema}.tpcds_retail_sales_metrics"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000022",
+        "question": [
+          "What is the average order value overall?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, MEASURE(`Profit Margin`) AS margin FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE Category IS NOT NULL GROUP BY Category ORDER BY margin DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000021",
+        "question": [
+          "What is the profit margin by category?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Profit Margin`) AS margin FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel ORDER BY margin DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000020",
+        "question": [
+          "What is the profit margin by channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Average Order Value`) AS aov FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel ORDER BY aov DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000019",
+        "question": [
+          "What is the average order value by channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT `Sale Month`, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE `Sale Year` = 2001 GROUP BY `Sale Month` ORDER BY `Sale Month`"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000018",
+        "question": [
+          "What were monthly total sales in 2001?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT `Sale Quarter`, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE `Sale Year` = 2000 GROUP BY `Sale Quarter` ORDER BY `Sale Quarter`"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000017",
+        "question": [
+          "What were total sales by quarter in 2000?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT `Sale Year`, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY `Sale Year` ORDER BY `Sale Year`"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000016",
+        "question": [
+          "What were total sales per year?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE `Sale Year` = 2001 GROUP BY Channel ORDER BY total_sales DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000015",
+        "question": [
+          "What were total sales by channel in 2001?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE `Sale Year` = 2001"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000014",
+        "question": [
+          "What were total sales in 2001?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Gross Sales`) AS gross FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel ORDER BY gross DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000013",
+        "question": [
+          "What were gross sales by channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, MEASURE(`Total Discount`) AS discount FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Category ORDER BY discount DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000012",
+        "question": [
+          "What is the total discount given per category?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Order Count`) AS orders FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel ORDER BY orders DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000011",
+        "question": [
+          "What is the order count by channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Total Profit`) AS profit FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel ORDER BY profit DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000010",
+        "question": [
+          "What is total profit by channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, MEASURE(`Units Sold`) AS units FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE Category IS NOT NULL GROUP BY Category ORDER BY units DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000009",
+        "question": [
+          "How many units were sold per category?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Category, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics WHERE Category IS NOT NULL GROUP BY Category ORDER BY total_sales DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000008",
+        "question": [
+          "What are total sales by product category?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel, MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel ORDER BY total_sales DESC"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000007",
+        "question": [
+          "What are total sales by channel?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT Channel FROM ${catalog}.${schema}.tpcds_retail_sales_metrics GROUP BY Channel ORDER BY Channel"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000006",
+        "question": [
+          "List the sales channels."
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT MEASURE(`Total Profit`) AS profit FROM ${catalog}.${schema}.tpcds_retail_sales_metrics"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000005",
+        "question": [
+          "What is the total profit overall?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT MEASURE(`Customer Count`) AS customers FROM ${catalog}.${schema}.tpcds_retail_sales_metrics"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000004",
+        "question": [
+          "How many distinct customers made purchases?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT MEASURE(`Order Count`) AS orders FROM ${catalog}.${schema}.tpcds_retail_sales_metrics"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000003",
+        "question": [
+          "How many distinct orders are there?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT MEASURE(`Units Sold`) AS units FROM ${catalog}.${schema}.tpcds_retail_sales_metrics"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000002",
+        "question": [
+          "How many total units were sold?"
+        ]
+      },
+      {
+        "answer": [
+          {
+            "content": [
+              "SELECT MEASURE(`Total Sales`) AS total_sales FROM ${catalog}.${schema}.tpcds_retail_sales_metrics"
+            ],
+            "format": "SQL"
+          }
+        ],
+        "id": "40000000000000000000000000000001",
+        "question": [
+          "What is the total sales across all channels?"
+        ]
+      }
+    ]
+  },
+  "config": {
+    "sample_questions": [
+      {
+        "id": "10000000000000000000000000000001",
+        "question": [
+          "What were total sales by channel in 2001?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000002",
+        "question": [
+          "Which product categories generate the most revenue?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000003",
+        "question": [
+          "Show the yearly sales trend for the Web channel"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000004",
+        "question": [
+          "What is the average order value by channel?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000005",
+        "question": [
+          "Which categories have the highest units sold?"
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "column_configs": [
+          {
+            "column_name": "Brand",
+            "enable_format_assistance": true,
+            "synonyms": [
+              "product brand"
+            ]
+          },
+          {
+            "column_name": "Category",
+            "description": [
+              "Product category (10 values). A small share of sales has a NULL category; exclude it when grouping by Category unless the user asks for uncategorized sales."
+            ],
+            "enable_entity_matching": true,
+            "enable_format_assistance": true,
+            "synonyms": [
+              "product category",
+              "department"
+            ]
+          },
+          {
+            "column_name": "Channel",
+            "enable_entity_matching": true,
+            "enable_format_assistance": true,
+            "synonyms": [
+              "sales channel",
+              "distribution channel"
+            ]
+          },
+          {
+            "column_name": "Class",
+            "enable_entity_matching": true,
+            "enable_format_assistance": true,
+            "synonyms": [
+              "product class",
+              "subcategory"
+            ]
+          }
+        ],
+        "identifier": "${catalog}.${schema}.tpcds_retail_sales_metrics"
+      }
+    ]
+  },
+  "instructions": {
+    "example_question_sqls": [
+      {
+        "id": "20000000000000000000000000000001",
+        "question": [
+          "Which product categories generate the most revenue?"
+        ],
+        "sql": [
+          "SELECT Category, MEASURE(`Total Sales`) AS total_sales\n",
+          "FROM ${catalog}.${schema}.tpcds_retail_sales_metrics\n",
+          "WHERE Category IS NOT NULL\n",
+          "GROUP BY Category ORDER BY total_sales DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000002",
+        "question": [
+          "Show the yearly sales trend by channel"
+        ],
+        "sql": [
+          "SELECT `Sale Year`, Channel, MEASURE(`Total Sales`) AS total_sales, MEASURE(`Units Sold`) AS units\n",
+          "FROM ${catalog}.${schema}.tpcds_retail_sales_metrics\n",
+          "GROUP BY `Sale Year`, Channel ORDER BY `Sale Year`, Channel"
+        ]
+      }
+    ],
+    "text_instructions": [
+      {
+        "content": [
+          "This Space answers retail sales questions across three channels (Store, Catalog, Web) for years 1998-2003.\n",
+          "ALWAYS query measures with the MEASURE() function (e.g. MEASURE(`Total Sales`)); never SELECT raw measure columns. SELECT * is not supported on this metric view.\n",
+          "'Sales' or 'revenue' means MEASURE(`Total Sales`) (net paid after discounts, before tax). Use MEASURE(`Gross Sales`) only when the user explicitly asks for gross/list price before discounts.\n",
+          "Profit Margin and Average Order Value are pre-defined ratio measures; query them via MEASURE() rather than computing ratios yourself.\n",
+          "When the user asks for a year, filter on `Sale Year`; for month use `Sale Month` (1-12) and quarter use `Sale Quarter` (1-4).A small share of sales has no product category (NULL Category, the unlabeled bucket). When grouping or ranking by Category, exclude it with WHERE Category IS NOT NULL unless the user explicitly asks to include uncategorized sales.\n"
+        ],
+        "id": "30000000000000000000000000000001"
+      }
+    ]
+  },
+  "version": 2
+}
