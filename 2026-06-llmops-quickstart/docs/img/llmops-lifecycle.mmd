@@ -1,0 +1,23 @@
+---
+title: The LLMOps Lifecycle on Databricks
+---
+flowchart LR
+    classDef data fill:#CFE8FF,stroke:#1B6EC2,stroke-width:2px,color:#0B3C6B
+    classDef build fill:#CFF3F2,stroke:#0E8C8B,stroke-width:2px,color:#0A5B5A
+    classDef gate fill:#FFE9A8,stroke:#E07B00,stroke-width:3px,color:#7A4300
+    classDef human fill:#E8DCFF,stroke:#6A3FC0,stroke-width:2px,color:#3C1E7A
+    classDef serve fill:#CDEFD4,stroke:#1F9D4D,stroke-width:2px,color:#0F5C2C
+
+    subgraph PIPE["One databricks bundle deploy builds all of this — same definition in dev and prod (Declarative Automation Bundles)"]
+        direction LR
+        A["1 · Data Ingestion<br/><br/>30 labelled tickets written to a<br/>Unity Catalog managed table"]:::data
+        B["2 · Agent<br/><br/>FastAPI agent server<br/>MLflow GenAI @invoke handler"]:::build
+        C["3 · Evaluation<br/><br/>mlflow.genai.evaluate<br/>exact_match gate + Correctness judge<br/><br/>a failing run exits non-zero<br/>and stops the pipeline"]:::gate
+        D["4 · Approval<br/><br/>A person reviews the eval run<br/>and decides to ship"]:::human
+        E["5 · Deployment<br/><br/>Agent served as a<br/>Databricks App"]:::serve
+        F["6 · Inference<br/><br/>POST /invocations<br/>on the app's own URL"]:::serve
+
+        A --> B --> C --> D --> E --> F
+    end
+
+    style PIPE fill:#FBF7FF,stroke:#6A3FC0,stroke-width:2px,stroke-dasharray: 6 4,color:#3C1E7A

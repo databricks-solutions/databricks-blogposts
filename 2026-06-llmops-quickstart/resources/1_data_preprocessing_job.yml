@@ -1,0 +1,31 @@
+resources:
+  jobs:
+    data_preprocessing_job:
+      name: "LLMOps Quickstart - 1. Data Preprocessing [${var.environment}]"
+      description: "Ingests sample support tickets into Unity Catalog."
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+
+      parameters:
+        - name: catalog_name
+          default: "${var.catalog_name}"
+        - name: schema_name
+          default: "${var.schema_name}"
+
+      tasks:
+        - task_key: data_ingestion
+          environment_key: default
+          notebook_task:
+            notebook_path: "../notebooks/1_data_preprocessing/data_ingestion.py"
+            base_parameters:
+              catalog_name: "{{job.parameters.catalog_name}}"
+              schema_name: "{{job.parameters.schema_name}}"
+
+      timeout_seconds: 1800
+      max_concurrent_runs: 1
+      tags:
+        Project: llmops-quickstart
+        Environment: "${var.environment}"

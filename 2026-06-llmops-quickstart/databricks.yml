@@ -1,0 +1,78 @@
+bundle:
+  name: llmops-quickstart
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog_name:
+    description: "Unity Catalog catalog name (must already exist)"
+    default: main
+  schema_name:
+    description: "Unity Catalog schema name (created by the bundle if absent)"
+    default: llmops_quickstart
+  llm_model:
+    # Fully-qualified name of the UAIG model service the agent calls, e.g.
+    #   <catalog>.default.claude-sonnet-5   (most capable)
+    #   <catalog>.default.gpt-oss-120b      (open model)
+    # Create the model service once in the AI Gateway UI (code creation isn't
+    # available during the beta), then set this to its fully-qualified name.
+    description: "Fully-qualified name of the UAIG model service the agent calls"
+    default: main.default.claude-sonnet-5
+  environment:
+    description: "Deployment environment label"
+    default: dev
+
+resources:
+  apps:
+    ticket_classifier:
+      # Suffixed with the target so dev and prod can coexist in one workspace
+      # (development mode does not prefix app names the way it does jobs).
+      name: "llmops-quickstart-classifier-${bundle.target}"
+      description: "Support ticket classifier agent (LLMOps Quickstart)"
+      source_code_path: ./
+      config:
+        command: ["uv", "run", "start-server"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+          - name: LLM_MODEL
+            value: "${var.llm_model}"
+      resources:
+        - name: "experiment"
+          experiment:
+            experiment_id: "${resources.experiments.llmops_experiment.id}"
+            permission: "CAN_MANAGE"
+
+  experiments:
+    llmops_experiment:
+      name: "/Users/${workspace.current_user.userName}/${bundle.target}_llmops_quickstart"
+
+# Setting root_path explicitly pins the deploy to one location instead of letting it
+# follow whoever ran it. This mirrors the MLOps Quickstart so the two are consistent.
+#
+# For a real prod setup, prefer a static folder with controlled access, created the
+# same way on every workspace — for example
+#   /Workspace/Bundles/${bundle.name}/${bundle.target}
+# so the location does not depend on any one user's home folder. Avoid
+# /Workspace/Shared, which is writable by all workspace users.
+targets:
+  dev:
+    mode: development
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    default: true
+    variables:
+      environment: dev
+
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      schema_name: llmops_quickstart_prod
+      environment: prod

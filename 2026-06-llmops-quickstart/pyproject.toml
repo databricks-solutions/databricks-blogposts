@@ -1,0 +1,40 @@
+[project]
+name = "llmops-quickstart-agent"
+version = "0.1.0"
+description = "Support ticket classifier agent, served as a Databricks App"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.12",
+    "uvicorn[standard]>=0.34.2",
+    "mlflow>=3.9.0",
+    "databricks-sdk>=0.63.0",
+    "pydantic>=2.11",
+    "python-dotenv",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent_server"]
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.27.0",
+    "pytest>=7.0.0",
+    "httpx>=0.24.0",
+]
+
+setup = [
+    "ruamel.yaml>=0.18.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "setup"]
+
+[project.scripts]
+start-server = "agent_server.start_server:main"
+agent-evaluate = "agent_server.evaluate_agent:evaluate"

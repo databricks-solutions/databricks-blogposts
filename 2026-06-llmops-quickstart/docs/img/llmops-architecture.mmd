@@ -1,0 +1,35 @@
+---
+title: How the Pieces Fit Together on Databricks
+---
+flowchart TB
+    classDef data fill:#CFE8FF,stroke:#1B6EC2,stroke-width:2px,color:#0B3C6B
+    classDef build fill:#CFF3F2,stroke:#0E8C8B,stroke-width:2px,color:#0A5B5A
+    classDef gate fill:#FFE9A8,stroke:#E07B00,stroke-width:3px,color:#7A4300
+    classDef serve fill:#CDEFD4,stroke:#1F9D4D,stroke-width:2px,color:#0F5C2C
+    classDef gov fill:#E8DCFF,stroke:#6A3FC0,stroke-width:2px,color:#3C1E7A
+    classDef client fill:#ECEFF1,stroke:#455A64,stroke-width:2px,color:#22313A
+
+    subgraph WS["Databricks Workspace · governed by Unity Catalog"]
+        direction TB
+
+        subgraph OFF["Build and Evaluate (offline)"]
+            direction LR
+            T["Unity Catalog<br/><br/>support_tickets<br/>UC managed table<br/>30 labelled rows"]:::data
+            EV["MLflow 3 GenAI Evaluation<br/><br/>mlflow.genai.evaluate<br/>exact_match gate + Correctness judge"]:::gate
+            EXP["MLflow Experiment<br/><br/>Traces, scorer results,<br/>per-ticket inputs and outputs"]:::gov
+            T -- "30 labelled tickets" --> EV
+            EV -- "logs traces + scores" --> EXP
+        end
+
+        subgraph ON["Serve (online)"]
+            direction LR
+            APP["Databricks App<br/><br/>FastAPI agent server<br/>@invoke ticket classifier<br/>POST /invocations"]:::serve
+            MS["Unity AI Gateway Model Service<br/><br/>catalog.default.claude-sonnet-5<br/>a Unity Catalog securable"]:::gov
+            APP -- "chat completions<br/>via the AI Gateway" --> MS
+        end
+
+        EV -- "exact_match clears the threshold,<br/>then a person approves the deploy" --> APP
+    end
+
+    CLIENT["Client<br/><br/>POST /invocations"]:::client
+    CLIENT --> APP
