@@ -1,0 +1,19 @@
+resources:
+  jobs:
+    metric_view:
+      name: "[${bundle.target}] TPC-DS Retail — create metric view"
+      description: >-
+        Runs CREATE OR REPLACE on tpcds_retail_sales_metrics from the YAML
+        source of truth. Run after editing src/metric-view.yaml and
+        regenerating src/create_metric_view.sql via push_metric_view.py.
+
+      tasks:
+        - task_key: create_metric_view
+          notebook_task:
+            notebook_path: ../src/create_metric_view.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+      queue:
+        enabled: true

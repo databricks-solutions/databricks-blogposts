@@ -1,0 +1,145 @@
+version: 1.1
+
+source: ${catalog}.${schema}.tpcds_all_sales
+
+comment: "TPC-DS Retail Sales metrics across Store, Catalog, and Web channels. One\
+  \ row per sales line item; net_paid is revenue after discounts before tax. Date\
+  \ range 1998-2003."
+
+dimensions:
+  - name: Channel
+    expr: channel
+    comment: "Sales channel: Store, Catalog, or Web (each value title-case)"
+    synonyms:
+      - sales channel
+      - division
+      - segment
+
+  - name: Category
+    expr: category
+    comment: "Product category, e.g. Electronics, Home, Books, Women, Men, Sports,\
+      \ Jewelry, Music, Shoes, Children"
+    synonyms:
+      - product category
+      - department
+
+  - name: Brand
+    expr: brand
+    comment: Product brand name
+
+  - name: Class
+    expr: class
+    comment: Product class (sub-category within a category)
+    synonyms:
+      - product class
+      - subcategory
+
+  - name: Product Name
+    expr: product_name
+    comment: Individual product name
+    synonyms:
+      - product
+      - item
+      - sku
+
+  - name: Sale Year
+    expr: sold_year
+    comment: Calendar year of the sale (1998-2003)
+    synonyms:
+      - year
+      - fiscal year
+
+  - name: Sale Quarter
+    expr: sold_quarter
+    comment: Calendar quarter of the sale (1-4)
+    synonyms:
+      - quarter
+      - qtr
+
+  - name: Sale Month
+    expr: sold_month
+    comment: Calendar month number of the sale (1-12)
+    synonyms:
+      - month
+      - mo
+
+  - name: Sale Date
+    expr: sold_date
+    comment: Calendar date of the sale
+    synonyms:
+      - date
+      - transaction date
+      - order date
+
+measures:
+  - name: Total Sales
+    expr: SUM(net_paid)
+    comment: "Total revenue (net paid after discounts, before tax) in USD"
+    synonyms:
+      - revenue
+      - net sales
+      - total revenue
+      - sales
+      - top line
+
+  - name: Gross Sales
+    expr: SUM(ext_sales_price)
+    comment: "Extended sales price before discounts, in USD"
+    synonyms:
+      - gross revenue
+      - list sales
+
+  - name: Total Discount
+    expr: SUM(ext_discount_amt)
+    comment: "Total discount amount given, in USD"
+    synonyms:
+      - discounts
+      - markdown
+
+  - name: Total Profit
+    expr: SUM(net_profit)
+    comment: Total net profit in USD (can be negative on loss-making lines)
+    synonyms:
+      - profit
+      - net profit
+      - margin dollars
+
+  - name: Units Sold
+    expr: SUM(quantity)
+    comment: Total quantity of units sold
+    synonyms:
+      - quantity
+      - units
+      - volume
+
+  - name: Order Count
+    expr: COUNT(DISTINCT order_number)
+    comment: Distinct number of orders/tickets
+    synonyms:
+      - orders
+      - transactions
+      - number of orders
+
+  - name: Customer Count
+    expr: COUNT(DISTINCT customer_sk)
+    comment: Distinct number of customers who purchased
+    synonyms:
+      - customers
+      - unique customers
+      - buyers
+
+  - name: Average Order Value
+    expr: SUM(net_paid) / COUNT(DISTINCT order_number)
+    comment: Average revenue per order (AOV) in USD = Total Sales / Order Count
+    synonyms:
+      - AOV
+      - avg order value
+      - average ticket
+
+  - name: Profit Margin
+    expr: "SUM(net_profit) / NULLIF(SUM(net_paid), 0)"
+    comment: Net profit as a fraction of total sales (0.15 = 15%)
+    synonyms:
+      - margin
+      - margin percent
+      - profitability

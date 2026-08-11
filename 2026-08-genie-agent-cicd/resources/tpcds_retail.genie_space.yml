@@ -1,0 +1,8 @@
+resources:
+  genie_spaces:
+    tpcds_retail:
+      title: "TPC-DS Retail Sales Analytics DAB"
+      warehouse_id: ${var.warehouse_id}
+      file_path: ../build/tpcds_retail.geniespace.json
+      description: Natural-language analytics over TPC-DS retail sales across Store, Catalog, and Web channels (1998-2003). Backed by a governed metric view with revenue, profit, units, orders, AOV, and margin metrics.
+      parent_path: /Workspace/Users/${workspace.current_user.userName}
