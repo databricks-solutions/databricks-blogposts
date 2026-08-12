@@ -1,0 +1,72 @@
+bundle:
+  name: workspace-cleanup
+
+workspace:
+  host: https://<your-workspace>.azuredatabricks.net
+
+variables:
+  environment:
+    default: dev
+
+resources:
+  jobs:
+    cleanup_workflow:
+      name: "[Maintenance] Workspace Cleanup"
+      schedule:
+        quartz_cron_expression: "0 0 2 ? * SUN"
+        timezone_id: "UTC"
+      parameters:
+        - name: environment
+          default: ${var.environment}
+      tasks:
+        - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/04_system_table_analysis.py
+            base_parameters:
+              environment: ${var.environment}
+
+        - task_key: job_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/01_api_job_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+
+        - task_key: dashboard_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/02_api_dashboard_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+
+        - task_key: vector_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/03_api_vector_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+
+        - task_key: system_table_cleanup
+          depends_on:
+            - task_key: job_cleanup
+            - task_key: dashboard_cleanup
+            - task_key: vector_cleanup
+          notebook_task:
+            notebook_path: ./notebooks/05_system_table_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+
+targets:
+  dev:
+    default: true
+    variables:
+      environment: dev
+  stage:
+    variables:
+      environment: stage
+  prod:
+    variables:
+      environment: prod

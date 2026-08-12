@@ -1,0 +1,5 @@
+job_inactive_days: 90
+dashboard_inactive_days: 60
+cluster_idle_hours: 48
+cost_anomaly_multiplier: 3.0
+min_dbu_threshold: 0.01
