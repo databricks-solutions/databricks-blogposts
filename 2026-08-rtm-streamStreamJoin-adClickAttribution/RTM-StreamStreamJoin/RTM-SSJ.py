@@ -280,7 +280,7 @@ query = (
     .option("topic", output_topic)
     .option("checkpointLocation", checkpoint_path)
     .outputMode("update")
-    .trigger(**({"realTime": "5 minutes"} if mode == "RTM" else {"processingTime": "0.5 seconds"}))
+    .trigger(**({"realTime": "5 minutes"} if mode == "RTM" else {"processingTime": "0 seconds"}))
     .start()
 )
 
