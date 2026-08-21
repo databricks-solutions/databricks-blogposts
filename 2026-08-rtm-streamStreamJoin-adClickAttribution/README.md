@@ -1,10 +1,10 @@
 # Stream-Stream Joins in Apache Spark™ Real-Time Mode: Ad Click Attribution
 
-**Real-Time Mode (RTM)** in Structured Streaming now supports **stream-stream joins** (Databricks Runtime 18+). This is a **self-serve sample** you can import into **Databricks** and run end-to-end: a real-time **ad click attribution** pipeline built as an **inner, time-bounded stream-stream join** of two Kafka topics, running in Real-Time Mode with **sub-second end-to-end latency**.
+**Real-Time Mode (RTM)** in Structured Streaming now supports **stream-stream joins** (Databricks Runtime 18 LTS). This is a **self-serve sample** you can import into **Databricks** and run end-to-end: a real-time **ad click attribution** pipeline built as an **inner, time-bounded stream-stream join** of two Kafka topics, running in Real-Time Mode with **sub-second end-to-end latency**.
 
 Joining two live streams is one of the most common — and most latency-sensitive — patterns in operational streaming. Until now, doing it with sub-second latency in Spark meant reaching for a second engine. RTM closes that gap: the **same Structured Streaming stream-stream join you already write** now runs in Real-Time Mode with a **single trigger change**.
 
-You bring **Kafka**, **Unity Catalog**, and a **Databricks Runtime** that supports this workload; we provide the **notebooks** and the **data generator / replay** path so a team can reproduce it in their own workspace. **RTM stream-stream join requires latest DBR 18.x** (18.2+ recommended).
+You bring **Kafka**, **Unity Catalog**, and a **Databricks Runtime** that supports this workload; we provide the **notebooks** and the **data generator / replay** path so a team can reproduce it in their own workspace. **RTM stream-stream join requires DBR 18 LTS.**
 
 ### Before you run: fill in the placeholders
 
@@ -28,12 +28,12 @@ The notebooks use placeholders for workspace-specific values. Replace these acro
 
 ## What's new: stream-stream joins in Real-Time Mode
 
-Real-Time Mode is a trigger type for Structured Streaming that delivers ultra-low (sub-second) end-to-end latency by executing all stages of a query concurrently and streaming data between them, rather than in discrete micro-batches. With DBR 18+, RTM adds support for **stateful stream-stream joins**, with a few characteristics to design around:
+Real-Time Mode is a trigger type for Structured Streaming that delivers ultra-low (sub-second) end-to-end latency by executing all stages of a query concurrently and streaming data between them, rather than in discrete micro-batches. With DBR 18 LTS, RTM adds support for **stateful stream-stream joins**, with a few characteristics to design around:
 
 - **Inner join only** (outer joins are not supported in RTM).
 - **`update` output mode only.**
 - **Both sides require watermarks**, and the join must include an **explicit time bound** so state stays bounded.
-- A few **Spark configurations** enable it (shown below), plus the standard cluster-level RTM requirements (classic compute, no autoscaling, no Photon, DBR 18+).
+- A few **Spark configurations** enable it (shown below), plus the standard cluster-level RTM requirements (classic compute, no autoscaling, no Photon, DBR 18 LTS).
 
 This repo shows exactly how to build such a join for a real, latency-sensitive use case — and how switching an existing micro-batch join to RTM is a one-line change.
 
@@ -99,7 +99,7 @@ RTM-join/
     └── Write_RTM_attributed_clicks_to_delta.py # Optional: attributed_clicks (Kafka) -> Delta for SQL latency
 ```
 
-**Fast path:**
+**Quick Start:**
 
 1. `generate-fake-adclick-data.py` → Delta `impressions_stream` / `clicks_stream`.
 2. `create-delete-topic-scala.scala` → create `ad_impressions` (8 partitions), `ad_clicks` (2), `attributed_clicks` (8).
@@ -113,7 +113,7 @@ RTM-join/
 
 ### 1. Databricks workspace / compute
 
-RTM stream-stream join requires a **classic** cluster on **latest DBR 18.x** (18.2+ recommended so `update` output mode is supported for stream-stream joins in **both** modes) with:
+RTM stream-stream join requires a **classic** cluster on **DBR 18 LTS** (so `update` output mode is supported for stream-stream joins in **both** modes) with:
 
 - **No autoscaling, no Photon, no spot instances.**
 - Cluster-level Spark conf: `spark.databricks.streaming.realTimeMode.enabled true`.
@@ -196,7 +196,7 @@ spark.conf.set("spark.sql.streaming.stateStore.rocksdb.mergeOperatorVersion", "2
 | Trigger | `trigger(realTime="5 minutes")` | `trigger(processingTime="0.5 seconds")` |
 | Kafka `maxPartitions` | impressions=8, clicks=2 | not set (default) |
 | `spark.sql.shuffle.partitions` | `14` | `24` |
-| Output mode | `update` | `update` (DBR 18.2+) |
+| Output mode | `update` | `update` (DBR 18 LTS) |
 
 **RTM slot budget:** total task slots must be ≥ sum of tasks across stages. Here: `8 (impressions) + 2 (clicks) + 14 (shuffle) = 24` → run on a **24-core** cluster.
 
@@ -252,7 +252,7 @@ Each reads its `_stream` Delta table with `maxFilesPerTrigger=1` at `processingT
 
 ## How it performs: micro-batch vs Real-Time Mode
 
-Because the pipeline runs the **same code** in both modes (only the trigger changes), it's a clean way to see what Real-Time Mode buys you. End-to-end latency = **click's Kafka timestamp → `attributed_clicks` Kafka timestamp**; same 24-core DBR 18.x cluster, same data (~30K events/sec, ~9M attributed clicks).
+Because the pipeline runs the **same code** in both modes (only the trigger changes), it's a clean way to see what Real-Time Mode buys you. End-to-end latency = **click's Kafka timestamp → `attributed_clicks` Kafka timestamp**; same 24-core DBR 18 LTS cluster, same data (~30K events/sec, ~9M attributed clicks).
 
 | Percentile | MBM | RTM | MBM ÷ RTM |
 |-----------|----:|----:|----------:|
@@ -262,7 +262,7 @@ Because the pipeline runs the **same code** in both modes (only the trigger chan
 | p99 | 2,750 ms | 167 ms | ~16× |
 | max | 6,084 ms | 2,599 ms | ~2.3× |
 
-**MBM's ~1-second batches are its latency floor** — a matched record can't be emitted until its batch completes. **RTM flows records through continuously** (single-digit-ms min), so median drops ~24× and p99 ~16×, with **zero records dropped** and **bounded state**. Your cluster will differ — treat this as a baseline and reproduce with the listener / `debug.sql`.
+In micro-batch mode, each batch executes its stages **sequentially**. But the bigger latency problem isn't within a single batch — it's **across batches**: batch N must fully complete before batch N+1 begins. With each batch taking about 1 second, a record that arrives just after batch N starts isn't picked up until batch N+1, so it can take **about 2 seconds** from arriving on the input topic to landing on the output topic — an end-to-end latency spike. **Real-Time Mode executes the stages in parallel**: a record is processed and joined as soon as it arrives, not at the next batch boundary. That's the ~16× p99 difference. Your numbers will vary with your cluster and load — reproduce them with the listener and `debug.sql`.
 
 ---
 
