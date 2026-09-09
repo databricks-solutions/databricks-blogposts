@@ -15,7 +15,7 @@ Catalog ↔ Lakebase** integration. The connector handles buffering, backpressur
 deduplication, and workspace-managed authentication for you. If the Lakebase table isn't registered
 in Unity Catalog, you can write to the Lakebase endpoint using `.format("postgresql")`.
 
-You bring **Kafka**, **Unity Catalog**, a **Lakebase** instance, and a **DBR 18 LTS** cluster; we
+You bring **Kafka**, **Unity Catalog**, a **Lakebase** project, and a **DBR 18 LTS** cluster; we
 provide the **notebooks** and the **data generator / replay** path so a team can reproduce it in
 their own workspace.
 
@@ -30,8 +30,8 @@ The notebooks use workspace-specific values. Replace these across the folder (se
 | `<KAFKA_SECRET_SCOPE>` | Databricks secret scope holding your Kafka bootstrap servers |
 | `<KAFKA_BOOTSTRAP_SECRET_KEY>` | Secret key for the Kafka bootstrap servers |
 | `<YOUR_EXTERNAL_LOCATION>` | Cloud storage path for the checkpoint volume (e.g. `s3://…`) |
-| `<LAKEBASE_INSTANCE>` | Your Lakebase (database) instance name |
-| `<LAKEBASE_ENDPOINT>` | Sink endpoint: `<LAKEBASE_INSTANCE>.production.primary` |
+| `<LAKEBASE_PROJECT>` | Your Lakebase (database) project name |
+| `<LAKEBASE_ENDPOINT>` | Sink endpoint: `<LAKEBASE_PROJECT>.production.primary` |
 | `<LAKEBASE_CATALOG>` | UC catalog registered to your Lakebase database (for `.toTable()`) |
 | `<DATABRICKS_HOST>` | Your workspace host, e.g. `xxx.cloud.databricks.com` |
 | `<DATABRICKS_PROFILE>` | Your Databricks CLI profile |
@@ -94,7 +94,7 @@ One row per user, overwritten on every event via upsert — the shape a feature-
 │   ├── create-delete-topic-scala.scala    # Topic admin (Kafka AdminClient)
 │   └── kafka-events-stream-ingest.py       # Delta engagement_events_stream -> Kafka topic
 └── sss-rtm-to-lakebase/
-    ├── create-lakebase-table.py            # Create Lakebase instance, schema, and user_features table
+    ├── create-lakebase-table.py            # Create Lakebase project, schema, and user_features table
     └── RTM-features-to-lakebase.py         # Main: Kafka -> transformWithState -> native Lakebase sink
 ```
 
@@ -102,7 +102,7 @@ One row per user, overwritten on every event via upsert — the shape a feature-
 
 1. `ingest-source-data/generate-fake-events-data.py` → Delta `engagement_events` + `engagement_events_stream`.
 2. `ingest-source-data/create-delete-topic-scala.scala` → create the `engagement_events` Kafka topic (8 partitions).
-3. `sss-rtm-to-lakebase/create-lakebase-table.py` → create the Lakebase instance + `feature_store.user_features` table.
+3. `sss-rtm-to-lakebase/create-lakebase-table.py` → create the Lakebase project + `feature_store.user_features` table.
 4. `sss-rtm-to-lakebase/RTM-features-to-lakebase.py` → start the streaming feature pipeline (start it **first** so it's already reading).
 5. `ingest-source-data/kafka-events-stream-ingest.py` → replay the stream into Kafka.
 
@@ -162,10 +162,10 @@ and update `volume_path` in the notebooks.
 
 ### 5. Lakebase
 
-A Lakebase (Postgres) instance for the online feature table. `create-lakebase-table.py` provisions
-one (`<LAKEBASE_INSTANCE>`, 8 CUs) and creates `feature_store.user_features` in the
+A Lakebase (Postgres) project for the online feature table. `create-lakebase-table.py` provisions
+one (`<LAKEBASE_PROJECT>`, 8 CUs) and creates `feature_store.user_features` in the
 `databricks_postgres` database. The feature pipeline writes to it via the endpoint
-`<LAKEBASE_ENDPOINT>` (`<LAKEBASE_INSTANCE>.production.primary`).
+`<LAKEBASE_ENDPOINT>` (`<LAKEBASE_PROJECT>.production.primary`).
 
 ---
 
@@ -199,7 +199,7 @@ the notebook after the library installs). Creates `engagement_events` with **8 p
 
 ### Step 3 — Create the Lakebase table: `create-lakebase-table.py`
 
-Provisions the Lakebase instance and creates the online feature table:
+Provisions the Lakebase project and creates the online feature table:
 
 ```sql
 CREATE TABLE feature_store.user_features (
