@@ -20,9 +20,7 @@ The notebooks use placeholders for workspace-specific values. Replace these acro
 
 ### Companion blog post
 
-**TODO:** When the companion blog is published, paste the **full URL** below.
-
-**Blog post:** *`[add full https://… link when published]`*.
+**Blog post:** [Introducing Stream-Stream Join Support in Apache Spark Real-Time Mode](https://community.databricks.com/t5/technical-blog/introducing-stream-stream-join-support-in-apache-spark-real-time/ba-p/167961)
 
 ---
 

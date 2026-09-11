@@ -6,9 +6,7 @@ You bring **Kafka**, **Unity Catalog**, and a **Databricks Runtime** that suppor
 
 ### Companion blog post
 
-**TODO:** When the companion blog is published, paste the **full URL** below.
-
-**Blog post:** *`[add full https://… link when published]`*.
+**Blog post:** [Apache Spark's Real-Time Mode Use Case Deep Dive: Gaming Sessionization](https://community.databricks.com/t5/technical-blog/apache-spark-s-real-time-mode-use-case-deep-dive-gaming/ba-p/157947)
 
 ---
 
