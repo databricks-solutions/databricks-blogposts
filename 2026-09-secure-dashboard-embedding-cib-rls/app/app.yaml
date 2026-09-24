@@ -1,0 +1,17 @@
+command:
+  - "python"
+  - "-m"
+  - "uvicorn"
+  - "app:app"
+  - "--host"
+  - "0.0.0.0"
+  - "--port"
+  - "8000"
+
+env:
+  # Your workspace host, e.g. https://<workspace>.cloud.databricks.com
+  - name: WORKSPACE_HOST
+    value: "https://<your-workspace-host>"
+  # The published AI/BI dashboard id you want to embed.
+  - name: DASHBOARD_ID
+    value: "<published-dashboard-id>"

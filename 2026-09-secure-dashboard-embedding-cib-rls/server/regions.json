@@ -1,0 +1,6 @@
+{
+  "_README": "Group -> region RLS config, kept out of code so regions/admins change without a redeploy. Convention: a Databricks group '<groupPrefix><code>' grants region <code> (e.g. region-emea -> EMEA, region-apac -> APAC), so you normally list nothing here. Members of an 'adminGroups' group see ALL regions. 'groups' maps group names that do NOT follow the convention (lowercased group name -> UPPERCASE code). Env vars REGION_GROUP_PREFIX / ADMIN_GROUPS / GROUP_REGION_MAP override this file at deploy time.",
+  "groupPrefix": "region-",
+  "adminGroups": ["region-admin"],
+  "groups": {}
+}
