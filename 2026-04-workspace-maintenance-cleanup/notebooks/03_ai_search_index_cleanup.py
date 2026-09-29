@@ -42,6 +42,8 @@ if not config.get("ai_search_index_cleanup", False):
     dbutils.notebook.exit(f"AI Search index cleanup disabled for {env}")
 
 dry_run = config.get("dry_run", True)
+max_deletions = config_all.get("max_deletions_per_run", 25)
+require_approval = config_all.get("require_approval", True)
 
 # COMMAND ----------
 
@@ -49,8 +51,11 @@ dry_run = config.get("dry_run", True)
 
 # COMMAND ----------
 
+audit_table = config.get("audit_table", "maintenance.cleanup.cleanup_log")
 w = WorkspaceClient()
-logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
+logger = CleanupLogger(spark, table=audit_table)
+gate = DeletionGate(spark, environment=env, dry_run=dry_run, require_approval=require_approval,
+                    max_deletions=max_deletions, audit_table=audit_table)
 
 # COMMAND ----------
 
@@ -92,6 +97,17 @@ try:
                     source_exists = False
 
                 if not source_exists:
+                    block = gate.block_reason("ai_search_index", idx_name, deleted)
+                    if block:
+                        logger.log(
+                            environment=env, resource_type="ai_search_index",
+                            resource_id=idx_name, resource_name=idx_name, owner=creator,
+                            action="SKIPPED",
+                            reason=f"Orphaned candidate — {block}",
+                            dry_run=dry_run, details={"endpoint": ep.name, "source_table": source_table},
+                        )
+                        skipped += 1
+                        continue
                     if not dry_run:
                         w.vector_search_indexes.delete_index(index_name=idx_name)
                     logger.log(

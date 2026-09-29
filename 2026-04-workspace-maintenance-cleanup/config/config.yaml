@@ -8,6 +8,12 @@
 # rule is misconfigured. Dry-run flags all candidates regardless.
 max_deletions_per_run: 25
 
+# Approval gate: when true, a live (non-dry-run) delete only acts on resources
+# that have a recorded approval in <audit catalog.schema>.cleanup_approvals.
+# Reviewing the dashboard is not authorization — reviewers must INSERT an approval
+# row. Dry-run always flags every candidate regardless of this setting.
+require_approval: true
+
 # Protected resources are never deleted, regardless of thresholds (shared by all
 # environments). Tags match a job's tag keys or values; exclude_ids are explicit
 # "<type>:<id>" (or bare id) entries, e.g. ["job:123", "dashboard:abc"].

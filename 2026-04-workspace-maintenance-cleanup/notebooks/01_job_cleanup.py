@@ -47,6 +47,8 @@ delete_never_run = thresholds.get("delete_never_run", False)
 
 # Blast-radius cap: at most this many live deletions per run (dry-run flags all).
 max_deletions = config_all.get("max_deletions_per_run", 25)
+# Approval gate: a live delete only acts on approved resources (see config.yaml).
+require_approval = config_all.get("require_approval", True)
 
 # Protected resources are never deleted, regardless of thresholds.
 _protected = config_all.get("protected", {}) or {}
@@ -80,8 +82,11 @@ def is_protected(job):
 # WorkspaceClient() authenticates automatically from the notebook context —
 # no manual host, token, or headers required, so the same code runs unchanged
 # in every target workspace the bundle is deployed to.
+audit_table = config.get("audit_table", "maintenance.cleanup.cleanup_log")
 w = WorkspaceClient()
-logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
+logger = CleanupLogger(spark, table=audit_table)
+gate = DeletionGate(spark, environment=env, dry_run=dry_run, require_approval=require_approval,
+                    max_deletions=max_deletions, audit_table=audit_table)
 now = datetime.now(timezone.utc)
 
 # COMMAND ----------
@@ -113,12 +118,13 @@ try:
             # No runs at all: the job has genuinely never run.
             if latest_run is None:
                 if delete_never_run:
-                    if not dry_run and deleted >= max_deletions:
+                    block = gate.block_reason("job", job_id, deleted)
+                    if block:
                         logger.log(
                             environment=env, resource_type="job",
                             resource_id=job_id, resource_name=job_name, owner=creator,
                             action="SKIPPED",
-                            reason=f"Candidate (never run) — max_deletions_per_run ({max_deletions}) reached",
+                            reason=f"Candidate (never run) — {block}",
                             dry_run=dry_run,
                         )
                         skipped += 1
@@ -182,12 +188,13 @@ try:
 
             # Branch on the idle count directly (both sides are timezone-aware).
             if days_idle > inactive_days:
-                if not dry_run and deleted >= max_deletions:
+                block = gate.block_reason("job", job_id, deleted)
+                if block:
                     logger.log(
                         environment=env, resource_type="job",
                         resource_id=job_id, resource_name=job_name, owner=creator,
                         action="SKIPPED",
-                        reason=f"Candidate (inactive {days_idle}d) — max_deletions_per_run ({max_deletions}) reached",
+                        reason=f"Candidate (inactive {days_idle}d) — {block}",
                         dry_run=dry_run,
                     )
                     skipped += 1

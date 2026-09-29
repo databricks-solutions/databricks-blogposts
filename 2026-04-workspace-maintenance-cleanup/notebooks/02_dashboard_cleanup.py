@@ -58,6 +58,8 @@ if not config.get("dashboard_cleanup", False):
 
 dry_run = config.get("dry_run", True)
 inactive_days = thresholds.get("dashboard_inactive_days", 60)
+max_deletions = config_all.get("max_deletions_per_run", 25)
+require_approval = config_all.get("require_approval", True)
 
 # COMMAND ----------
 
@@ -65,8 +67,11 @@ inactive_days = thresholds.get("dashboard_inactive_days", 60)
 
 # COMMAND ----------
 
+audit_table = config.get("audit_table", "maintenance.cleanup.cleanup_log")
 w = WorkspaceClient()
-logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
+logger = CleanupLogger(spark, table=audit_table)
+gate = DeletionGate(spark, environment=env, dry_run=dry_run, require_approval=require_approval,
+                    max_deletions=max_deletions, audit_table=audit_table)
 now = datetime.now(timezone.utc)
 
 # COMMAND ----------
@@ -91,6 +96,16 @@ try:
             is_stale = days_stale is not None and days_stale > inactive_days
 
             if is_stale:
+                block = gate.block_reason("dashboard", dash_id, deleted)
+                if block:
+                    logger.log(
+                        environment=env, resource_type="dashboard",
+                        resource_id=dash_id, resource_name=dash_name, owner=creator,
+                        action="SKIPPED", reason=f"Stale {days_stale}d — {block}",
+                        dry_run=dry_run,
+                    )
+                    skipped += 1
+                    continue
                 # trash() moves the dashboard to trash (recoverable), not a permanent
                 # delete. (list() only returns active dashboards, so already-trashed
                 # ones never reach this notebook — there is no separate branch for them.)

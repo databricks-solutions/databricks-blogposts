@@ -12,6 +12,7 @@ Both approaches log every action (deleted, skipped, flagged) to a Delta table fo
 ### Safety defaults
 
 - **Dry-run first.** Dev always runs in dry-run and only logs `FLAGGED` candidates; execution is opt-in per environment.
+- **Approval gate.** With `require_approval: true`, a live delete only acts on resources that have a recorded approval in `<audit catalog.schema>.cleanup_approvals` (environment-scoped). Reviewing the dashboard is not authorization — after a dry-run, a reviewer records approvals: `INSERT INTO <...>.cleanup_approvals (run_id, environment, resource_type, resource_id, approved_by, approved_at) VALUES (...)`.
 - **Protected resources are never deleted.** Lakeflow/SDP pipeline jobs, anything carrying a protected tag (`retain`, `production-critical`), and any id in `exclude_ids` are skipped — configured under `protected:` in `config.yaml`.
 - **Blast-radius cap.** `max_deletions_per_run` (default 25) limits how many resources a single live run will actually delete; the rest are logged `SKIPPED`.
 - **Clusters, SQL warehouses, and serving endpoints are flagged for human review only** — the system-table analysis surfaces them, but the workflow never deletes them.

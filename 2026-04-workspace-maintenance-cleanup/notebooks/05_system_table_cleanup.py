@@ -31,6 +31,7 @@ if not config.get("system_table_cleanup", False):
 
 dry_run = config.get("dry_run", True)
 max_deletions = config_all.get("max_deletions_per_run", 25)
+require_approval = config_all.get("require_approval", True)
 
 # Same protection contract as 01: 04 flags jobs on idle-days alone, so 05 must
 # re-check tags / pipeline / exclude_ids before deleting a flagged job.
@@ -46,8 +47,11 @@ _exclude_pipeline = _protected.get("exclude_pipeline_jobs", True)
 # COMMAND ----------
 
 # WorkspaceClient authenticates from the notebook context — no host/token/headers.
+audit_table = config.get("audit_table", "maintenance.cleanup.cleanup_log")
 w = WorkspaceClient()
-logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
+logger = CleanupLogger(spark, table=audit_table)
+gate = DeletionGate(spark, environment=env, dry_run=dry_run, require_approval=require_approval,
+                    max_deletions=max_deletions, audit_table=audit_table)
 
 
 def job_protected(jid):
@@ -105,16 +109,16 @@ for row in flagged_jobs:
         )
         continue
 
+    block = gate.block_reason("job", jid, deleted)
+    if block:
+        logger.log(
+            environment=env, resource_type="job",
+            resource_id=jid, resource_name=f"job-{jid}",
+            owner="system_table_cleanup", action="SKIPPED",
+            reason=f"Candidate — {block}", dry_run=dry_run,
+        )
+        continue
     if not dry_run:
-        if deleted >= max_deletions:
-            logger.log(
-                environment=env, resource_type="job",
-                resource_id=jid, resource_name=f"job-{jid}",
-                owner="system_table_cleanup", action="SKIPPED",
-                reason=f"Candidate — max_deletions_per_run ({max_deletions}) reached",
-                dry_run=dry_run,
-            )
-            continue
         attempts += 1
         try:
             # job_id comes from system tables as a STRING; jobs.delete needs int64.

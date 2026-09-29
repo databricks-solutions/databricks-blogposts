@@ -82,3 +82,67 @@ class CleanupLogger:
         count = len(self.entries)
         self.entries = []
         return count
+
+
+def approvals_table_for(audit_table):
+    """Approvals table sits beside the audit table: <catalog>.<schema>.cleanup_approvals."""
+    catalog, schema, _ = audit_table.split(".")
+    return f"{catalog}.{schema}.cleanup_approvals"
+
+
+def ensure_approvals_table(spark, approvals_table):
+    """Create the approvals table if missing so reviewers can INSERT into it after
+    a dry-run and before the first live run (environment must match the run's env):
+      INSERT INTO <approvals_table> (run_id, environment, resource_type, resource_id, approved_by, approved_at)
+      VALUES ('<run>', '<env>', 'job', '<id>', current_user(), current_timestamp());
+    """
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {approvals_table} (
+            run_id STRING,
+            environment STRING,
+            resource_type STRING,
+            resource_id STRING,
+            approved_by STRING,
+            approved_at TIMESTAMP
+        )
+    """)
+
+
+def load_approved(spark, approvals_table, environment):
+    """Return the set of (resource_type, resource_id) approved FOR THIS environment.
+    Approvals are environment-scoped: resource ids are per-workspace, so an approval
+    recorded in one environment must not authorize deletion in another. Reviewing the
+    dashboard is not itself authorization — a live delete only acts on rows here."""
+    rows = spark.sql(
+        f"SELECT DISTINCT resource_type, resource_id FROM {approvals_table} "
+        f"WHERE environment = '{environment}'"
+    ).collect()
+    return {(r.resource_type, str(r.resource_id)) for r in rows}
+
+
+class DeletionGate:
+    """Shared gate for a live delete: approval first, then the per-run cap.
+
+    In dry-run nothing is blocked (every candidate is flagged). In a live run,
+    block_reason() returns why a candidate must be skipped, or None to proceed.
+    """
+
+    def __init__(self, spark, environment, dry_run, require_approval, max_deletions, audit_table):
+        self.dry_run = dry_run
+        self.require_approval = require_approval
+        self.max_deletions = max_deletions
+        self.approvals_table = approvals_table_for(audit_table)
+        # Always create the approvals table — even in dry-run — so reviewers can
+        # record approvals between a dry-run and the first live run.
+        ensure_approvals_table(spark, self.approvals_table)
+        self.approved = (load_approved(spark, self.approvals_table, environment)
+                         if (require_approval and not dry_run) else set())
+
+    def block_reason(self, resource_type, resource_id, deleted_so_far):
+        if self.dry_run:
+            return None
+        if self.require_approval and (resource_type, str(resource_id)) not in self.approved:
+            return "no approval recorded"
+        if deleted_so_far >= self.max_deletions:
+            return f"max_deletions_per_run ({self.max_deletions}) reached"
+        return None
