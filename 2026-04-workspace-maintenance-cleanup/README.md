@@ -1,11 +1,11 @@
 # Databricks Workspace Cleanup
 
-Automated workspace maintenance using Declarative Automation Bundles (DAB) — clean up unused jobs, dashboards, vector search indexes, and clusters with full audit logging and Lakeview dashboards.
+Automated workspace maintenance using Declarative Automation Bundles (DAB) — find and clean up unused jobs, dashboards, AI Search indexes, clusters, SQL warehouses, and model serving endpoints, with full audit logging and a Lakeview dashboard.
 
 ## Two Approaches
 
 1. **SDK-Driven Cleanup** — the Databricks SDK for Python (`WorkspaceClient`) scans and removes unused resources by metadata (last run date, status, source table existence). Using the SDK means auth is resolved automatically from the runtime context (no manual host/token/headers), so the same code runs unchanged in every target workspace.
-2. **System Table-Driven Cleanup** — Query `system.billing.usage`, `system.compute.clusters`, `system.lakeflow.job_run_timeline`, and `system.query.history` to find resources costing money but delivering no value. System tables are **account/metastore-wide**, so every query is filtered on the current `workspace_id` — the analysis only ever flags resources belonging to the workspace it runs in.
+2. **System Table-Driven Cleanup** — Query `system.billing.usage`, `system.compute.clusters`, `system.lakeflow.job_run_timeline`, `system.query.history`, and `system.serving.*` to find jobs, clusters, SQL warehouses, and serving endpoints costing money but delivering no value. System tables are **account/metastore-wide**, so every query is filtered on the current `workspace_id` — the analysis only ever flags resources belonging to the workspace it runs in.
 
 Both approaches log every action (deleted, skipped, flagged) to a Delta table for auditability.
 
@@ -21,8 +21,8 @@ Both approaches log every action (deleted, skipped, flagged) to a Delta table fo
 ```
 ├── databricks.yml              # DAB bundle definition
 ├── config/
-│   ├── config.yaml             # Cleanup toggles per environment
-│   └── thresholds.yaml         # Retention thresholds
+│   ├── config.yaml             # Per-env toggles, dry_run, audit_table
+│   └── thresholds.yaml         # Retention + review thresholds
 ├── notebooks/
 │   ├── 00_cleanup_logger.py    # Structured logging module
 │   ├── 01_job_cleanup.py       # SDK: delete inactive jobs
