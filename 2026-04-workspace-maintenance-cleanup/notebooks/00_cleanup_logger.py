@@ -29,9 +29,13 @@ class CleanupLogger:
         StructField("details", StringType(), True),
     ])
 
-    def __init__(self, spark, catalog="finops", schema="cleanup"):
+    def __init__(self, spark, table="maintenance.cleanup.cleanup_log"):
+        # `table` is a full three-level name (catalog.schema.table) so the audit
+        # target lives in one place — set it via `audit_table` in config.yaml and
+        # point the Lakeview dashboard at the same name.
         self.spark = spark
-        self.table = f"{catalog}.{schema}.cleanup_log"
+        self.table = table
+        catalog, schema, _ = table.split(".")
         self.entries = []
         self._ensure_table(catalog, schema)
 

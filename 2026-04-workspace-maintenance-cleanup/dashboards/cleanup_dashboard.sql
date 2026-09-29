@@ -1,5 +1,9 @@
 -- ============================================================
 -- Lakeview Dashboard Queries for Workspace Cleanup
+-- ------------------------------------------------------------
+-- All queries read the audit table. It MUST match `audit_table` in
+-- config.yaml (default: maintenance.cleanup.cleanup_log). If you change
+-- audit_table, update the table name in these queries too.
 -- ============================================================
 
 -- 1. Cleanup Summary by Type and Action

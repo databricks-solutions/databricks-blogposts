@@ -1,8 +1,25 @@
-job_inactive_days: 90
-dashboard_inactive_days: 60
-# Jobs that have never run: false = skip and flag for manual review (safer default),
-# true = treat as delete candidates.
-delete_never_run: false
-cluster_idle_hours: 48
-cost_anomaly_multiplier: 3.0
-min_dbu_threshold: 0.01
+# Retention / review thresholds. Used by notebook 01 (jobs) and notebook 04
+# (system-table analysis). Everything the CASE logic keys off lives here so it
+# can be tuned without editing SQL.
+
+# Jobs
+job_inactive_days: 90        # idle days before a job is a delete candidate (01 + 04)
+delete_never_run: false      # true = treat never-run jobs as candidates (01)
+job_fail_ratio: 0.8          # >this fraction of runs failed -> review (04)
+job_review_cost: 1000        # 90d job cost that, with few runs, warrants review (04)
+job_review_max_runs: 5       # "few runs" threshold paired with job_review_cost (04)
+
+# Dashboards (02)
+dashboard_inactive_days: 60  # days since last update before a dashboard is stale
+
+# Clusters (04)
+cluster_review_cost: 5000        # 30d cost that, with few active days, warrants review
+cluster_review_active_days: 5    # "few active days" threshold
+
+# SQL warehouses (04)
+warehouse_review_cost: 1000      # 30d cost that, with few queries, warrants review
+warehouse_review_max_queries: 10
+
+# Model serving endpoints (04)
+serving_review_cost: 500         # 30d cost that, with little traffic, warrants review
+serving_review_max_requests: 100

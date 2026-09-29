@@ -1,0 +1,440 @@
+{
+  "datasets": [
+    {
+      "name": "kpis",
+      "displayName": "KPIs",
+      "queryLines": [
+        "SELECT SUM(CASE WHEN action='FLAGGED' THEN 1 ELSE 0 END) AS flagged, SUM(CASE WHEN action='SKIPPED' THEN 1 ELSE 0 END) AS retained, SUM(CASE WHEN action='DELETED' THEN 1 ELSE 0 END) AS deleted, COUNT(DISTINCT CASE WHEN action='FLAGGED' THEN resource_type END) AS types FROM maintenance.cleanup.cleanup_log"
+      ]
+    },
+    {
+      "name": "flagged_by_type",
+      "displayName": "Flagged by type",
+      "queryLines": [
+        "SELECT resource_type, COUNT(*) AS candidates FROM maintenance.cleanup.cleanup_log WHERE action='FLAGGED' GROUP BY resource_type"
+      ]
+    },
+    {
+      "name": "action_breakdown",
+      "displayName": "Action breakdown",
+      "queryLines": [
+        "SELECT action, COUNT(*) AS n FROM maintenance.cleanup.cleanup_log GROUP BY action"
+      ]
+    },
+    {
+      "name": "flagged_detail",
+      "displayName": "Flagged detail",
+      "queryLines": [
+        "SELECT resource_type, resource_name, reason, owner, timestamp FROM maintenance.cleanup.cleanup_log WHERE action='FLAGGED' ORDER BY timestamp DESC LIMIT 200"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Overview",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## \ud83e\uddf9 Workspace Cleanup \u2014 Audit"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "subtitle",
+            "multilineTextboxSpec": {
+              "lines": [
+                "What each cleanup run flagged, skipped, or deleted. In dry-run, FLAGGED = what *would* be removed."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-flagged",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpis",
+                  "fields": [
+                    {
+                      "name": "flagged",
+                      "expression": "`flagged`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "flagged",
+                  "displayName": "Candidates flagged"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Candidates flagged"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-retained",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpis",
+                  "fields": [
+                    {
+                      "name": "retained",
+                      "expression": "`retained`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "retained",
+                  "displayName": "Retained (skipped)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Retained (skipped)"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-types",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpis",
+                  "fields": [
+                    {
+                      "name": "types",
+                      "expression": "`types`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "types",
+                  "displayName": "Resource types affected"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Resource types affected"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr1",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### What's flagged for cleanup"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "bar-by-type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "flagged_by_type",
+                  "fields": [
+                    {
+                      "name": "resource_type",
+                      "expression": "`resource_type`"
+                    },
+                    {
+                      "name": "sum(candidates)",
+                      "expression": "SUM(`candidates`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "resource_type",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  },
+                  "displayName": "Resource type"
+                },
+                "y": {
+                  "fieldName": "sum(candidates)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Candidates"
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cleanup candidates by resource type"
+              },
+              "mark": {
+                "colors": [
+                  "#FF3621",
+                  "#FFAB00",
+                  "#00A972",
+                  "#8BCAE7"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "pie-actions",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "action_breakdown",
+                  "fields": [
+                    {
+                      "name": "action",
+                      "expression": "`action`"
+                    },
+                    {
+                      "name": "sum(n)",
+                      "expression": "SUM(`n`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(n)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count"
+                },
+                "color": {
+                  "fieldName": "action",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "FLAGGED",
+                        "color": "#FFAB00"
+                      },
+                      {
+                        "value": "SKIPPED",
+                        "color": "#00A972"
+                      },
+                      {
+                        "value": "DELETED",
+                        "color": "#FF3621"
+                      }
+                    ]
+                  },
+                  "displayName": "Action"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Actions logged"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 6,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr2",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Flagged items detail"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "flagged-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "flagged_detail",
+                  "fields": [
+                    {
+                      "name": "resource_type",
+                      "expression": "`resource_type`"
+                    },
+                    {
+                      "name": "resource_name",
+                      "expression": "`resource_name`"
+                    },
+                    {
+                      "name": "reason",
+                      "expression": "`reason`"
+                    },
+                    {
+                      "name": "owner",
+                      "expression": "`owner`"
+                    },
+                    {
+                      "name": "timestamp",
+                      "expression": "`timestamp`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "resource_type",
+                    "displayName": "Type"
+                  },
+                  {
+                    "fieldName": "resource_name",
+                    "displayName": "Resource"
+                  },
+                  {
+                    "fieldName": "reason",
+                    "displayName": "Why flagged"
+                  },
+                  {
+                    "fieldName": "owner",
+                    "displayName": "Owner"
+                  },
+                  {
+                    "fieldName": "timestamp",
+                    "displayName": "When"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Flagged items \u2014 what would be deleted (dry-run)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 6,
+            "height": 8
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    }
+  }
+}

@@ -58,7 +58,7 @@ delete_never_run = thresholds.get("delete_never_run", False)
 # no manual host, token, or headers required, so the same code runs unchanged
 # in every target workspace the bundle is deployed to.
 w = WorkspaceClient()
-logger = CleanupLogger(spark)
+logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
 now = datetime.now(timezone.utc)
 
 # COMMAND ----------

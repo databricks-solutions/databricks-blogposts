@@ -50,7 +50,7 @@ dry_run = config.get("dry_run", True)
 # COMMAND ----------
 
 w = WorkspaceClient()
-logger = CleanupLogger(spark)
+logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
 
 # COMMAND ----------
 

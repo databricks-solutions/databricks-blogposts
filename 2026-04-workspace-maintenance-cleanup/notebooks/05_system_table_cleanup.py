@@ -37,7 +37,7 @@ dry_run = config.get("dry_run", True)
 
 # WorkspaceClient authenticates from the notebook context — no host/token/headers.
 w = WorkspaceClient()
-logger = CleanupLogger(spark)
+logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
 
 # COMMAND ----------
 

@@ -66,7 +66,7 @@ inactive_days = thresholds.get("dashboard_inactive_days", 60)
 # COMMAND ----------
 
 w = WorkspaceClient()
-logger = CleanupLogger(spark)
+logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
 now = datetime.now(timezone.utc)
 
 # COMMAND ----------

@@ -3,8 +3,37 @@
 
 # COMMAND ----------
 
+import yaml
+
 dbutils.widgets.text("environment", "dev")
 env = dbutils.widgets.get("environment")
+
+# Config ships next to the notebooks in the deployed bundle; databricks.yml
+# passes config_path=${workspace.file_path}/config.
+dbutils.widgets.text("config_path", "/Workspace/config")
+config_path = dbutils.widgets.get("config_path")
+
+with open(f"{config_path}/config.yaml") as f:
+    config_all = yaml.safe_load(f) or {}
+if env not in config_all:
+    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(config_all)}")
+config = config_all[env]
+
+with open(f"{config_path}/thresholds.yaml") as f:
+    thresholds = yaml.safe_load(f) or {}
+
+# Review thresholds for the CASE logic below — configurable in one place
+# (thresholds.yaml) instead of hard-coded in the SQL.
+job_inactive_days = thresholds.get("job_inactive_days", 90)
+job_review_cost = thresholds.get("job_review_cost", 1000)
+job_review_max_runs = thresholds.get("job_review_max_runs", 5)
+job_fail_ratio = thresholds.get("job_fail_ratio", 0.8)
+cluster_review_cost = thresholds.get("cluster_review_cost", 5000)
+cluster_review_active_days = thresholds.get("cluster_review_active_days", 5)
+warehouse_review_cost = thresholds.get("warehouse_review_cost", 1000)
+warehouse_review_max_queries = thresholds.get("warehouse_review_max_queries", 10)
+serving_review_cost = thresholds.get("serving_review_cost", 500)
+serving_review_max_requests = thresholds.get("serving_review_max_requests", 100)
 
 # Scope every system-table query to THIS workspace. The system.* tables are
 # account/metastore-wide — they hold data for every workspace attached to the
@@ -18,7 +47,7 @@ workspace_id = (dbutils.notebook.entry_point.getDbutils()
 # MAGIC %run ./00_cleanup_logger
 
 # COMMAND ----------
-logger = CleanupLogger(spark)
+logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
 
 # COMMAND ----------
 
@@ -67,11 +96,11 @@ idle_jobs = spark.sql(f"""
         COALESCE(jc.cost_90d, 0) AS cost_90d,
         COALESCE(jc.dbus_90d, 0) AS dbus_90d,
         CASE
-            WHEN DATEDIFF(DAY, ja.last_run, CURRENT_TIMESTAMP()) > 90
+            WHEN DATEDIFF(DAY, ja.last_run, CURRENT_TIMESTAMP()) > {job_inactive_days}
                 THEN 'CANDIDATE_DELETE'
-            WHEN ja.failed_runs > ja.total_runs * 0.8
+            WHEN ja.failed_runs > ja.total_runs * {job_fail_ratio}
                 THEN 'CANDIDATE_REVIEW'
-            WHEN COALESCE(jc.cost_90d, 0) > 1000 AND ja.total_runs < 5
+            WHEN COALESCE(jc.cost_90d, 0) > {job_review_cost} AND ja.total_runs < {job_review_max_runs}
                 THEN 'CANDIDATE_REVIEW'
             ELSE 'HEALTHY'
         END AS recommendation
@@ -123,7 +152,7 @@ cluster_analysis = spark.sql(f"""
         COALESCE(cc.active_days, 0) AS active_days,
         CASE
             WHEN COALESCE(cc.active_days, 0) = 0 THEN 'CANDIDATE_DELETE'
-            WHEN cc.cost_30d > 5000 AND cc.active_days < 5
+            WHEN cc.cost_30d > {cluster_review_cost} AND cc.active_days < {cluster_review_active_days}
                 THEN 'CANDIDATE_REVIEW'
             WHEN ci.cluster_source = 'UI' THEN 'CANDIDATE_REVIEW'
             ELSE 'HEALTHY'
@@ -177,7 +206,7 @@ warehouse_analysis = spark.sql(f"""
         COALESCE(wq.query_days, 0) AS query_days,
         CASE
             WHEN COALESCE(wq.queries_30d, 0) = 0 THEN 'CANDIDATE_DELETE'
-            WHEN wc.cost_30d > 1000 AND wq.queries_30d < 10
+            WHEN wc.cost_30d > {warehouse_review_cost} AND wq.queries_30d < {warehouse_review_max_queries}
                 THEN 'CANDIDATE_REVIEW'
             ELSE 'HEALTHY'
         END AS recommendation
@@ -228,8 +257,8 @@ serving_analysis = spark.sql(f"""
         CASE
             WHEN COALESCE(SUM(et.requests_30d), 0) = 0
                 THEN 'CANDIDATE_DELETE'
-            WHEN ec.cost_30d > 500
-                 AND COALESCE(SUM(et.requests_30d), 0) < 100
+            WHEN ec.cost_30d > {serving_review_cost}
+                 AND COALESCE(SUM(et.requests_30d), 0) < {serving_review_max_requests}
                 THEN 'CANDIDATE_REVIEW'
             ELSE 'HEALTHY'
         END AS recommendation

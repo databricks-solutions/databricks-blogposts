@@ -7,8 +7,20 @@ workspace:
 variables:
   environment:
     default: dev
+  warehouse_id:
+    # Required: the SQL warehouse that backs the audit dashboard. No default, so
+    # `bundle deploy` fails fast if it is unset rather than deploying a dashboard
+    # that cannot run. Pass it with --var warehouse_id=<id> (see README), or add
+    # it under a target's `variables:` block.
+    description: SQL warehouse that backs the audit dashboard
 
 resources:
+  dashboards:
+    cleanup_audit:
+      display_name: "Workspace Cleanup — Audit"
+      file_path: ./dashboards/cleanup_audit.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+
   jobs:
     cleanup_workflow:
       name: "[Maintenance] Workspace Cleanup"
