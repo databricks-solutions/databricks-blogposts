@@ -24,40 +24,45 @@ resources:
             notebook_path: ./notebooks/04_system_table_analysis.py
             base_parameters:
               environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
 
         - task_key: job_cleanup
           depends_on:
             - task_key: system_table_analysis
           notebook_task:
-            notebook_path: ./notebooks/01_api_job_cleanup.py
+            notebook_path: ./notebooks/01_job_cleanup.py
             base_parameters:
               environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
 
         - task_key: dashboard_cleanup
           depends_on:
             - task_key: system_table_analysis
           notebook_task:
-            notebook_path: ./notebooks/02_api_dashboard_cleanup.py
+            notebook_path: ./notebooks/02_dashboard_cleanup.py
             base_parameters:
               environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
 
-        - task_key: vector_cleanup
+        - task_key: ai_search_index_cleanup
           depends_on:
             - task_key: system_table_analysis
           notebook_task:
-            notebook_path: ./notebooks/03_api_vector_cleanup.py
+            notebook_path: ./notebooks/03_ai_search_index_cleanup.py
             base_parameters:
               environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
 
         - task_key: system_table_cleanup
           depends_on:
             - task_key: job_cleanup
             - task_key: dashboard_cleanup
-            - task_key: vector_cleanup
+            - task_key: ai_search_index_cleanup
           notebook_task:
             notebook_path: ./notebooks/05_system_table_cleanup.py
             base_parameters:
               environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
 
 targets:
   dev:

@@ -4,9 +4,30 @@
 import json
 from datetime import datetime, timezone
 
+from pyspark.sql.types import (BooleanType, StringType, StructField,
+                               StructType, TimestampType)
+
 
 class CleanupLogger:
     """Log every cleanup action to a Delta table for auditability."""
+
+    # Explicit schema so createDataFrame never has to infer types. On serverless
+    # (Spark Connect) inference fails with CANNOT_DETERMINE_TYPE whenever a whole
+    # column is None (e.g. a batch of skipped items with no details/reason).
+    _COLUMNS = ["timestamp", "environment", "resource_type", "resource_id",
+                "resource_name", "owner", "action", "reason", "dry_run", "details"]
+    _SCHEMA = StructType([
+        StructField("timestamp", TimestampType(), True),
+        StructField("environment", StringType(), True),
+        StructField("resource_type", StringType(), True),
+        StructField("resource_id", StringType(), True),
+        StructField("resource_name", StringType(), True),
+        StructField("owner", StringType(), True),
+        StructField("action", StringType(), True),
+        StructField("reason", StringType(), True),
+        StructField("dry_run", BooleanType(), True),
+        StructField("details", StringType(), True),
+    ])
 
     def __init__(self, spark, catalog="finops", schema="cleanup"):
         self.spark = spark
@@ -49,7 +70,10 @@ class CleanupLogger:
     def flush(self):
         if not self.entries:
             return 0
-        df = self.spark.createDataFrame(self.entries)
+        # Build rows as tuples in a fixed column order and pass the explicit
+        # schema, so an all-None column never breaks type inference.
+        rows = [tuple(e.get(c) for c in self._COLUMNS) for e in self.entries]
+        df = self.spark.createDataFrame(rows, schema=self._SCHEMA)
         df.write.mode("append").saveAsTable(self.table)
         count = len(self.entries)
         self.entries = []

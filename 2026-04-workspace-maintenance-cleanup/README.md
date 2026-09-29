@@ -4,8 +4,8 @@ Automated workspace maintenance using Declarative Automation Bundles (DAB) — c
 
 ## Two Approaches
 
-1. **API-Driven Cleanup** — the Databricks SDK for Python (`WorkspaceClient`) scans and removes unused resources by metadata (last run date, status, source table existence). Using the SDK means auth is resolved automatically from the runtime context (no manual host/token/headers), so the same code runs unchanged in every target workspace.
-2. **System Table-Driven Cleanup** — Query `system.billing.usage`, `system.compute.clusters`, `system.lakeflow.job_run_timeline`, and `system.query.history` to find resources costing money but delivering no value
+1. **SDK-Driven Cleanup** — the Databricks SDK for Python (`WorkspaceClient`) scans and removes unused resources by metadata (last run date, status, source table existence). Using the SDK means auth is resolved automatically from the runtime context (no manual host/token/headers), so the same code runs unchanged in every target workspace.
+2. **System Table-Driven Cleanup** — Query `system.billing.usage`, `system.compute.clusters`, `system.lakeflow.job_run_timeline`, and `system.query.history` to find resources costing money but delivering no value. System tables are **account/metastore-wide**, so every query is filtered on the current `workspace_id` — the analysis only ever flags resources belonging to the workspace it runs in.
 
 Both approaches log every action (deleted, skipped, flagged) to a Delta table for auditability.
 
@@ -14,7 +14,7 @@ Both approaches log every action (deleted, skipped, flagged) to a Delta table fo
 - **Dry-run first.** Dev always runs in dry-run and only logs `FLAGGED` candidates; execution is opt-in per environment.
 - **Jobs that have never run are skipped** (flagged for manual review) unless `delete_never_run: true` is set in `thresholds.yaml`.
 - **Dashboards are trashed, not permanently deleted** (`w.lakeview.trash`), so they remain recoverable.
-- **Vector indexes are only deleted when orphaned** — a delta-sync index whose source table no longer exists. Direct-access indexes and still-provisioning indexes are never treated as candidates.
+- **AI Search indexes are only deleted when orphaned** — a delta-sync index whose source table no longer exists. Direct-access indexes and still-provisioning indexes are never treated as candidates.
 
 ## Structure
 
@@ -25,11 +25,11 @@ Both approaches log every action (deleted, skipped, flagged) to a Delta table fo
 │   └── thresholds.yaml         # Retention thresholds
 ├── notebooks/
 │   ├── 00_cleanup_logger.py    # Structured logging module
-│   ├── 01_api_job_cleanup.py   # SDK: delete inactive jobs
-│   ├── 02_api_dashboard_cleanup.py  # SDK: trash stale dashboards
-│   ├── 03_api_vector_cleanup.py     # SDK: purge orphaned indexes
+│   ├── 01_job_cleanup.py       # SDK: delete inactive jobs
+│   ├── 02_dashboard_cleanup.py # SDK: trash stale dashboards
+│   ├── 03_ai_search_index_cleanup.py  # SDK: purge orphaned AI Search indexes
 │   ├── 04_system_table_analysis.py  # System tables: discover waste
-│   └── 05_system_table_cleanup.py   # System tables: act on flagged items
+│   └── 05_system_table_cleanup.py   # System tables: act on flagged items (SDK deletes)
 └── dashboards/
     └── cleanup_dashboard.sql   # Lakeview dashboard queries
 ```

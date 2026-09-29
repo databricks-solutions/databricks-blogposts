@@ -6,9 +6,18 @@
 dbutils.widgets.text("environment", "dev")
 env = dbutils.widgets.get("environment")
 
+# Scope every system-table query to THIS workspace. The system.* tables are
+# account/metastore-wide — they hold data for every workspace attached to the
+# metastore — so without a workspace_id filter this analysis would flag jobs,
+# clusters, warehouses and endpoints from other workspaces too.
+workspace_id = (dbutils.notebook.entry_point.getDbutils()
+                .notebook().getContext().workspaceId().get())
+
 # COMMAND ----------
 
-%run ./00_cleanup_logger
+# MAGIC %run ./00_cleanup_logger
+
+# COMMAND ----------
 logger = CleanupLogger(spark)
 
 # COMMAND ----------
@@ -18,7 +27,7 @@ logger = CleanupLogger(spark)
 
 # COMMAND ----------
 
-idle_jobs = spark.sql("""
+idle_jobs = spark.sql(f"""
     WITH job_activity AS (
         SELECT
             job_id,
@@ -29,6 +38,7 @@ idle_jobs = spark.sql("""
             SUM(run_duration_seconds) / 3600.0 AS total_hours
         FROM system.lakeflow.job_run_timeline
         WHERE period_start_time >= DATEADD(DAY, -180, CURRENT_DATE())
+            AND workspace_id = {workspace_id}
         GROUP BY job_id
     ),
     job_costs AS (
@@ -44,6 +54,7 @@ idle_jobs = spark.sql("""
                  OR u.usage_start_time < p.price_end_time)
         WHERE u.usage_date >= DATEADD(DAY, -90, CURRENT_DATE())
             AND u.usage_metadata.job_id IS NOT NULL
+            AND u.workspace_id = {workspace_id}
         GROUP BY usage_metadata.job_id
     )
     SELECT
@@ -79,7 +90,7 @@ display(idle_jobs)
 
 # COMMAND ----------
 
-cluster_analysis = spark.sql("""
+cluster_analysis = spark.sql(f"""
     WITH cluster_costs AS (
         SELECT
             usage_metadata.cluster_id AS cluster_id,
@@ -94,6 +105,7 @@ cluster_analysis = spark.sql("""
                  OR u.usage_start_time < p.price_end_time)
         WHERE u.usage_date >= DATEADD(DAY, -30, CURRENT_DATE())
             AND u.usage_metadata.cluster_id IS NOT NULL
+            AND u.workspace_id = {workspace_id}
         GROUP BY usage_metadata.cluster_id
     ),
     cluster_info AS (
@@ -101,6 +113,7 @@ cluster_analysis = spark.sql("""
                cluster_source, driver_node_type, worker_node_type
         FROM system.compute.clusters
         WHERE delete_time IS NULL
+            AND workspace_id = {workspace_id}
     )
     SELECT
         ci.cluster_id, ci.cluster_name, ci.owner,
@@ -130,7 +143,7 @@ display(cluster_analysis)
 
 # COMMAND ----------
 
-warehouse_analysis = spark.sql("""
+warehouse_analysis = spark.sql(f"""
     WITH wh_costs AS (
         SELECT
             usage_metadata.warehouse_id AS warehouse_id,
@@ -145,6 +158,7 @@ warehouse_analysis = spark.sql("""
         WHERE u.usage_date >= DATEADD(DAY, -30, CURRENT_DATE())
             AND u.usage_metadata.warehouse_id IS NOT NULL
             AND u.sku_name LIKE '%SQL%'
+            AND u.workspace_id = {workspace_id}
         GROUP BY usage_metadata.warehouse_id
     ),
     wh_queries AS (
@@ -154,6 +168,7 @@ warehouse_analysis = spark.sql("""
         FROM system.query.history
         WHERE start_time >= DATEADD(DAY, -30, CURRENT_DATE())
             AND compute.warehouse_id IS NOT NULL
+            AND workspace_id = {workspace_id}
         GROUP BY compute.warehouse_id
     )
     SELECT
@@ -181,7 +196,7 @@ display(warehouse_analysis)
 
 # COMMAND ----------
 
-serving_analysis = spark.sql("""
+serving_analysis = spark.sql(f"""
     WITH ep_costs AS (
         SELECT
             usage_metadata.endpoint_id AS endpoint_id,
@@ -196,6 +211,7 @@ serving_analysis = spark.sql("""
         WHERE u.usage_date >= DATEADD(DAY, -30, CURRENT_DATE())
             AND u.sku_name LIKE '%SERVING%'
             AND u.usage_metadata.endpoint_id IS NOT NULL
+            AND u.workspace_id = {workspace_id}
         GROUP BY usage_metadata.endpoint_id, usage_metadata.endpoint_name
     ),
     ep_traffic AS (
@@ -203,6 +219,7 @@ serving_analysis = spark.sql("""
                COUNT(*) AS requests_30d
         FROM system.serving.endpoint_usage
         WHERE request_time >= DATEADD(DAY, -30, CURRENT_DATE())
+            AND workspace_id = {workspace_id}
         GROUP BY served_entity_id
     )
     SELECT
