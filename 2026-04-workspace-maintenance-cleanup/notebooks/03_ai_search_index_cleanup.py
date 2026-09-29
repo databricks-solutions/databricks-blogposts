@@ -35,7 +35,7 @@ with open(f"{config_path}/config.yaml") as f:
     config_all = yaml.safe_load(f) or {}
 
 if env not in config_all:
-    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(config_all)}")
+    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(k for k, v in config_all.items() if isinstance(v, dict) and 'dry_run' in v)}")
 config = config_all[env]
 
 if not config.get("ai_search_index_cleanup", False):

@@ -12,6 +12,9 @@ Both approaches log every action (deleted, skipped, flagged) to a Delta table fo
 ### Safety defaults
 
 - **Dry-run first.** Dev always runs in dry-run and only logs `FLAGGED` candidates; execution is opt-in per environment.
+- **Protected resources are never deleted.** Lakeflow/SDP pipeline jobs, anything carrying a protected tag (`retain`, `production-critical`), and any id in `exclude_ids` are skipped — configured under `protected:` in `config.yaml`.
+- **Blast-radius cap.** `max_deletions_per_run` (default 25) limits how many resources a single live run will actually delete; the rest are logged `SKIPPED`.
+- **Clusters, SQL warehouses, and serving endpoints are flagged for human review only** — the system-table analysis surfaces them, but the workflow never deletes them.
 - **Jobs that have never run are skipped** (flagged for manual review) unless `delete_never_run: true` is set in `thresholds.yaml`.
 - **Dashboards are trashed, not permanently deleted** (`w.lakeview.trash`), so they remain recoverable.
 - **AI Search indexes are only deleted when orphaned** — a delta-sync index whose source table no longer exists. Direct-access indexes and still-provisioning indexes are never treated as candidates.

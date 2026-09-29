@@ -1,5 +1,7 @@
 # Databricks notebook source
-# System Table-Driven Cleanup — acts on flagged items from analysis step (Databricks SDK)
+# System Table-Driven Cleanup — deletes flagged jobs from the analysis step (Databricks SDK).
+# Clusters, SQL warehouses, and serving endpoints are surfaced by notebook 04 for
+# human review only — this notebook does NOT delete them.
 
 import yaml
 
@@ -21,13 +23,21 @@ with open(f"{config_path}/config.yaml") as f:
     config_all = yaml.safe_load(f) or {}
 
 if env not in config_all:
-    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(config_all)}")
+    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(k for k, v in config_all.items() if isinstance(v, dict) and 'dry_run' in v)}")
 config = config_all[env]
 
 if not config.get("system_table_cleanup", False):
     dbutils.notebook.exit(f"System table cleanup disabled for {env}")
 
 dry_run = config.get("dry_run", True)
+max_deletions = config_all.get("max_deletions_per_run", 25)
+
+# Same protection contract as 01: 04 flags jobs on idle-days alone, so 05 must
+# re-check tags / pipeline / exclude_ids before deleting a flagged job.
+_protected = config_all.get("protected", {}) or {}
+_protected_tags = set(_protected.get("tags", []) or [])
+_exclude_ids = set(_protected.get("exclude_ids", []) or [])
+_exclude_pipeline = _protected.get("exclude_pipeline_jobs", True)
 
 # COMMAND ----------
 
@@ -38,6 +48,27 @@ dry_run = config.get("dry_run", True)
 # WorkspaceClient authenticates from the notebook context — no host/token/headers.
 w = WorkspaceClient()
 logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
+
+
+def job_protected(jid):
+    """Return a reason string if this job must never be deleted, else None.
+    Mirrors 01's is_protected, fetching the job to inspect tags / pipeline tasks."""
+    if str(jid) in _exclude_ids or f"job:{jid}" in _exclude_ids:
+        return "excluded by id"
+    try:
+        s = w.jobs.get(job_id=int(jid)).settings
+    except NotFound:
+        return None  # job already gone — nothing to protect
+    except Exception as e:
+        # Fail closed: if we cannot verify protection (bad id, rate limit, 5xx,
+        # permission error), skip rather than risk deleting a protected job.
+        return f"protection check failed ({e})"
+    tags = (s.tags if s else None) or {}
+    if _protected_tags & (set(tags) | set(tags.values())):
+        return "protected tag"
+    if _exclude_pipeline and s and s.tasks and any(getattr(t, "pipeline_task", None) for t in s.tasks):
+        return "Lakeflow/SDP pipeline job"
+    return None
 
 # COMMAND ----------
 
@@ -56,16 +87,40 @@ except Exception:
 
 print(f"{'[DRY RUN] ' if dry_run else ''}{len(flagged_jobs)} jobs to delete")
 
-attempts = failures = 0
+attempts = failures = deleted = protection_failures = 0
 
 for row in flagged_jobs:
     err = None
+    jid = row.job_id
+    # Protected jobs (pipeline/SDP, tagged, or explicitly excluded) are never deleted.
+    prot = job_protected(jid)
+    if prot:
+        if prot.startswith("protection check failed"):
+            protection_failures += 1
+        logger.log(
+            environment=env, resource_type="job",
+            resource_id=jid, resource_name=f"job-{jid}",
+            owner="system_table_cleanup", action="SKIPPED",
+            reason=f"Protected — {prot}", dry_run=dry_run,
+        )
+        continue
+
     if not dry_run:
+        if deleted >= max_deletions:
+            logger.log(
+                environment=env, resource_type="job",
+                resource_id=jid, resource_name=f"job-{jid}",
+                owner="system_table_cleanup", action="SKIPPED",
+                reason=f"Candidate — max_deletions_per_run ({max_deletions}) reached",
+                dry_run=dry_run,
+            )
+            continue
         attempts += 1
         try:
             # job_id comes from system tables as a STRING; jobs.delete needs int64.
-            w.jobs.delete(job_id=int(row.job_id))
+            w.jobs.delete(job_id=int(jid))
             action = "DELETED"
+            deleted += 1
         except NotFound:
             # Already gone (e.g. 01_job_cleanup deleted it earlier in the DAG) —
             # that's the desired state, not a failure.
@@ -78,7 +133,7 @@ for row in flagged_jobs:
 
     logger.log(
         environment=env, resource_type="job",
-        resource_id=row.job_id, resource_name=f"job-{row.job_id}",
+        resource_id=jid, resource_name=f"job-{jid}",
         owner="system_table_cleanup", action=action,
         reason=f"{row.days_idle} days idle, ${row.cost_90d} wasted",
         dry_run=dry_run, details={"error": err} if err else None
@@ -86,45 +141,8 @@ for row in flagged_jobs:
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Terminate Flagged Clusters
-
-# COMMAND ----------
-
-try:
-    flagged_clusters = spark.sql("""
-        SELECT cluster_id, cluster_name, recommendation, cost_30d
-        FROM cluster_analysis WHERE recommendation = 'CANDIDATE_DELETE'
-    """).collect()
-except Exception:
-    flagged_clusters = []
-
-print(f"{'[DRY RUN] ' if dry_run else ''}{len(flagged_clusters)} clusters to terminate")
-
-for row in flagged_clusters:
-    err = None
-    if not dry_run:
-        attempts += 1
-        try:
-            w.clusters.permanent_delete(cluster_id=row.cluster_id)
-            action = "DELETED"
-        except NotFound:
-            # Already removed — desired state, not a failure.
-            action = "ALREADY_DELETED"
-        except Exception as e:
-            action, err = "FAILED", str(e)
-            failures += 1
-    else:
-        action = "DRY_RUN"
-
-    logger.log(
-        environment=env, resource_type="cluster",
-        resource_id=row.cluster_id,
-        resource_name=row.cluster_name or "unnamed",
-        owner="system_table_cleanup", action=action,
-        reason=f"Zero activity, ${row.cost_30d} wasted in 30d",
-        dry_run=dry_run, details={"error": err} if err else None
-    )
+# Clusters, SQL warehouses, and serving endpoints flagged by notebook 04 are left
+# for human review — they are intentionally NOT deleted by this workflow.
 
 # COMMAND ----------
 
@@ -143,3 +161,6 @@ print(summary)
 # error. Real failures stay visible in the audit log and in this summary.
 if failures:
     print(f"WARNING: {failures} deletion(s) failed — inspect the audit log 'details' column.")
+if protection_failures:
+    print(f"WARNING: {protection_failures} job(s) skipped because their protection status "
+          "could not be verified — a systemic jobs.get() outage would surface here.")

@@ -30,7 +30,7 @@ with open(f"{config_path}/config.yaml") as f:
     config_all = yaml.safe_load(f) or {}
 
 if env not in config_all:
-    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(config_all)}")
+    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(k for k, v in config_all.items() if isinstance(v, dict) and 'dry_run' in v)}")
 config = config_all[env]
 with open(f"{config_path}/thresholds.yaml") as f:
     thresholds = yaml.safe_load(f)
@@ -44,6 +44,29 @@ inactive_days = thresholds.get("job_inactive_days", 90)
 # Jobs that have never run: skip by default (safer than deleting; flag for manual
 # review). Set delete_never_run: true in thresholds.yaml to treat them as candidates.
 delete_never_run = thresholds.get("delete_never_run", False)
+
+# Blast-radius cap: at most this many live deletions per run (dry-run flags all).
+max_deletions = config_all.get("max_deletions_per_run", 25)
+
+# Protected resources are never deleted, regardless of thresholds.
+_protected = config_all.get("protected", {}) or {}
+_protected_tags = set(_protected.get("tags", []) or [])
+_exclude_ids = set(_protected.get("exclude_ids", []) or [])
+_exclude_pipeline = _protected.get("exclude_pipeline_jobs", True)
+
+
+def is_protected(job):
+    """Return a reason string if the job must never be deleted, else None."""
+    jid = job.job_id
+    if str(jid) in _exclude_ids or f"job:{jid}" in _exclude_ids:
+        return "excluded by id"
+    tags = (job.settings.tags if job.settings else None) or {}
+    if _protected_tags & (set(tags) | set(tags.values())):
+        return "protected tag"
+    if _exclude_pipeline and job.settings and job.settings.tasks:
+        if any(getattr(t, "pipeline_task", None) for t in job.settings.tasks):
+            return "Lakeflow/SDP pipeline job"
+    return None
 
 # COMMAND ----------
 
@@ -71,6 +94,17 @@ try:
         job_name = job.settings.name if job.settings else "unnamed"
         creator = job.creator_user_name or "unknown"
 
+        # Never touch protected jobs (pipeline/SDP, tagged, or explicitly excluded).
+        prot = is_protected(job)
+        if prot:
+            logger.log(
+                environment=env, resource_type="job",
+                resource_id=job_id, resource_name=job_name, owner=creator,
+                action="SKIPPED", reason=f"Protected — {prot}", dry_run=dry_run,
+            )
+            skipped += 1
+            continue
+
         try:
             # Most recent run (newest first). list_runs auto-paginates, so take just
             # the first item with next(...) instead of list()-ing the whole history.
@@ -79,6 +113,16 @@ try:
             # No runs at all: the job has genuinely never run.
             if latest_run is None:
                 if delete_never_run:
+                    if not dry_run and deleted >= max_deletions:
+                        logger.log(
+                            environment=env, resource_type="job",
+                            resource_id=job_id, resource_name=job_name, owner=creator,
+                            action="SKIPPED",
+                            reason=f"Candidate (never run) — max_deletions_per_run ({max_deletions}) reached",
+                            dry_run=dry_run,
+                        )
+                        skipped += 1
+                        continue
                     if not dry_run:
                         w.jobs.delete(job_id=job_id)
                     logger.log(
@@ -138,6 +182,16 @@ try:
 
             # Branch on the idle count directly (both sides are timezone-aware).
             if days_idle > inactive_days:
+                if not dry_run and deleted >= max_deletions:
+                    logger.log(
+                        environment=env, resource_type="job",
+                        resource_id=job_id, resource_name=job_name, owner=creator,
+                        action="SKIPPED",
+                        reason=f"Candidate (inactive {days_idle}d) — max_deletions_per_run ({max_deletions}) reached",
+                        dry_run=dry_run,
+                    )
+                    skipped += 1
+                    continue
                 if not dry_run:
                     w.jobs.delete(job_id=job_id)
                 logger.log(

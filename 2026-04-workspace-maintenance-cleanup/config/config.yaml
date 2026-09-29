@@ -3,6 +3,21 @@
 #   *_cleanup      -> enable/disable each cleanup type (false = notebook exits)
 #   audit_table    -> where every action is logged; point the Lakeview dashboard
 #                     at this same three-level (catalog.schema.table) name.
+
+# Hard cap on live deletions per run (per notebook) — limits blast radius if a
+# rule is misconfigured. Dry-run flags all candidates regardless.
+max_deletions_per_run: 25
+
+# Protected resources are never deleted, regardless of thresholds (shared by all
+# environments). Tags match a job's tag keys or values; exclude_ids are explicit
+# "<type>:<id>" (or bare id) entries, e.g. ["job:123", "dashboard:abc"].
+protected:
+  exclude_pipeline_jobs: true
+  tags:
+    - retain
+    - production-critical
+  exclude_ids: []
+
 dev:
   job_cleanup: false
   dashboard_cleanup: false
