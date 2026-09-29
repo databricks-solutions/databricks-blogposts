@@ -16,8 +16,8 @@ config_path = dbutils.widgets.get("config_path")
 with open(f"{config_path}/config.yaml") as f:
     config_all = yaml.safe_load(f) or {}
 if env not in config_all:
-    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(k for k, v in config_all.items() if isinstance(v, dict) and 'dry_run' in v)}")
-config = config_all[env]
+    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(k for k, v in config_all.items() if isinstance(v, dict) and k not in ('defaults', 'protected'))}")
+config = {**config_all.get("defaults", {}), **config_all[env]}  # env overrides defaults
 
 with open(f"{config_path}/thresholds.yaml") as f:
     thresholds = yaml.safe_load(f) or {}

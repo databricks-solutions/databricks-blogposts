@@ -4,6 +4,11 @@
 #   audit_table    -> where every action is logged; point the Lakeview dashboard
 #                     at this same three-level (catalog.schema.table) name.
 
+# Applied to every environment unless that environment overrides the key. Keeps
+# dry_run: true as the safe baseline — an env must opt in to live deletion.
+defaults:
+  dry_run: true
+
 # Hard cap on live deletions per run (per notebook) — limits blast radius if a
 # rule is misconfigured. Dry-run flags all candidates regardless.
 max_deletions_per_run: 25
@@ -29,7 +34,7 @@ dev:
   dashboard_cleanup: false
   ai_search_index_cleanup: true
   system_table_cleanup: true
-  dry_run: true
+  # no dry_run here -> inherits defaults.dry_run: true
   audit_table: maintenance.cleanup.cleanup_log
 
 stage:
