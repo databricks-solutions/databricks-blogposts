@@ -1,5 +1,5 @@
 # Databricks notebook source
-# SDK-Driven AI Search Index Cleanup — removes orphaned indexes (Databricks SDK)
+# SDK-Driven AI Search Index Cleanup - removes orphaned indexes (Databricks SDK)
 #
 # get_index().delta_sync_index_spec needs a newer databricks-sdk than the
 # serverless runtime default: SDK 0.20.0 exposes the field under the old name
@@ -34,9 +34,21 @@ config_path = dbutils.widgets.get("config_path")
 with open(f"{config_path}/config.yaml") as f:
     config_all = yaml.safe_load(f) or {}
 
-if env not in config_all:
-    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(k for k, v in config_all.items() if isinstance(v, dict) and k not in ('defaults', 'protected'))}")
-config = {**config_all.get("defaults", {}), **config_all[env]}  # env overrides defaults
+def _deep_merge(base, over):
+    """Recursively merge `over` onto `base` so nested defaults inherit per key
+    (a shallow {**base, **over} would drop the sibling keys of a nested override).
+    Inlined per notebook by design: config is parsed before the %run ./00_cleanup_logger
+    cell, so this small pure helper cannot yet come from the shared module."""
+    merged = dict(base)
+    for k, v in over.items():
+        merged[k] = _deep_merge(merged[k], v) if isinstance(merged.get(k), dict) and isinstance(v, dict) else v
+    return merged
+
+
+valid_envs = [k for k, v in config_all.items() if isinstance(v, dict) and k not in ('defaults', 'protected')]
+if env not in valid_envs:
+    dbutils.notebook.exit(f"Unknown environment '{env}' - expected one of {sorted(valid_envs)}")
+config = _deep_merge(config_all.get("defaults", {}), config_all[env])  # env overrides defaults, per key
 
 if not config.get("ai_search_index_cleanup", False):
     dbutils.notebook.exit(f"AI Search index cleanup disabled for {env}")
@@ -103,7 +115,7 @@ try:
                             environment=env, resource_type="ai_search_index",
                             resource_id=idx_name, resource_name=idx_name, owner=creator,
                             action="SKIPPED",
-                            reason=f"Orphaned candidate — {block}",
+                            reason=f"Orphaned candidate - {block}",
                             dry_run=dry_run, details={"endpoint": ep.name, "source_table": source_table},
                         )
                         skipped += 1
@@ -114,7 +126,7 @@ try:
                         environment=env, resource_type="ai_search_index",
                         resource_id=idx_name, resource_name=idx_name, owner=creator,
                         action="DELETED" if not dry_run else "FLAGGED",
-                        reason=f"Orphaned — source table {source_table} no longer exists",
+                        reason=f"Orphaned - source table {source_table} no longer exists",
                         dry_run=dry_run,
                         details={"endpoint": ep.name, "source_table": source_table},
                     )
@@ -124,14 +136,14 @@ try:
                         environment=env, resource_type="ai_search_index",
                         resource_id=idx_name, resource_name=idx_name, owner=creator,
                         action="SKIPPED",
-                        reason="Active — source table exists",
+                        reason="Active - source table exists",
                         dry_run=dry_run,
                         details={"endpoint": ep.name, "source_table": source_table},
                     )
                     skipped += 1
             except Exception as e:
                 # An index deleted mid-scan or a single-item API error must not abort
-                # the run and discard the buffered audit batch — record it and continue.
+                # the run and discard the buffered audit batch - record it and continue.
                 logger.log(
                     environment=env, resource_type="ai_search_index",
                     resource_id=idx_name, resource_name=idx_name, owner="unknown",
@@ -143,8 +155,8 @@ try:
 
 finally:
     # Always persist the audit batch, even if endpoint/index (or job/
-    # dashboard) enumeration raises mid-scan — otherwise a transient API
+    # dashboard) enumeration raises mid-scan - otherwise a transient API
     # error would silently discard everything recorded so far.
     flushed = logger.flush()
-print(f"AI Search Indexes — {'[DRY RUN] ' if dry_run else ''}Deleted: {deleted}, "
+print(f"AI Search Indexes - {'[DRY RUN] ' if dry_run else ''}Deleted: {deleted}, "
       f"Skipped: {skipped}, Logged: {flushed}")

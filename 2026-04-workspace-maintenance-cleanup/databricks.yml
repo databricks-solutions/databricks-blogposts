@@ -17,7 +17,7 @@ variables:
 resources:
   dashboards:
     cleanup_audit:
-      display_name: "Workspace Cleanup — Audit"
+      display_name: "Workspace Cleanup - Audit"
       file_path: ./dashboards/cleanup_audit.lvdash.json
       warehouse_id: ${var.warehouse_id}
 

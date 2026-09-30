@@ -1,5 +1,5 @@
 # Databricks notebook source
-# Structured logging for all cleanup operations — writes to Delta table
+# Structured logging for all cleanup operations - writes to Delta table
 
 import json
 from datetime import datetime, timezone
@@ -31,7 +31,7 @@ class CleanupLogger:
 
     def __init__(self, spark, table="maintenance.cleanup.cleanup_log"):
         # `table` is a full three-level name (catalog.schema.table) so the audit
-        # target lives in one place — set it via `audit_table` in config.yaml and
+        # target lives in one place - set it via `audit_table` in config.yaml and
         # point the Lakeview dashboard at the same name.
         self.spark = spark
         self.table = table
@@ -108,16 +108,42 @@ def ensure_approvals_table(spark, approvals_table):
     """)
 
 
-def load_approved(spark, approvals_table, environment):
+def load_approved(spark, approvals_table, environment, valid_hours=168):
     """Return the set of (resource_type, resource_id) approved FOR THIS environment.
     Approvals are environment-scoped: resource ids are per-workspace, so an approval
-    recorded in one environment must not authorize deletion in another. Reviewing the
-    dashboard is not itself authorization — a live delete only acts on rows here."""
+    recorded in one environment must not authorize deletion in another. A timestamped
+    approval also expires after valid_hours (default 7 days), so a one-time approval
+    does not become permanent standing authorization for a recurring live run -
+    re-approve for a new cycle, or raise approval_valid_hours if your review-to-run
+    window is longer. Rows with a NULL approved_at never expire (an explicit opt-in to
+    a standing approval), so an approval is never silently dropped just because the
+    timestamp was omitted. Reviewing the dashboard is not itself authorization; a live
+    delete only acts on rows here. Matching is by (resource_type, resource_id): within
+    the validity window a newly created resource that reuses an old id would be treated
+    as approved, so keep the window tight where ids are recycled."""
     rows = spark.sql(
         f"SELECT DISTINCT resource_type, resource_id FROM {approvals_table} "
-        f"WHERE environment = '{environment}'"
+        f"WHERE environment = '{environment}' "
+        f"AND (approved_at IS NULL "
+        f"     OR approved_at >= current_timestamp() - INTERVAL {int(valid_hours)} HOURS)"
     ).collect()
     return {(r.resource_type, str(r.resource_id)) for r in rows}
+
+
+def job_protection_reason(settings, jid, protected_tags, exclude_ids, exclude_pipeline):
+    """Shared job-protection check used by both 01 (has the job object) and 05
+    (fetches settings by id), so the rule lives in one place and cannot drift.
+    `settings` is a jobs JobSettings or None. Returns a reason string if the job
+    must never be deleted, else None."""
+    if str(jid) in exclude_ids or f"job:{jid}" in exclude_ids:
+        return "excluded by id"
+    tags = (settings.tags if settings else None) or {}
+    if protected_tags & (set(tags) | set(tags.values())):
+        return "protected tag"
+    if exclude_pipeline and settings and settings.tasks and any(
+            getattr(t, "pipeline_task", None) for t in settings.tasks):
+        return "Lakeflow/SDP pipeline job"
+    return None
 
 
 class DeletionGate:
@@ -127,15 +153,16 @@ class DeletionGate:
     block_reason() returns why a candidate must be skipped, or None to proceed.
     """
 
-    def __init__(self, spark, environment, dry_run, require_approval, max_deletions, audit_table):
+    def __init__(self, spark, environment, dry_run, require_approval, max_deletions,
+                 audit_table, approval_valid_hours=168):
         self.dry_run = dry_run
         self.require_approval = require_approval
         self.max_deletions = max_deletions
         self.approvals_table = approvals_table_for(audit_table)
-        # Always create the approvals table — even in dry-run — so reviewers can
+        # Always create the approvals table - even in dry-run - so reviewers can
         # record approvals between a dry-run and the first live run.
         ensure_approvals_table(spark, self.approvals_table)
-        self.approved = (load_approved(spark, self.approvals_table, environment)
+        self.approved = (load_approved(spark, self.approvals_table, environment, approval_valid_hours)
                          if (require_approval and not dry_run) else set())
 
     def block_reason(self, resource_type, resource_id, deleted_so_far):

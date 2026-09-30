@@ -1,5 +1,5 @@
 # Databricks notebook source
-# System Table-Driven Analysis — discover waste using billing + activity data
+# System Table-Driven Analysis - discover waste using billing + activity data
 
 # COMMAND ----------
 
@@ -15,14 +15,26 @@ config_path = dbutils.widgets.get("config_path")
 
 with open(f"{config_path}/config.yaml") as f:
     config_all = yaml.safe_load(f) or {}
-if env not in config_all:
-    dbutils.notebook.exit(f"Unknown environment '{env}' — expected one of {sorted(k for k, v in config_all.items() if isinstance(v, dict) and k not in ('defaults', 'protected'))}")
-config = {**config_all.get("defaults", {}), **config_all[env]}  # env overrides defaults
+def _deep_merge(base, over):
+    """Recursively merge `over` onto `base` so nested defaults inherit per key
+    (a shallow {**base, **over} would drop the sibling keys of a nested override).
+    Inlined per notebook by design: config is parsed before the %run ./00_cleanup_logger
+    cell, so this small pure helper cannot yet come from the shared module."""
+    merged = dict(base)
+    for k, v in over.items():
+        merged[k] = _deep_merge(merged[k], v) if isinstance(merged.get(k), dict) and isinstance(v, dict) else v
+    return merged
+
+
+valid_envs = [k for k, v in config_all.items() if isinstance(v, dict) and k not in ('defaults', 'protected')]
+if env not in valid_envs:
+    dbutils.notebook.exit(f"Unknown environment '{env}' - expected one of {sorted(valid_envs)}")
+config = _deep_merge(config_all.get("defaults", {}), config_all[env])  # env overrides defaults, per key
 
 with open(f"{config_path}/thresholds.yaml") as f:
     thresholds = yaml.safe_load(f) or {}
 
-# Review thresholds for the CASE logic below — configurable in one place
+# Review thresholds for the CASE logic below - configurable in one place
 # (thresholds.yaml) instead of hard-coded in the SQL.
 job_inactive_days = thresholds.get("job_inactive_days", 90)
 job_review_cost = thresholds.get("job_review_cost", 1000)
@@ -36,8 +48,8 @@ serving_review_cost = thresholds.get("serving_review_cost", 500)
 serving_review_max_requests = thresholds.get("serving_review_max_requests", 100)
 
 # Scope every system-table query to THIS workspace. The system.* tables are
-# account/metastore-wide — they hold data for every workspace attached to the
-# metastore — so without a workspace_id filter this analysis would flag jobs,
+# account/metastore-wide - they hold data for every workspace attached to the
+# metastore - so without a workspace_id filter this analysis would flag jobs,
 # clusters, warehouses and endpoints from other workspaces too.
 workspace_id = (dbutils.notebook.entry_point.getDbutils()
                 .notebook().getContext().workspaceId().get())
@@ -60,7 +72,13 @@ idle_jobs = spark.sql(f"""
     WITH job_activity AS (
         SELECT
             job_id,
-            MAX(period_start_time) AS last_run,
+            -- Last activity = the most recent run END, falling back to its START
+            -- for a still-running row (period_end_time IS NULL). Using end time
+            -- (matches 01_job_cleanup) avoids scoring a long run that began long
+            -- ago but finished recently as idle; the COALESCE fallback keeps a job
+            -- with a run in progress right now from being flagged CANDIDATE_DELETE
+            -- (and then deleted by 05) just because its previous run ended long ago.
+            MAX(COALESCE(period_end_time, period_start_time)) AS last_run,
             COUNT(*) AS total_runs,
             SUM(CASE WHEN result_state NOT IN ('SUCCESS','SUCCEEDED')
                 THEN 1 ELSE 0 END) AS failed_runs,
@@ -305,3 +323,14 @@ for view_name, res_type in [("job_analysis", "job"), ("cluster_analysis", "clust
 
 flushed = logger.flush()
 print(f"System table analysis complete. {flushed} items flagged.")
+
+# COMMAND ----------
+
+# Hand the delete-candidate jobs to notebook 05. It runs as a SEPARATE job task
+# with its own Spark session, so a temp view would not be visible there. Persist
+# to a table in the audit schema and OVERWRITE it each run, so 05 always acts on
+# exactly this run's candidates - one row per job, no dedup or time-window logic.
+_cat, _sch, _ = config.get("audit_table", "maintenance.cleanup.cleanup_log").split(".")
+(spark.sql("SELECT CAST(job_id AS STRING) AS job_id, COALESCE(cost_90d, 0) AS cost "
+           "FROM job_analysis WHERE recommendation = 'CANDIDATE_DELETE'")
+    .write.mode("overwrite").saveAsTable(f"{_cat}.{_sch}.job_delete_candidates"))

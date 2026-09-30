@@ -1,24 +1,24 @@
 # Databricks Workspace Cleanup
 
-Automated workspace maintenance using Declarative Automation Bundles (DAB) — find and clean up unused jobs, dashboards, AI Search indexes, clusters, SQL warehouses, and model serving endpoints, with full audit logging and a Lakeview dashboard.
+Automated workspace maintenance using Declarative Automation Bundles (DAB) - find and clean up unused jobs, dashboards, AI Search indexes, clusters, SQL warehouses, and model serving endpoints, with full audit logging and a Lakeview dashboard.
 
 ## Two Approaches
 
-1. **SDK-Driven Cleanup** — the Databricks SDK for Python (`WorkspaceClient`) scans and removes unused resources by metadata (last run date, status, source table existence). Using the SDK means auth is resolved automatically from the runtime context (no manual host/token/headers), so the same code runs unchanged in every target workspace.
-2. **System Table-Driven Cleanup** — Query `system.billing.usage`, `system.compute.clusters`, `system.lakeflow.job_run_timeline`, `system.query.history`, and `system.serving.*` to find jobs, clusters, SQL warehouses, and serving endpoints costing money but delivering no value. System tables are **account/metastore-wide**, so every query is filtered on the current `workspace_id` — the analysis only ever flags resources belonging to the workspace it runs in.
+1. **SDK-Driven Cleanup** - the Databricks SDK for Python (`WorkspaceClient`) scans and removes unused resources by metadata (last run date, status, source table existence). Using the SDK means auth is resolved automatically from the runtime context (no manual host/token/headers), so the same code runs unchanged in every target workspace.
+2. **System Table-Driven Cleanup** - Query `system.billing.usage`, `system.compute.clusters`, `system.lakeflow.job_run_timeline`, `system.query.history`, and `system.serving.*` to find jobs, clusters, SQL warehouses, and serving endpoints costing money but delivering no value. System tables are **account/metastore-wide**, so every query is filtered on the current `workspace_id` - the analysis only ever flags resources belonging to the workspace it runs in.
 
 Both approaches log every action (deleted, skipped, flagged) to a Delta table for auditability.
 
 ### Safety defaults
 
 - **Dry-run first.** Dev always runs in dry-run and only logs `FLAGGED` candidates; execution is opt-in per environment.
-- **Approval gate.** With `require_approval: true`, a live delete only acts on resources that have a recorded approval in `<audit catalog.schema>.cleanup_approvals` (environment-scoped). Reviewing the dashboard is not authorization — after a dry-run, a reviewer records approvals: `INSERT INTO <...>.cleanup_approvals (run_id, environment, resource_type, resource_id, approved_by, approved_at) VALUES (...)`.
-- **Protected resources are never deleted.** Lakeflow/SDP pipeline jobs, anything carrying a protected tag (`retain`, `production-critical`), and any id in `exclude_ids` are skipped — configured under `protected:` in `config.yaml`.
+- **Approval gate.** With `require_approval: true`, a live delete only acts on resources that have a recorded approval in `<audit catalog.schema>.cleanup_approvals` (environment-scoped). Reviewing the dashboard is not authorization - after a dry-run, a reviewer records approvals: `INSERT INTO <...>.cleanup_approvals (run_id, environment, resource_type, resource_id, approved_by, approved_at) VALUES (...)`.
+- **Protected resources are never deleted.** Lakeflow/SDP pipeline jobs, anything carrying a protected tag (`retain`, `production-critical`), and any id in `exclude_ids` are skipped - configured under `protected:` in `config.yaml`.
 - **Blast-radius cap.** `max_deletions_per_run` (default 25) limits how many resources a single live run will actually delete; the rest are logged `SKIPPED`.
-- **Clusters, SQL warehouses, and serving endpoints are flagged for human review only** — the system-table analysis surfaces them, but the workflow never deletes them.
+- **Clusters, SQL warehouses, and serving endpoints are flagged for human review only** - the system-table analysis surfaces them, but the workflow never deletes them.
 - **Jobs that have never run are skipped** (flagged for manual review) unless `delete_never_run: true` is set in `thresholds.yaml`.
 - **Dashboards are trashed, not permanently deleted** (`w.lakeview.trash`), so they remain recoverable.
-- **AI Search indexes are only deleted when orphaned** — a delta-sync index whose source table no longer exists. Direct-access indexes and still-provisioning indexes are never treated as candidates.
+- **AI Search indexes are only deleted when orphaned** - a delta-sync index whose source table no longer exists. Direct-access indexes and still-provisioning indexes are never treated as candidates.
 
 ## Structure
 
@@ -62,7 +62,7 @@ The notebooks run on serverless compute. Notebooks that use the Lakeview and Vec
 
 ## Audit dashboard
 
-Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table showing candidate counts by resource type, the action breakdown, and a detail table of exactly what would be removed — so you can review a dry-run before enabling deletion. Set the backing warehouse with `--var warehouse_id=<id>` (or per target), and if you change `audit_table`, update the dashboard datasets to match.
+Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table showing candidate counts by resource type, the action breakdown, and a detail table of exactly what would be removed - so you can review a dry-run before enabling deletion. Set the backing warehouse with `--var warehouse_id=<id>` (or per target), and if you change `audit_table`, update the dashboard datasets to match.
 
 ## Blog Post
 
