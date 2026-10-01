@@ -5,19 +5,17 @@ that **streams computed features into Lakebase** for personalization. Built on *
 Structured Streaming**, it reads a stream of video **engagement events** (watches and likes),
 computes each user's **last-6 watched** and **last-3 liked** videos with `transformWithState`, and
 writes one feature row per user straight into **Databricks Lakebase** (Postgres) via the **native
-Lakebase sink** — ready for **single-digit-millisecond** online serving.
+Lakebase sink**, ready for **single-digit-millisecond** online serving.
 
-The point of this example is the **native Lakebase sink**: instead of hand-rolling a `foreach` writer
+The **[native Lakebase sink](https://docs.databricks.com/aws/en/structured-streaming/lakebase)** replaces hand-rolling a `foreach` writer
 (manual buffering, backpressure, retries, deduplication, connection pooling, and credential refresh)
-or standing up an offline→online sync pipeline, you write computed features straight to a
-**UC-registered Lakebase table** with a single `writeStream…toTable()` call — a seamless **Unity
-Catalog ↔ Lakebase** integration. The connector handles buffering, backpressure, retries,
-deduplication, and workspace-managed authentication for you. If the Lakebase table isn't registered
+or standing up an offline→online sync pipeline. You write computed features straight to a
+**UC-registered Lakebase table** with a single `writeStream…toTable()` call, a **Unity
+Catalog ↔ Lakebase** integration. The connector handles all of that for you. If the Lakebase table isn't registered
 in Unity Catalog, you can write to the Lakebase endpoint using `.format("postgresql")`.
 
-You bring **Kafka**, **Unity Catalog**, a **Lakebase** project, and a **DBR 18 LTS** cluster; we
-provide the **notebooks** and the **data generator / replay** path so a team can reproduce it in
-their own workspace.
+The same connector also supports **external PostgreSQL databases** (e.g. Amazon RDS or
+self-hosted) via a Unity Catalog connection (DBR 19+, Public Preview).
 
 ### Before you run: fill in the placeholders
 
@@ -51,7 +49,7 @@ the video they watched 10 seconds ago matters more than yesterday's history. Tho
 served to a model or app at request time, so they must live in a **low-latency store** keyed by
 user, and they must be **kept current** as events stream in.
 
-This demo builds exactly that: a per-user feature row, updated continuously.
+This demo builds a per-user feature row, updated continuously.
 
 | Input event | Meaning |
 |-------------|---------|
@@ -63,11 +61,11 @@ For each `user_id` we maintain two rolling lists and write them as one row:
 - **`watched_video_1..6`** — the last 6 watched video ids, most recent first (`watched_video_1` = newest).
 - **`liked_video_1..3`** — the last 3 liked video ids, most recent first.
 
-One row per user, overwritten on every event via upsert — the shape a feature-serving lookup wants.
+One row per user, overwritten on every event via upsert, the shape a feature-serving lookup wants.
 
 ### Why this fits the native Lakebase sink
 
-- The output is a **single row per user**, keyed by `user_id` — a natural OLTP **upsert**.
+- The output is a **single row per user**, keyed by `user_id`, a natural OLTP **upsert**.
 - Features must be **fresh**: the sink writes computed features **straight into Lakebase**, with no
   offline Delta table and no separate sync job in between.
 - The **same Lakebase table** the pipeline writes can be **read concurrently** for serving.
@@ -79,7 +77,7 @@ One row per user, overwritten on every event via upsert — the shape a feature-
 1. How to **generate and replay** a realistic engagement stream into Kafka at ~20k events/sec.
 2. How to compute **per-user "last-N" features** with `transformWithState` using a single `ValueState`.
 3. How to write those features to a **UC-registered Lakebase table** with the **native Lakebase
-   sink** (`.toTable()`) — no `foreach` writer, no manual buffering or auth — so they're ready for
+   sink** (`.toTable()`): no `foreach` writer, no manual buffering or auth, so they're ready for
    recommendation and personalization serving.
 
 ---
@@ -122,14 +120,14 @@ One row per user, overwritten on every event via upsert — the shape a feature-
 
 ### 2. Apache Kafka
 
-Bootstrap servers reachable from the cluster. One topic (default name — change to match yours):
+Bootstrap servers reachable from the cluster. One topic (default name; change to match yours):
 
 | Topic | Partitions | Purpose |
 |-------|-----------|---------|
 | `engagement_events` | 8 | Watch/like JSON events (source for the feature pipeline) |
 
 Run `create-delete-topic-scala.scala` (Maven: `org.apache.kafka:kafka-clients:3.5.1`) to
-create/delete it. The script **deletes then recreates** the topic — use only where safe.
+create/delete it. The script **deletes then recreates** the topic. Use only where safe.
 
 ### 3. Databricks secrets
 
@@ -212,7 +210,7 @@ CREATE TABLE feature_store.user_features (
 );
 ```
 
-`user_id` is the **PRIMARY KEY** — it's both the serving lookup key and the sink's upsert key.
+`user_id` is the **PRIMARY KEY**. It's both the serving lookup key and the sink's upsert key.
 
 ### Step 4 — Start the feature pipeline: `RTM-features-to-lakebase.py`
 
@@ -232,7 +230,7 @@ Reads `engagement_events_stream` with `maxFilesPerTrigger=1` at `processingTime=
 
 The stream is grouped by `user_id` and processed by a `StatefulProcessor` that keeps both rolling
 lists in a **single `ValueState`** (a struct of `{watched, liked}` arrays). Per event, that is
-**one RocksDB read + one write** — the processor appends the new `video_id`, truncates to the last
+**one RocksDB read + one write**. The processor appends the new `video_id`, truncates to the last
 N, and emits one flat feature row (`video_1` = most recent):
 
 ```python
@@ -245,10 +243,9 @@ self.features.update((watched_list, liked_list))
 
 ### Writing to Lakebase with the native sink
 
-The whole point — no `foreach` writer. The pipeline writes to a **UC-registered Lakebase table** with
-`.toTable()`, showcasing the seamless **Unity Catalog ↔ Lakebase** integration: the table is
-governed in Unity Catalog, and the connector handles buffering, backpressure, retries,
-deduplication, and workspace-managed authentication:
+No `foreach` writer needed. The pipeline writes to a **UC-registered Lakebase table** with
+`.toTable()`. The table is governed in Unity Catalog, and the connector handles buffering,
+backpressure, retries, deduplication, and workspace-managed authentication:
 
 ```python
 (features_stream.writeStream
@@ -260,12 +257,15 @@ deduplication, and workspace-managed authentication:
 ```
 
 For a Lakebase table **not** registered in Unity Catalog, use `.format("postgresql")` with the
-Lakebase `endpoint` and `dbtable` instead (included in the notebook).
+Lakebase `endpoint` and `dbtable` instead (included in the notebook). See
+[Lakebase tables not registered with Unity Catalog](https://docs.databricks.com/aws/en/structured-streaming/lakebase#lakebase-tables-not-registered-with-unity-catalog).
+The same `.format("postgresql")` path also works for **external PostgreSQL databases** (e.g. Amazon RDS or self-hosted) using
+a Unity Catalog connection. See [External PostgreSQL with Unity Catalog credentials](https://docs.databricks.com/aws/en/structured-streaming/lakebase#external-postgresql-with-unity-catalog-credentials).
 
 ### Where the features go
 
 The pipeline continuously upserts one row per user into Lakebase. Once the features land, they can be
-queried by an app or a model — a fast point lookup by `user_id` — for real-time inference,
+queried by an app or a model, a fast point lookup by `user_id`, for real-time inference,
 recommendations, and personalization.
 
 ---
@@ -305,7 +305,7 @@ One row per `user_id`: `watched_video_1..6`, `liked_video_1..3` (most recent fir
                                                              ▼
 ┌──────────────────┐   ┌──────────────────────┐   ┌──────────────────────┐
 │ Online serving   │◀──│ feature_store.       │◀──│ transformWithState   │
-│ (point lookup)   │   │ user_features (Lakebase)│ native postgresql sink│
+│ (point lookup)   │   │ user_features (Lakebase)│ native lakebase sink  │
 └──────────────────┘   └──────────────────────┘   └──────────────────────┘
 ```
 
@@ -316,6 +316,7 @@ One row per `user_id`: `watched_video_1..6`, `liked_video_1..3` (most recent fir
 - [Write to Lakebase from Structured Streaming (Databricks)](https://docs.databricks.com/aws/en/structured-streaming/lakebase)
 - [Real-time mode in Structured Streaming (Databricks)](https://docs.databricks.com/aws/en/structured-streaming/real-time/concepts)
 - [transformWithState — Stateful applications (Databricks)](https://docs.databricks.com/aws/en/stateful-applications/)
+- [Write to external PostgreSQL from Structured Streaming (Databricks)](https://docs.databricks.com/aws/en/structured-streaming/lakebase#external-postgresql-with-unity-catalog-credentials)
 - [Databricks Lakebase](https://docs.databricks.com/aws/en/oltp/)
 
 ---
