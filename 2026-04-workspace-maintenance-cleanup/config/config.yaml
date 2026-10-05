@@ -1,0 +1,54 @@
+# Per-environment cleanup toggles.
+#   dry_run: true  -> scan + log FLAGGED candidates only, delete nothing
+#   *_cleanup      -> enable/disable each cleanup type (false = notebook exits)
+#   audit_table    -> where every action is logged; point the Lakeview dashboard
+#                     at this same three-level (catalog.schema.table) name.
+
+# Applied to every environment unless that environment overrides the key. Keeps
+# dry_run: true as the safe baseline - an env must opt in to live deletion.
+defaults:
+  dry_run: true
+
+# Hard cap on live deletions per run (per notebook) - limits blast radius if a
+# rule is misconfigured. Dry-run flags all candidates regardless.
+max_deletions_per_run: 25
+
+# Approval gate: when true, a live (non-dry-run) delete only acts on resources
+# that have a recorded approval in <audit catalog.schema>.cleanup_approvals.
+# Reviewing the dashboard is not authorization - reviewers must INSERT an approval
+# row. Dry-run always flags every candidate regardless of this setting.
+require_approval: true
+
+# Protected resources are never deleted, regardless of thresholds (shared by all
+# environments). Tags match a job's tag keys or values; exclude_ids are explicit
+# "<type>:<id>" (or bare id) entries, e.g. ["job:123", "dashboard:abc"].
+protected:
+  exclude_pipeline_jobs: true
+  tags:
+    - retain
+    - production-critical
+  exclude_ids: []
+
+dev:
+  job_cleanup: false
+  dashboard_cleanup: false
+  ai_search_index_cleanup: true
+  system_table_cleanup: true
+  # no dry_run here -> inherits defaults.dry_run: true
+  audit_table: maintenance.cleanup.cleanup_log
+
+stage:
+  job_cleanup: true
+  dashboard_cleanup: true
+  ai_search_index_cleanup: true
+  system_table_cleanup: true
+  dry_run: false
+  audit_table: maintenance.cleanup.cleanup_log
+
+prod:
+  job_cleanup: true
+  dashboard_cleanup: true
+  ai_search_index_cleanup: true
+  system_table_cleanup: true
+  dry_run: false
+  audit_table: maintenance.cleanup.cleanup_log

@@ -1,0 +1,336 @@
+# Databricks notebook source
+# System Table-Driven Analysis - discover waste using billing + activity data
+
+# COMMAND ----------
+
+import yaml
+
+dbutils.widgets.text("environment", "dev")
+env = dbutils.widgets.get("environment")
+
+# Config ships next to the notebooks in the deployed bundle; databricks.yml
+# passes config_path=${workspace.file_path}/config.
+dbutils.widgets.text("config_path", "/Workspace/config")
+config_path = dbutils.widgets.get("config_path")
+
+with open(f"{config_path}/config.yaml") as f:
+    config_all = yaml.safe_load(f) or {}
+def _deep_merge(base, over):
+    """Recursively merge `over` onto `base` so nested defaults inherit per key
+    (a shallow {**base, **over} would drop the sibling keys of a nested override).
+    Inlined per notebook by design: config is parsed before the %run ./00_cleanup_logger
+    cell, so this small pure helper cannot yet come from the shared module."""
+    merged = dict(base)
+    for k, v in over.items():
+        merged[k] = _deep_merge(merged[k], v) if isinstance(merged.get(k), dict) and isinstance(v, dict) else v
+    return merged
+
+
+valid_envs = [k for k, v in config_all.items() if isinstance(v, dict) and k not in ('defaults', 'protected')]
+if env not in valid_envs:
+    dbutils.notebook.exit(f"Unknown environment '{env}' - expected one of {sorted(valid_envs)}")
+config = _deep_merge(config_all.get("defaults", {}), config_all[env])  # env overrides defaults, per key
+
+with open(f"{config_path}/thresholds.yaml") as f:
+    thresholds = yaml.safe_load(f) or {}
+
+# Review thresholds for the CASE logic below - configurable in one place
+# (thresholds.yaml) instead of hard-coded in the SQL.
+job_inactive_days = thresholds.get("job_inactive_days", 90)
+job_review_cost = thresholds.get("job_review_cost", 1000)
+job_review_max_runs = thresholds.get("job_review_max_runs", 5)
+job_fail_ratio = thresholds.get("job_fail_ratio", 0.8)
+cluster_review_cost = thresholds.get("cluster_review_cost", 5000)
+cluster_review_active_days = thresholds.get("cluster_review_active_days", 5)
+warehouse_review_cost = thresholds.get("warehouse_review_cost", 1000)
+warehouse_review_max_queries = thresholds.get("warehouse_review_max_queries", 10)
+serving_review_cost = thresholds.get("serving_review_cost", 500)
+serving_review_max_requests = thresholds.get("serving_review_max_requests", 100)
+
+# Scope every system-table query to THIS workspace. The system.* tables are
+# account/metastore-wide - they hold data for every workspace attached to the
+# metastore - so without a workspace_id filter this analysis would flag jobs,
+# clusters, warehouses and endpoints from other workspaces too.
+workspace_id = (dbutils.notebook.entry_point.getDbutils()
+                .notebook().getContext().workspaceId().get())
+
+# COMMAND ----------
+
+# MAGIC %run ./00_cleanup_logger
+
+# COMMAND ----------
+logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 1. Jobs: Cost vs Activity
+
+# COMMAND ----------
+
+idle_jobs = spark.sql(f"""
+    WITH job_activity AS (
+        SELECT
+            job_id,
+            -- Last activity = the most recent run END, falling back to its START
+            -- for a still-running row (period_end_time IS NULL). Using end time
+            -- (matches 01_job_cleanup) avoids scoring a long run that began long
+            -- ago but finished recently as idle; the COALESCE fallback keeps a job
+            -- with a run in progress right now from being flagged CANDIDATE_DELETE
+            -- (and then deleted by 05) just because its previous run ended long ago.
+            MAX(COALESCE(period_end_time, period_start_time)) AS last_run,
+            COUNT(*) AS total_runs,
+            SUM(CASE WHEN result_state NOT IN ('SUCCESS','SUCCEEDED')
+                THEN 1 ELSE 0 END) AS failed_runs,
+            SUM(run_duration_seconds) / 3600.0 AS total_hours
+        FROM system.lakeflow.job_run_timeline
+        WHERE period_start_time >= DATEADD(DAY, -180, CURRENT_DATE())
+            AND workspace_id = {workspace_id}
+        GROUP BY job_id
+    ),
+    job_costs AS (
+        SELECT
+            usage_metadata.job_id AS job_id,
+            ROUND(SUM(usage_quantity * p.pricing.default), 2) AS cost_90d,
+            SUM(usage_quantity) AS dbus_90d
+        FROM system.billing.usage u
+        JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name AND u.cloud = p.cloud
+            AND u.usage_start_time >= p.price_start_time
+            AND (p.price_end_time IS NULL
+                 OR u.usage_start_time < p.price_end_time)
+        WHERE u.usage_date >= DATEADD(DAY, -90, CURRENT_DATE())
+            AND u.usage_metadata.job_id IS NOT NULL
+            AND u.workspace_id = {workspace_id}
+        GROUP BY usage_metadata.job_id
+    )
+    SELECT
+        ja.job_id,
+        ja.last_run,
+        DATEDIFF(DAY, ja.last_run, CURRENT_TIMESTAMP()) AS days_idle,
+        ja.total_runs,
+        ja.failed_runs,
+        ROUND(ja.total_hours, 2) AS total_hours,
+        COALESCE(jc.cost_90d, 0) AS cost_90d,
+        COALESCE(jc.dbus_90d, 0) AS dbus_90d,
+        CASE
+            WHEN DATEDIFF(DAY, ja.last_run, CURRENT_TIMESTAMP()) > {job_inactive_days}
+                THEN 'CANDIDATE_DELETE'
+            WHEN ja.failed_runs > ja.total_runs * {job_fail_ratio}
+                THEN 'CANDIDATE_REVIEW'
+            WHEN COALESCE(jc.cost_90d, 0) > {job_review_cost} AND ja.total_runs < {job_review_max_runs}
+                THEN 'CANDIDATE_REVIEW'
+            ELSE 'HEALTHY'
+        END AS recommendation
+    FROM job_activity ja
+    LEFT JOIN job_costs jc ON ja.job_id = jc.job_id
+    ORDER BY cost_90d DESC
+""")
+
+idle_jobs.createOrReplaceTempView("job_analysis")
+display(idle_jobs)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 2. Clusters: Cost vs Utilisation
+
+# COMMAND ----------
+
+cluster_analysis = spark.sql(f"""
+    WITH cluster_costs AS (
+        SELECT
+            usage_metadata.cluster_id AS cluster_id,
+            ROUND(SUM(usage_quantity * p.pricing.default), 2) AS cost_30d,
+            SUM(usage_quantity) AS dbus_30d,
+            COUNT(DISTINCT usage_date) AS active_days
+        FROM system.billing.usage u
+        JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name AND u.cloud = p.cloud
+            AND u.usage_start_time >= p.price_start_time
+            AND (p.price_end_time IS NULL
+                 OR u.usage_start_time < p.price_end_time)
+        WHERE u.usage_date >= DATEADD(DAY, -30, CURRENT_DATE())
+            AND u.usage_metadata.cluster_id IS NOT NULL
+            AND u.workspace_id = {workspace_id}
+        GROUP BY usage_metadata.cluster_id
+    ),
+    cluster_info AS (
+        SELECT cluster_id, cluster_name, owned_by AS owner,
+               cluster_source, driver_node_type, worker_node_type
+        FROM system.compute.clusters
+        WHERE delete_time IS NULL
+            AND workspace_id = {workspace_id}
+    )
+    SELECT
+        ci.cluster_id, ci.cluster_name, ci.owner,
+        ci.cluster_source,
+        COALESCE(cc.cost_30d, 0) AS cost_30d,
+        COALESCE(cc.dbus_30d, 0) AS dbus_30d,
+        COALESCE(cc.active_days, 0) AS active_days,
+        CASE
+            WHEN COALESCE(cc.active_days, 0) = 0 THEN 'CANDIDATE_DELETE'
+            WHEN cc.cost_30d > {cluster_review_cost} AND cc.active_days < {cluster_review_active_days}
+                THEN 'CANDIDATE_REVIEW'
+            WHEN ci.cluster_source = 'UI' THEN 'CANDIDATE_REVIEW'
+            ELSE 'HEALTHY'
+        END AS recommendation
+    FROM cluster_info ci
+    LEFT JOIN cluster_costs cc ON ci.cluster_id = cc.cluster_id
+    ORDER BY cost_30d DESC
+""")
+
+cluster_analysis.createOrReplaceTempView("cluster_analysis")
+display(cluster_analysis)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 3. SQL Warehouses: Cost vs Query Volume
+
+# COMMAND ----------
+
+warehouse_analysis = spark.sql(f"""
+    WITH wh_costs AS (
+        SELECT
+            usage_metadata.warehouse_id AS warehouse_id,
+            ROUND(SUM(usage_quantity * p.pricing.default), 2) AS cost_30d,
+            COUNT(DISTINCT usage_date) AS billing_days
+        FROM system.billing.usage u
+        JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name AND u.cloud = p.cloud
+            AND u.usage_start_time >= p.price_start_time
+            AND (p.price_end_time IS NULL
+                 OR u.usage_start_time < p.price_end_time)
+        WHERE u.usage_date >= DATEADD(DAY, -30, CURRENT_DATE())
+            AND u.usage_metadata.warehouse_id IS NOT NULL
+            AND u.sku_name LIKE '%SQL%'
+            AND u.workspace_id = {workspace_id}
+        GROUP BY usage_metadata.warehouse_id
+    ),
+    wh_queries AS (
+        SELECT compute.warehouse_id AS warehouse_id,
+               COUNT(*) AS queries_30d,
+               COUNT(DISTINCT DATE(start_time)) AS query_days
+        FROM system.query.history
+        WHERE start_time >= DATEADD(DAY, -30, CURRENT_DATE())
+            AND compute.warehouse_id IS NOT NULL
+            AND workspace_id = {workspace_id}
+        GROUP BY compute.warehouse_id
+    )
+    SELECT
+        wc.warehouse_id, wc.cost_30d, wc.billing_days,
+        COALESCE(wq.queries_30d, 0) AS queries_30d,
+        COALESCE(wq.query_days, 0) AS query_days,
+        CASE
+            WHEN COALESCE(wq.queries_30d, 0) = 0 THEN 'CANDIDATE_DELETE'
+            WHEN wc.cost_30d > {warehouse_review_cost} AND wq.queries_30d < {warehouse_review_max_queries}
+                THEN 'CANDIDATE_REVIEW'
+            ELSE 'HEALTHY'
+        END AS recommendation
+    FROM wh_costs wc
+    LEFT JOIN wh_queries wq ON wc.warehouse_id = wq.warehouse_id
+    ORDER BY cost_30d DESC
+""")
+
+warehouse_analysis.createOrReplaceTempView("warehouse_analysis")
+display(warehouse_analysis)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 4. Model Serving Endpoints: Cost vs Traffic
+
+# COMMAND ----------
+
+serving_analysis = spark.sql(f"""
+    WITH ep_costs AS (
+        SELECT
+            usage_metadata.endpoint_id AS endpoint_id,
+            usage_metadata.endpoint_name AS endpoint_name,
+            ROUND(SUM(usage_quantity * p.pricing.default), 2) AS cost_30d
+        FROM system.billing.usage u
+        JOIN system.billing.list_prices p
+            ON u.sku_name = p.sku_name AND u.cloud = p.cloud
+            AND u.usage_start_time >= p.price_start_time
+            AND (p.price_end_time IS NULL
+                 OR u.usage_start_time < p.price_end_time)
+        WHERE u.usage_date >= DATEADD(DAY, -30, CURRENT_DATE())
+            AND u.sku_name LIKE '%SERVING%'
+            AND u.usage_metadata.endpoint_id IS NOT NULL
+            AND u.workspace_id = {workspace_id}
+        GROUP BY usage_metadata.endpoint_id, usage_metadata.endpoint_name
+    ),
+    ep_traffic AS (
+        SELECT served_entity_id,
+               COUNT(*) AS requests_30d
+        FROM system.serving.endpoint_usage
+        WHERE request_time >= DATEADD(DAY, -30, CURRENT_DATE())
+            AND workspace_id = {workspace_id}
+        GROUP BY served_entity_id
+    )
+    SELECT
+        ec.endpoint_id, ec.endpoint_name, ec.cost_30d,
+        COALESCE(SUM(et.requests_30d), 0) AS requests_30d,
+        CASE
+            WHEN COALESCE(SUM(et.requests_30d), 0) = 0
+                THEN 'CANDIDATE_DELETE'
+            WHEN ec.cost_30d > {serving_review_cost}
+                 AND COALESCE(SUM(et.requests_30d), 0) < {serving_review_max_requests}
+                THEN 'CANDIDATE_REVIEW'
+            ELSE 'HEALTHY'
+        END AS recommendation
+    FROM ep_costs ec
+    LEFT JOIN system.serving.served_entities se
+        ON ec.endpoint_id = se.endpoint_id
+    LEFT JOIN ep_traffic et
+        ON se.served_entity_id = et.served_entity_id
+    GROUP BY ec.endpoint_id, ec.endpoint_name, ec.cost_30d
+    ORDER BY cost_30d DESC
+""")
+
+serving_analysis.createOrReplaceTempView("serving_analysis")
+display(serving_analysis)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Log All Flagged Items
+
+# COMMAND ----------
+
+for view_name, res_type in [("job_analysis", "job"), ("cluster_analysis", "cluster"),
+                              ("warehouse_analysis", "sql_warehouse"),
+                              ("serving_analysis", "serving_endpoint")]:
+    try:
+        flagged = spark.sql(f"SELECT * FROM {view_name} WHERE recommendation != 'HEALTHY'").collect()
+        for row in flagged:
+            row_dict = row.asDict()
+            cost = row_dict.get("cost_90d", row_dict.get("cost_30d", 0))
+            logger.log(
+                environment=env, resource_type=res_type,
+                resource_id=str(row_dict.get("job_id", row_dict.get("cluster_id",
+                    row_dict.get("warehouse_id", row_dict.get("endpoint_id", "unknown"))))),
+                resource_name=row_dict.get("cluster_name", row_dict.get("endpoint_name", f"{res_type}")),
+                owner=row_dict.get("owner", "system_scan"),
+                action="FLAGGED",
+                reason=f"{row_dict.get('recommendation', 'REVIEW')}: ${cost} cost",
+                dry_run=True,
+                details={"cost": float(cost)}
+            )
+    except Exception as e:
+        print(f"Skipping {view_name}: {e}")
+
+flushed = logger.flush()
+print(f"System table analysis complete. {flushed} items flagged.")
+
+# COMMAND ----------
+
+# Hand the delete-candidate jobs to notebook 05. It runs as a SEPARATE job task
+# with its own Spark session, so a temp view would not be visible there. Persist
+# to a table in the audit schema and OVERWRITE it each run, so 05 always acts on
+# exactly this run's candidates - one row per job, no dedup or time-window logic.
+_cat, _sch, _ = config.get("audit_table", "maintenance.cleanup.cleanup_log").split(".")
+(spark.sql("SELECT CAST(job_id AS STRING) AS job_id, COALESCE(cost_90d, 0) AS cost "
+           "FROM job_analysis WHERE recommendation = 'CANDIDATE_DELETE'")
+    .write.mode("overwrite").saveAsTable(f"{_cat}.{_sch}.job_delete_candidates"))
