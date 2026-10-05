@@ -1,0 +1,11 @@
+# This file is GENERATED from customer.yaml by scripts/render_config.py.
+# Run `./install.sh customer.yaml` (or `python3 scripts/render_config.py --config customer.yaml`)
+# to fill in the env below. App db/secret RESOURCES are declared in databricks.yml
+# (the bundle), NOT here.
+command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+env:
+  - name: "IDENTITY_SOURCE"
+    value: "directory"
+  # …the rest of the env (PGHOST, EMAIL_DOMAIN, SOURCE_*, MODEL_PRICING, GMAIL_* …)
+  # is written here by render_config.py from customer.yaml.

@@ -1,0 +1,103 @@
+# GatewayIQ — Databricks Asset Bundle.
+# Deploys the App (+ its db/secret resources) and the weekly report Job in one
+# `databricks bundle deploy`. Values come from customer.yaml via render_config.py
+# (`--var …`); nothing here is customer-specific.
+bundle:
+  name: gatewayiq
+
+variables:
+  app_name:          { default: gatewayiq }
+  warehouse_id:      { default: "" }
+  lakebase_instance: { default: "" }
+  lakebase_host:     { default: "" }
+  lakebase_db:       { default: gatewayiq }
+  secret_scope:      { default: gatewayiq }
+  uc_catalog:        { default: "" }
+  app_url:           { default: "" }
+  test_mode:         { default: "true" }
+  test_recipient:    { default: "" }
+  days:              { default: "7" }
+  schedule_cron:     { default: "0 0 9 ? * MON" }
+  timezone:          { default: UTC }
+  app_sp:            { default: "" }
+  refresh_cron:      { default: "0 0 6 * * ?" }
+  refresh_skip_classifier: { default: "false" }
+
+resources:
+  apps:
+    gatewayiq:
+      name: ${var.app_name}
+      description: "GatewayIQ — role-based Unity AI Gateway governance console"
+      source_code_path: ./app
+      resources:
+        - name: "gatewayiq-db"
+          database:
+            instance_name: ${var.lakebase_instance}
+            database_name: ${var.lakebase_db}
+            permission: "CAN_CONNECT_AND_CREATE"
+        - name: "gmail-client-id"
+          secret:
+            scope: ${var.secret_scope}
+            key: "google-client-id"
+            permission: "READ"
+        - name: "gmail-client-secret"
+          secret:
+            scope: ${var.secret_scope}
+            key: "google-client-secret"
+            permission: "READ"
+        - name: "gmail-refresh-token"
+          secret:
+            scope: ${var.secret_scope}
+            key: "google-refresh-token"
+            permission: "READ"
+
+  jobs:
+    gatewayiq_weekly:
+      name: "GatewayIQ — Weekly Report Emails"
+      schedule:
+        quartz_cron_expression: ${var.schedule_cron}
+        timezone_id: ${var.timezone}
+        pause_status: PAUSED         # keep paused until ready to email real users
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: send_weekly_reports
+          notebook_task:
+            notebook_path: ./scripts/weekly_report_job.py
+            base_parameters:
+              test_mode: ${var.test_mode}
+              test_recipient: ${var.test_recipient}
+              days: ${var.days}
+              pg_host: ${var.lakebase_host}
+              app_url: ${var.app_url}
+              app_backend: ${workspace.file_path}/app/backend
+
+    # Rebuilds ds_* from the customer's real Unity AI Gateway tables and refreshes
+    # the app's Lakebase serving copy so the dashboard stays current. Daily by
+    # default; PAUSED until the customer validates the adapter views + is ready
+    # for the recurring classifier (ai_query) cost.
+    gatewayiq_refresh:
+      name: "GatewayIQ — Data Refresh"
+      schedule:
+        quartz_cron_expression: ${var.refresh_cron}
+        timezone_id: ${var.timezone}
+        pause_status: PAUSED
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: refresh_dashboard_data
+          notebook_task:
+            notebook_path: ./scripts/refresh_data_job.py
+            base_parameters:
+              pg_host: ${var.lakebase_host}
+              app_sp: ${var.app_sp}
+              app_url: ${var.app_url}
+              skip_classifier: ${var.refresh_skip_classifier}
+              app_backend: ${workspace.file_path}/app/backend
+              scripts_dir: ${workspace.file_path}/scripts
+
+targets:
+  customer:
+    mode: production
+    default: true
+    # workspace host + auth come from the CLI profile (--profile) at deploy time.
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}

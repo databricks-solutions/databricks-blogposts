@@ -1,0 +1,13 @@
+# Build artifacts / deps
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.databricks/
+.DS_Store
+# Local env / creds — never commit
+.env
+*.local
+
+# Generated per-customer, region-correct pricing (from fetch_pricing.py)
+scripts/gateway_etl/pricing.resolved.json

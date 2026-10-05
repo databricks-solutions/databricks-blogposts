@@ -1,0 +1,87 @@
+# =============================================================================
+# GatewayIQ — customer config (SINGLE source of truth for the whole install).
+# Copy to `customer.yaml`, then replace the SAMPLE values below with your own.
+# The values shown are a realistic example for a fictional customer "Acme".
+#   ./install.sh customer.yaml   ← renders app.yaml + bundle vars, deploys, loads data
+# =============================================================================
+
+app_name: gatewayiq                 # Databricks App name (lowercase, no spaces)
+profile: acme-prod                  # Databricks CLI profile that points at the customer workspace
+warehouse_id: "a1b2c3d4e5f60718"    # SQL warehouse id used by the loaders (Warehouse → Connection details)
+
+lakebase:
+  instance: acme-lakebase           # Lakebase INSTANCE name (Compute → Lakebase)
+  host: instance-8f2c19a4-3b7d-4e51-9c02-a1b2c3d4e5f6.database.cloud.databricks.com  # instance host (PGHOST)
+  database: gatewayiq               # DB the app reads/writes (created by the installer if missing)
+  admin_user: data-platform@acme.com   # identity the LOADERS connect as (owns the tables); your CLI login
+  app_sp: 11111111-2222-3333-4444-555555555555  # the App's service-principal client_id (its Postgres role)
+
+uc:
+  catalog: acme_ai_gov              # UC catalog the loader writes to (the Genie-able source of truth)
+  schema: gatewayiq                 # UC schema (keep 'gatewayiq' unless you have a convention)
+
+sources:
+  inference_table: acme_ai_gov.gateway.inference_logs   # Unity AI Gateway inference (payload) logging table
+  usage_table: system.serving.endpoint_usage            # AI Gateway usage system table (usually leave as-is)
+  audit_table: system.access.audit                      # UC audit log (leave as-is)
+  # OPTIONAL directory import — you normally DON'T need this. Identity is managed
+  # in-app: your admins add users (Name / Email / Manager / Role) from the
+  # "Manage Users" tab, just like adding users to a Databricks workspace. Only
+  # set directory_table if you'd like to BULK-IMPORT an existing org directory as
+  # a one-time head start; the columns below map its schema to ours.
+  # directory_table: acme_hr.people.directory   # org directory: one row per person
+  # dir_email_col: email              # → person's email
+  # dir_team_col: team                # → team name
+  # dir_dept_col: department          # → department / business unit
+  # dir_role_col: title               # → job title
+  # dir_manager_col: manager_email    # → their manager's email (builds the hierarchy)
+
+identity:
+  email_domain: acme.com            # customer email domain (used to turn handles ↔ emails)
+  admins:                           # bootstrap admins — created at first startup so
+    - ai-governance-admin@acme.com  #   they can sign in (SSO) and add everyone else
+    - platform-lead@acme.com        #   via the Manage Users tab. Usually just you.
+  managers:                         # OPTIONAL — pre-create these people as managers at
+    []                              #   startup. Leave empty ([]); admins can add
+    # - engineering-manager@acme.com #   managers in-app. Only use this to seed managers
+    # - data-science-lead@acme.com   #   before anyone logs in.
+
+app:
+  url: https://gatewayiq-1234567890.aws.databricksapps.com  # deployed app URL (used in email links)
+  classifier_model: databricks-claude-haiku-4-5             # AI model that classifies requests into use cases
+
+# Model pricing — OPTIONAL. Pricing for the whole Unity AI Gateway model catalog
+# is resolved automatically at install time by scripts/fetch_pricing.py, which
+# reads the customer's own system.billing.list_prices (region- & contract-correct)
+# and falls back to scripts/gateway_etl/model_pricing.json for anything it can't
+# resolve. You normally leave this block out entirely. Use it only to OVERRIDE:
+# model_pricing:
+#   labels: { expensive: "Premium", cheap: "Standard" }  # UI tier labels
+#   default: { input: 1.0, output: 5.0 }                               # unlisted-model rate ($/1M tokens)
+#   models:                                                            # per-model rate overrides
+#     databricks-claude-sonnet-4-6: { input: 3.0, output: 15.0, tier: premium }
+#     databricks-claude-haiku-4-5:  { input: 0.8, output: 4.0,  tier: standard }
+
+mail:
+  transport: gmail                          # "gmail" (Gmail API) — the supported transport today
+  from_name: GatewayIQ                      # display name on the weekly emails
+  from_email: ai-gateway-reports@acme.com   # sender address (on the customer's domain)
+  quota_project: acme-gcp-project           # GCP project for the Gmail API quota header (gmail transport)
+  secret_scope: gatewayiq                   # secret scope holding google-client-id / -secret / -refresh-token
+                                            # (create this scope by hand — secrets can't live in this file)
+
+weekly_report:
+  schedule_cron: "0 0 9 ? * MON"            # Quartz cron — Mondays 09:00
+  timezone: America/New_York                # timezone for the schedule
+  test_mode: true                           # true → ALL mail goes to test_recipient (safe default)
+  test_recipient: ai-governance-admin@acme.com   # where test-mode mail lands; flip test_mode→false to email real users
+  days: 7                                   # report window (last N days)
+
+# Data refresh — rebuilds ds_* from your real Unity AI Gateway tables and refreshes
+# the app's Lakebase serving copy so the dashboard stays current. Deployed as the
+# "GatewayIQ — Data Refresh" Job, created PAUSED. Enable it (unpause) once you've
+# validated the adapter views in load_from_gateway.py against your real schema and
+# are ready for the recurring classifier cost. Uses the `timezone` above.
+data_refresh:
+  schedule_cron: "0 0 6 * * ?"              # Quartz cron — daily 06:00 (before the workday)
+  skip_classifier: false                    # true → skip the ai_query use-case classifier (no LLM cost, labels = "trivial")

@@ -1,0 +1,8 @@
+frontend/node_modules/
+frontend/dist/
+backend/data/
+backend/static/data/
+**/__pycache__/
+*.pyc
+.DS_Store
+.databricks/

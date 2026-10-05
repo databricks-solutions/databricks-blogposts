@@ -1,0 +1,5 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+httpx==0.28.1
+psycopg2-binary==2.9.9
+wordcloud==1.9.4
