@@ -9,8 +9,9 @@
 defaults:
   dry_run: true
 
-# Hard cap on live deletions per run (per notebook) - limits blast radius if a
-# rule is misconfigured. Dry-run flags all candidates regardless.
+# Hard cap on live deletions per run, per resource type (jobs, dashboards, AI Search
+# indexes - each is deleted by exactly one task) - limits blast radius if a rule
+# is misconfigured. Dry-run flags all candidates regardless.
 max_deletions_per_run: 25
 
 # Approval gate: when true, a live (non-dry-run) delete only acts on resources
@@ -33,7 +34,6 @@ dev:
   job_cleanup: false
   dashboard_cleanup: false
   ai_search_index_cleanup: true
-  system_table_cleanup: true
   # no dry_run here -> inherits defaults.dry_run: true
   audit_table: maintenance.cleanup.cleanup_log
 
@@ -41,7 +41,6 @@ stage:
   job_cleanup: true
   dashboard_cleanup: true
   ai_search_index_cleanup: true
-  system_table_cleanup: true
   dry_run: false
   audit_table: maintenance.cleanup.cleanup_log
 
@@ -49,6 +48,5 @@ prod:
   job_cleanup: true
   dashboard_cleanup: true
   ai_search_index_cleanup: true
-  system_table_cleanup: true
   dry_run: false
   audit_table: maintenance.cleanup.cleanup_log

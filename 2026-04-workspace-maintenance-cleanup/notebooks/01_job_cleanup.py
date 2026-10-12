@@ -1,5 +1,9 @@
 # Databricks notebook source
-# SDK-Driven Job Cleanup - deletes jobs inactive beyond threshold (Databricks SDK)
+# SDK-Driven Job Cleanup - the ONLY task that deletes jobs (Databricks SDK).
+# Verifies each job's live state via the SDK, then deletes inactive, approved jobs
+# up to max_deletions_per_run. 04_system_table_analysis runs first and only
+# discovers; its per-job cost is attached here as context, not used as the trigger,
+# because system tables do not see jobs idle beyond the analysis window or never run.
 
 import yaml
 from datetime import datetime, timezone
@@ -95,6 +99,14 @@ gate = DeletionGate(spark, environment=env, dry_run=dry_run, require_approval=re
                     max_deletions=max_deletions, audit_table=audit_table)
 now = datetime.now(timezone.utc)
 
+# 90-day list-price cost per job from 04_system_table_analysis (same audit schema),
+# attached to FLAGGED / DELETED rows so reviewers see what a job cost. Context only:
+# a job missing here can still be a candidate (e.g. idle beyond 04's run window).
+_cat, _sch, _ = audit_table.split(".")
+_costs_table = f"{_cat}.{_sch}.job_delete_candidates"
+job_costs = ({str(r.job_id): float(r.cost) for r in spark.sql(f"SELECT job_id, cost FROM {_costs_table}").collect()}
+             if spark.catalog.tableExists(_costs_table) else {})
+
 # COMMAND ----------
 
 deleted, skipped = 0, 0
@@ -142,7 +154,8 @@ try:
                         resource_id=job_id, resource_name=job_name, owner=creator,
                         action="DELETED" if not dry_run else "FLAGGED",
                         reason="Never run",
-                        dry_run=dry_run, details={"last_run": None, "total_runs": 0},
+                        dry_run=dry_run, details={"last_run": None, "total_runs": 0,
+                                                  "cost": job_costs.get(str(job_id))},
                     )
                     deleted += 1
                 else:
@@ -213,7 +226,8 @@ try:
                     action="DELETED" if not dry_run else "FLAGGED",
                     reason=f"Inactive {days_idle} days (threshold: {inactive_days})",
                     dry_run=dry_run,
-                    details={"last_run": last_run.isoformat()},
+                    details={"last_run": last_run.isoformat(),
+                             "cost": job_costs.get(str(job_id))},
                 )
                 deleted += 1
             else:

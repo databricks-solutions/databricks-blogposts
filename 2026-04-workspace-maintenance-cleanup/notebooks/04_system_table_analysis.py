@@ -77,7 +77,7 @@ idle_jobs = spark.sql(f"""
             -- (matches 01_job_cleanup) avoids scoring a long run that began long
             -- ago but finished recently as idle; the COALESCE fallback keeps a job
             -- with a run in progress right now from being flagged CANDIDATE_DELETE
-            -- (and then deleted by 05) just because its previous run ended long ago.
+            -- just because its previous run ended long ago.
             MAX(COALESCE(period_end_time, period_start_time)) AS last_run,
             COUNT(*) AS total_runs,
             SUM(CASE WHEN result_state NOT IN ('SUCCESS','SUCCEEDED')
@@ -326,10 +326,11 @@ print(f"System table analysis complete. {flushed} items flagged.")
 
 # COMMAND ----------
 
-# Hand the delete-candidate jobs to notebook 05. It runs as a SEPARATE job task
-# with its own Spark session, so a temp view would not be visible there. Persist
-# to a table in the audit schema and OVERWRITE it each run, so 05 always acts on
-# exactly this run's candidates - one row per job, no dedup or time-window logic.
+# Discovery only - this notebook never deletes. Persist the CANDIDATE_DELETE jobs
+# and their 90-day cost to a table in the audit schema (OVERWRITTEN each run) so
+# 01_job_cleanup, a SEPARATE job task with its own Spark session, can attach the
+# cost to the jobs it flags or deletes. 01 verifies and deletes via the SDK; it is
+# the single job-deletion path, so max_deletions_per_run is one cap for jobs.
 _cat, _sch, _ = config.get("audit_table", "maintenance.cleanup.cleanup_log").split(".")
 (spark.sql("SELECT CAST(job_id AS STRING) AS job_id, COALESCE(cost_90d, 0) AS cost "
            "FROM job_analysis WHERE recommendation = 'CANDIDATE_DELETE'")
