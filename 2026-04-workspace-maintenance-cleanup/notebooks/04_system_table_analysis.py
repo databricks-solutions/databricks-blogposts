@@ -110,9 +110,23 @@ idle_jobs = spark.sql(f"""
             AND u.usage_metadata.job_id IS NOT NULL
             AND u.workspace_id = {workspace_id}
         GROUP BY usage_metadata.job_id
+    ),
+    current_jobs AS (
+        -- job_run_timeline still holds runs of DELETED jobs, so restrict to jobs
+        -- that exist now. system.lakeflow.jobs is SCD2: take the latest row per
+        -- job first, then drop deleted ones (same rule as the cluster query).
+        SELECT job_id, name
+        FROM (
+            SELECT job_id, name, delete_time
+            FROM system.lakeflow.jobs
+            WHERE workspace_id = {workspace_id}
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY change_time DESC) = 1
+        )
+        WHERE delete_time IS NULL
     )
     SELECT
         ja.job_id,
+        cj.name AS job_name,
         ja.last_run,
         DATEDIFF(DAY, ja.last_run, CURRENT_TIMESTAMP()) AS days_idle,
         ja.total_runs,
@@ -130,6 +144,7 @@ idle_jobs = spark.sql(f"""
             ELSE 'HEALTHY'
         END AS recommendation
     FROM job_activity ja
+    JOIN current_jobs cj ON ja.job_id = cj.job_id
     LEFT JOIN job_costs jc ON ja.job_id = jc.job_id
     ORDER BY cost_90d DESC
 """)
@@ -328,7 +343,8 @@ for view_name, res_type in _flag_views:
                 environment=env, resource_type=res_type,
                 resource_id=str(row_dict.get("job_id", row_dict.get("cluster_id",
                     row_dict.get("warehouse_id", row_dict.get("endpoint_id", "unknown"))))),
-                resource_name=row_dict.get("cluster_name", row_dict.get("endpoint_name", f"{res_type}")),
+                resource_name=(row_dict.get("job_name") or row_dict.get("cluster_name")
+                               or row_dict.get("endpoint_name") or res_type),
                 owner=row_dict.get("owner", "system_scan"),
                 action="FLAGGED",
                 reason=f"{row_dict.get('recommendation', 'REVIEW')}: ${cost} cost",
