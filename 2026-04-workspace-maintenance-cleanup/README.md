@@ -57,8 +57,10 @@ Every action (`FLAGGED`, `SKIPPED`, `DELETED`) is logged to a Delta table for au
 Use the **same target** for every step - candidates, approvals, and deletions all belong to one workspace and environment. The examples use `prod`.
 
 ```bash
-# 0. Deploy. warehouse_id backs the audit dashboard and is required.
-databricks bundle deploy --target prod --var warehouse_id=<sql_warehouse_id>
+# 0. warehouse_id backs the audit dashboard and is required by every bundle
+#    command (deploy AND run), so set it once for the shell session.
+export BUNDLE_VAR_warehouse_id=<sql_warehouse_id>
+databricks bundle deploy --target prod
 
 # 1. Discover - flags candidates, deletes nothing (also runs weekly on its own).
 databricks bundle run cleanup_discover --target prod
@@ -83,6 +85,8 @@ databricks bundle run cleanup_execute --target prod
 
 Anything without a valid approval is logged `SKIPPED` ("no approval recorded"); nothing else is touched.
 
+**Upgrading from the single-job version.** Earlier versions deployed one job, `cleanup_workflow`. The bundle no longer declares it, so the next `bundle deploy` to a target that had it **deletes that job** and creates `cleanup_discover` and `cleanup_execute` in its place. No data is touched; check that nothing else (alerts, external schedulers) calls the old job.
+
 **What the targets are for.** `dev`, `stage`, and `prod` are environments of the same bundle, each with its own `config.yaml` block. `dev` is safe for trying the bundle out: it discovers everything but has `allow_execute: false`, so `cleanup_execute --target dev` exits without deleting. Point each target at the workspace it should clean (`workspace.host` per target) - the bundle only ever acts on the workspace it is deployed to.
 
 ## Configuration
@@ -97,7 +101,7 @@ The notebooks run on serverless compute. Notebooks that use the Lakeview and Vec
 
 ## Audit dashboard
 
-Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table showing candidate counts by resource type, the action breakdown, and a detail table of exactly what would be removed - so you can review a discovery run before approving anything. Set the backing warehouse with `--var warehouse_id=<id>` (or per target), and if you change `audit_table`, update the dashboard datasets to match.
+Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table showing candidate counts by resource type, the action breakdown, and a detail table of exactly what would be removed - so you can review a discovery run before approving anything. Each panel counts a resource once per action over the last 7 days (one weekly discovery cycle), so re-running discovery does not inflate the numbers. Set the backing warehouse with `BUNDLE_VAR_warehouse_id` (or `--var warehouse_id=<id>`, or per target), and if you change `audit_table`, update the dashboard datasets to match.
 
 ## Blog Post
 

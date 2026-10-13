@@ -4,28 +4,28 @@
       "name": "kpis",
       "displayName": "KPIs",
       "queryLines": [
-        "SELECT SUM(CASE WHEN action='FLAGGED' THEN 1 ELSE 0 END) AS flagged, SUM(CASE WHEN action='SKIPPED' THEN 1 ELSE 0 END) AS retained, SUM(CASE WHEN action='DELETED' THEN 1 ELSE 0 END) AS deleted, COUNT(DISTINCT CASE WHEN action='FLAGGED' THEN resource_type END) AS types FROM maintenance.cleanup.cleanup_log"
+        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1) SELECT COUNT_IF(action='FLAGGED') AS flagged, COUNT_IF(action='SKIPPED') AS retained, COUNT_IF(action='DELETED') AS deleted, COUNT(DISTINCT CASE WHEN action='FLAGGED' THEN resource_type END) AS types FROM recent"
       ]
     },
     {
       "name": "flagged_by_type",
       "displayName": "Flagged by type",
       "queryLines": [
-        "SELECT resource_type, COUNT(*) AS candidates FROM maintenance.cleanup.cleanup_log WHERE action='FLAGGED' GROUP BY resource_type"
+        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1) SELECT resource_type, COUNT(*) AS candidates FROM recent WHERE action='FLAGGED' GROUP BY resource_type"
       ]
     },
     {
       "name": "action_breakdown",
       "displayName": "Action breakdown",
       "queryLines": [
-        "SELECT action, COUNT(*) AS n FROM maintenance.cleanup.cleanup_log GROUP BY action"
+        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1) SELECT action, COUNT(*) AS n FROM recent GROUP BY action"
       ]
     },
     {
       "name": "flagged_detail",
       "displayName": "Flagged detail",
       "queryLines": [
-        "SELECT resource_type, resource_name, reason, owner, timestamp FROM maintenance.cleanup.cleanup_log WHERE action='FLAGGED' ORDER BY timestamp DESC LIMIT 200"
+        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1) SELECT resource_type, resource_name, reason, owner, timestamp FROM recent WHERE action='FLAGGED' ORDER BY timestamp DESC LIMIT 200"
       ]
     }
   ],

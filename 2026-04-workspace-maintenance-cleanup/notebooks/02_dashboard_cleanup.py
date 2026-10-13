@@ -106,7 +106,10 @@ try:
             dash = w.lakeview.get(dashboard_id=summary.dashboard_id)
             dash_id = dash.dashboard_id
             dash_name = dash.display_name or "unnamed"
-            creator = getattr(dash, "creator_user_name", None) or "unknown"
+            # Lakeview dashboards carry no creator field; a dashboard under
+            # /Users/<user>/ belongs to that user, otherwise the owner is unknown.
+            _parts = (dash.path or "").split("/")
+            creator = _parts[2] if len(_parts) > 2 and _parts[1] == "Users" else "unknown"
 
             if dash.update_time:
                 last_updated = _parse_ts(dash.update_time)

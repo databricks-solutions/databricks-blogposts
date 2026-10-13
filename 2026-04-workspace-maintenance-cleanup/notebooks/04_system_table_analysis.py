@@ -248,9 +248,21 @@ warehouse_analysis = spark.sql(f"""
             AND compute.warehouse_id IS NOT NULL
             AND workspace_id = {workspace_id}
         GROUP BY compute.warehouse_id
+    ),
+    current_warehouses AS (
+        -- Names for the audit log, and only warehouses that still exist.
+        -- system.compute.warehouses is SCD2: latest row first, then drop deleted.
+        SELECT warehouse_id, warehouse_name
+        FROM (
+            SELECT warehouse_id, warehouse_name, delete_time
+            FROM system.compute.warehouses
+            WHERE workspace_id = {workspace_id}
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY change_time DESC) = 1
+        )
+        WHERE delete_time IS NULL
     )
     SELECT
-        wc.warehouse_id, wc.cost_30d, wc.billing_days,
+        wc.warehouse_id, cw.warehouse_name, wc.cost_30d, wc.billing_days,
         COALESCE(wq.queries_30d, 0) AS queries_30d,
         COALESCE(wq.query_days, 0) AS query_days,
         CASE
@@ -260,6 +272,7 @@ warehouse_analysis = spark.sql(f"""
             ELSE 'HEALTHY'
         END AS recommendation
     FROM wh_costs wc
+    JOIN current_warehouses cw ON wc.warehouse_id = cw.warehouse_id
     LEFT JOIN wh_queries wq ON wc.warehouse_id = wq.warehouse_id
     ORDER BY cost_30d DESC
 """)
@@ -344,6 +357,7 @@ for view_name, res_type in _flag_views:
                 resource_id=str(row_dict.get("job_id", row_dict.get("cluster_id",
                     row_dict.get("warehouse_id", row_dict.get("endpoint_id", "unknown"))))),
                 resource_name=(row_dict.get("job_name") or row_dict.get("cluster_name")
+                               or row_dict.get("warehouse_name")
                                or row_dict.get("endpoint_name") or res_type),
                 owner=row_dict.get("owner", "system_scan"),
                 action="FLAGGED",
