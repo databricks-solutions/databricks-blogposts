@@ -22,8 +22,10 @@ resources:
       warehouse_id: ${var.warehouse_id}
 
   jobs:
-    cleanup_workflow:
-      name: "[Maintenance] Workspace Cleanup"
+    # Phase 1 - Discover. Scheduled; never deletes. Flags candidates to the audit
+    # table and refreshes job_activity. Reviewers then record approvals (Phase 2).
+    cleanup_discover:
+      name: "[Maintenance] Workspace Cleanup - Discover"
       schedule:
         quartz_cron_expression: "0 0 2 ? * SUN"
         timezone_id: "UTC"
@@ -37,6 +39,7 @@ resources:
             base_parameters:
               environment: ${var.environment}
               config_path: ${workspace.file_path}/config
+              mode: discover
 
         - task_key: job_cleanup
           depends_on:
@@ -46,6 +49,7 @@ resources:
             base_parameters:
               environment: ${var.environment}
               config_path: ${workspace.file_path}/config
+              mode: discover
 
         - task_key: dashboard_cleanup
           depends_on:
@@ -55,6 +59,7 @@ resources:
             base_parameters:
               environment: ${var.environment}
               config_path: ${workspace.file_path}/config
+              mode: discover
 
         - task_key: ai_search_index_cleanup
           depends_on:
@@ -64,6 +69,55 @@ resources:
             base_parameters:
               environment: ${var.environment}
               config_path: ${workspace.file_path}/config
+              mode: discover
+
+    # Phase 3 - Verify + execute. No schedule: run it on purpose after approvals
+    # are recorded. Re-checks current state and deletes only approved candidates,
+    # up to max_deletions_per_run. Exits without deleting unless the environment
+    # sets allow_execute: true in config.yaml.
+    cleanup_execute:
+      name: "[Maintenance] Workspace Cleanup - Execute"
+      parameters:
+        - name: environment
+          default: ${var.environment}
+      tasks:
+        - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/04_system_table_analysis.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: execute
+
+        - task_key: job_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/01_job_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: execute
+
+        - task_key: dashboard_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/02_dashboard_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: execute
+
+        - task_key: ai_search_index_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/03_ai_search_index_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: execute
 
 targets:
   dev:

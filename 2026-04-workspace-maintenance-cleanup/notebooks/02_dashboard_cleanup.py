@@ -68,7 +68,16 @@ with open(f"{config_path}/thresholds.yaml") as f:
 if not config.get("dashboard_cleanup", False):
     dbutils.notebook.exit(f"Dashboard cleanup disabled for {env}")
 
-dry_run = config.get("dry_run", True)
+# Mode comes from the job, not from config: cleanup_discover passes "discover"
+# (never deletes) and cleanup_execute passes "execute". Execute is honoured only
+# where the environment opts in with allow_execute: true in config.yaml.
+dbutils.widgets.text("mode", "discover")
+mode = dbutils.widgets.get("mode")
+if mode not in ("discover", "execute"):
+    dbutils.notebook.exit(f"Unknown mode '{mode}' - expected 'discover' or 'execute'")
+if mode == "execute" and not config.get("allow_execute", False):
+    dbutils.notebook.exit(f"Execute is not allowed for {env} - set allow_execute: true in config.yaml")
+dry_run = mode != "execute"
 inactive_days = thresholds.get("dashboard_inactive_days", 60)
 max_deletions = config_all.get("max_deletions_per_run", 25)
 require_approval = config_all.get("require_approval", True)

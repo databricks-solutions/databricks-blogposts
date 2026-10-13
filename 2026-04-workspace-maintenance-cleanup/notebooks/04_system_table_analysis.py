@@ -36,6 +36,12 @@ with open(f"{config_path}/thresholds.yaml") as f:
 
 # Review thresholds for the CASE logic below - configurable in one place
 # (thresholds.yaml) instead of hard-coded in the SQL.
+# discover: log every flagged item to the audit table. execute: only refresh
+# job_activity (below) so 01's verify step uses current system-table data, without
+# re-logging the same FLAGGED rows the discovery run already wrote.
+dbutils.widgets.text("mode", "discover")
+mode = dbutils.widgets.get("mode")
+
 job_inactive_days = thresholds.get("job_inactive_days", 90)
 job_activity_window_days = thresholds.get("job_activity_window_days", 180)
 job_review_cost = thresholds.get("job_review_cost", 1000)
@@ -300,9 +306,10 @@ display(serving_analysis)
 
 # COMMAND ----------
 
-for view_name, res_type in [("job_analysis", "job"), ("cluster_analysis", "cluster"),
-                              ("warehouse_analysis", "sql_warehouse"),
-                              ("serving_analysis", "serving_endpoint")]:
+_flag_views = ([("job_analysis", "job"), ("cluster_analysis", "cluster"),
+                ("warehouse_analysis", "sql_warehouse"),
+                ("serving_analysis", "serving_endpoint")] if mode == "discover" else [])
+for view_name, res_type in _flag_views:
     try:
         flagged = spark.sql(f"SELECT * FROM {view_name} WHERE recommendation != 'HEALTHY'").collect()
         for row in flagged:

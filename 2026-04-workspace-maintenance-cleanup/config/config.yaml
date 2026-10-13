@@ -1,23 +1,26 @@
-# Per-environment cleanup toggles.
-#   dry_run: true  -> scan + log FLAGGED candidates only, delete nothing
+# Per-environment cleanup toggles. Whether a run deletes is decided by the JOB,
+# not this file: cleanup_discover never deletes; cleanup_execute verifies and
+# deletes approved candidates.
+#   allow_execute  -> true lets cleanup_execute delete in this environment
+#                     (false = cleanup_execute exits without touching anything)
 #   *_cleanup      -> enable/disable each cleanup type (false = notebook exits)
 #   audit_table    -> where every action is logged; point the Lakeview dashboard
 #                     at this same three-level (catalog.schema.table) name.
 
 # Applied to every environment unless that environment overrides the key. Keeps
-# dry_run: true as the safe baseline - an env must opt in to live deletion.
+# allow_execute: false as the safe baseline - an env must opt in to deletion.
 defaults:
-  dry_run: true
+  allow_execute: false
 
 # Hard cap on live deletions per run, per resource type (jobs, dashboards, AI Search
 # indexes - each is deleted by exactly one task) - limits blast radius if a rule
-# is misconfigured. Dry-run flags all candidates regardless.
+# is misconfigured. cleanup_discover flags all candidates regardless.
 max_deletions_per_run: 25
 
-# Approval gate: when true, a live (non-dry-run) delete only acts on resources
+# Approval gate: when true, cleanup_execute only deletes resources
 # that have a recorded approval in <audit catalog.schema>.cleanup_approvals.
 # Reviewing the dashboard is not authorization - reviewers must INSERT an approval
-# row. Dry-run always flags every candidate regardless of this setting.
+# row. cleanup_discover always flags every candidate regardless of this setting.
 require_approval: true
 
 # Protected resources are never deleted, regardless of thresholds (shared by all
@@ -31,22 +34,22 @@ protected:
   exclude_ids: []
 
 dev:
-  job_cleanup: false
-  dashboard_cleanup: false
+  job_cleanup: true
+  dashboard_cleanup: true
   ai_search_index_cleanup: true
-  # no dry_run here -> inherits defaults.dry_run: true
+  # no allow_execute here -> inherits false: dev can discover but never delete
   audit_table: maintenance.cleanup.cleanup_log
 
 stage:
   job_cleanup: true
   dashboard_cleanup: true
   ai_search_index_cleanup: true
-  dry_run: false
+  allow_execute: true
   audit_table: maintenance.cleanup.cleanup_log
 
 prod:
   job_cleanup: true
   dashboard_cleanup: true
   ai_search_index_cleanup: true
-  dry_run: false
+  allow_execute: true
   audit_table: maintenance.cleanup.cleanup_log
