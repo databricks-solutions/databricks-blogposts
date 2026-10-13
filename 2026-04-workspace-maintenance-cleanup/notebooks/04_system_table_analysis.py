@@ -163,11 +163,20 @@ cluster_analysis = spark.sql(f"""
         GROUP BY usage_metadata.cluster_id
     ),
     cluster_info AS (
-        SELECT cluster_id, cluster_name, owned_by AS owner,
-               cluster_source, driver_node_type, worker_node_type
-        FROM system.compute.clusters
+        -- system.compute.clusters is SCD2 (one row per config change). Keep only the
+        -- latest row per cluster FIRST, then drop deleted clusters: filtering
+        -- delete_time IS NULL before de-duplicating would keep the older rows of a
+        -- cluster that has since been deleted, and flag one cluster several times.
+        SELECT cluster_id, cluster_name, owner, cluster_source,
+               driver_node_type, worker_node_type
+        FROM (
+            SELECT cluster_id, cluster_name, owned_by AS owner, cluster_source,
+                   driver_node_type, worker_node_type, delete_time
+            FROM system.compute.clusters
+            WHERE workspace_id = {workspace_id}
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY cluster_id ORDER BY change_time DESC) = 1
+        )
         WHERE delete_time IS NULL
-            AND workspace_id = {workspace_id}
     )
     SELECT
         ci.cluster_id, ci.cluster_name, ci.owner,
