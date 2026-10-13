@@ -65,6 +65,8 @@ if mode == "execute" and not config.get("allow_execute", False):
 dry_run = mode != "execute"
 max_deletions = config_all.get("max_deletions_per_run", 25)
 require_approval = config_all.get("require_approval", True)
+# protected.exclude_ids (config.yaml): "<type>:<id>" or a bare id is never deleted.
+_exclude_ids = set(((config_all.get("protected") or {}).get("exclude_ids")) or [])
 
 # COMMAND ----------
 
@@ -118,6 +120,15 @@ try:
                     source_exists = False
 
                 if not source_exists:
+                    if str(idx_name) in _exclude_ids or f"ai_search_index:{idx_name}" in _exclude_ids:
+                        logger.log(
+                            environment=env, resource_type="ai_search_index",
+                            resource_id=idx_name, resource_name=idx_name, owner=creator,
+                            action="SKIPPED", reason="Protected - excluded by id",
+                            dry_run=dry_run, details={"endpoint": ep.name}, 
+                        )
+                        skipped += 1
+                        continue
                     block = gate.block_reason("ai_search_index", idx_name, deleted)
                     if block:
                         logger.log(

@@ -81,6 +81,8 @@ dry_run = mode != "execute"
 inactive_days = thresholds.get("dashboard_inactive_days", 60)
 max_deletions = config_all.get("max_deletions_per_run", 25)
 require_approval = config_all.get("require_approval", True)
+# protected.exclude_ids (config.yaml): "<type>:<id>" or a bare id is never deleted.
+_exclude_ids = set(((config_all.get("protected") or {}).get("exclude_ids")) or [])
 
 # COMMAND ----------
 
@@ -120,6 +122,15 @@ try:
             is_stale = days_stale is not None and days_stale > inactive_days
 
             if is_stale:
+                if str(dash_id) in _exclude_ids or f"dashboard:{dash_id}" in _exclude_ids:
+                    logger.log(
+                        environment=env, resource_type="dashboard",
+                        resource_id=dash_id, resource_name=dash_name, owner=creator,
+                        action="SKIPPED", reason="Protected - excluded by id",
+                        dry_run=dry_run,
+                    )
+                    skipped += 1
+                    continue
                 block = gate.block_reason("dashboard", dash_id, deleted)
                 if block:
                     logger.log(

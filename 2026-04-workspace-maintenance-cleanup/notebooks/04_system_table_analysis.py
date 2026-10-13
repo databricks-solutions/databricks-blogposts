@@ -86,9 +86,12 @@ idle_jobs = spark.sql(f"""
             -- with a run in progress right now from being flagged CANDIDATE_DELETE
             -- just because its previous run ended long ago.
             MAX(COALESCE(period_end_time, period_start_time)) AS last_run,
-            COUNT(*) AS total_runs,
-            SUM(CASE WHEN result_state NOT IN ('SUCCESS','SUCCEEDED')
-                THEN 1 ELSE 0 END) AS failed_runs,
+            -- A long run is stored as several time-slice rows and only the final
+            -- slice carries result_state, so count distinct runs, not rows.
+            COUNT(DISTINCT run_id) AS total_runs,
+            COUNT(DISTINCT CASE WHEN result_state IS NOT NULL
+                                 AND result_state NOT IN ('SUCCESS','SUCCEEDED')
+                                THEN run_id END) AS failed_runs,
             SUM(run_duration_seconds) / 3600.0 AS total_hours
         FROM system.lakeflow.job_run_timeline
         WHERE period_start_time >= DATEADD(DAY, -{job_activity_window_days}, CURRENT_DATE())
@@ -111,22 +114,21 @@ idle_jobs = spark.sql(f"""
             AND u.workspace_id = {workspace_id}
         GROUP BY usage_metadata.job_id
     ),
-    current_jobs AS (
-        -- job_run_timeline still holds runs of DELETED jobs, so restrict to jobs
-        -- that exist now. system.lakeflow.jobs is SCD2: take the latest row per
-        -- job first, then drop deleted ones (same rule as the cluster query).
-        SELECT job_id, name
-        FROM (
-            SELECT job_id, name, delete_time
-            FROM system.lakeflow.jobs
-            WHERE workspace_id = {workspace_id}
-            QUALIFY ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY change_time DESC) = 1
-        )
-        WHERE delete_time IS NULL
+    latest_jobs AS (
+        -- job_run_timeline still holds runs of DELETED jobs. system.lakeflow.jobs
+        -- is SCD2, so take the latest row per job; the WHERE below then drops only
+        -- jobs KNOWN to be deleted. A job missing from system.lakeflow.jobs (e.g.
+        -- not yet captured) is kept, so its real last run reaches job_activity and
+        -- 01 never has to guess its idle time.
+        SELECT job_id, name, delete_time
+        FROM system.lakeflow.jobs
+        WHERE workspace_id = {workspace_id}
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY change_time DESC) = 1
     )
     SELECT
         ja.job_id,
-        cj.name AS job_name,
+        lj.name AS job_name,
+        lj.job_id IS NOT NULL AS known_job,  -- present (and not deleted) in system.lakeflow.jobs
         ja.last_run,
         DATEDIFF(DAY, ja.last_run, CURRENT_TIMESTAMP()) AS days_idle,
         ja.total_runs,
@@ -144,8 +146,9 @@ idle_jobs = spark.sql(f"""
             ELSE 'HEALTHY'
         END AS recommendation
     FROM job_activity ja
-    JOIN current_jobs cj ON ja.job_id = cj.job_id
+    LEFT JOIN latest_jobs lj ON ja.job_id = lj.job_id
     LEFT JOIN job_costs jc ON ja.job_id = jc.job_id
+    WHERE lj.delete_time IS NULL
     ORDER BY cost_90d DESC
 """)
 
@@ -325,7 +328,13 @@ serving_analysis = spark.sql(f"""
             ELSE 'HEALTHY'
         END AS recommendation
     FROM ep_costs ec
-    LEFT JOIN system.serving.served_entities se
+    LEFT JOIN (
+        -- served_entities keeps a row per config change; de-duplicate so each
+        -- entity's traffic is counted once.
+        SELECT DISTINCT endpoint_id, served_entity_id
+        FROM system.serving.served_entities
+        WHERE workspace_id = {workspace_id}
+    ) se
         ON ec.endpoint_id = se.endpoint_id
     LEFT JOIN ep_traffic et
         ON se.served_entity_id = et.served_entity_id
@@ -348,7 +357,12 @@ _flag_views = ([("job_analysis", "job"), ("cluster_analysis", "cluster"),
                 ("serving_analysis", "serving_endpoint")] if mode == "discover" else [])
 for view_name, res_type in _flag_views:
     try:
-        flagged = spark.sql(f"SELECT * FROM {view_name} WHERE recommendation != 'HEALTHY'").collect()
+        # Jobs: flag only jobs known to exist. job_activity keeps jobs missing from
+        # system.lakeflow.jobs (one-off runs, never-captured or since-deleted jobs) so
+        # 01 gets real last runs, but logging them would flood the audit log with
+        # jobs that are gone; 01 still evaluates every existing job via the SDK.
+        _known = " AND known_job" if view_name == "job_analysis" else ""
+        flagged = spark.sql(f"SELECT * FROM {view_name} WHERE recommendation != 'HEALTHY'{_known}").collect()
         for row in flagged:
             row_dict = row.asDict()
             cost = row_dict.get("cost_90d", row_dict.get("cost_30d", 0))
