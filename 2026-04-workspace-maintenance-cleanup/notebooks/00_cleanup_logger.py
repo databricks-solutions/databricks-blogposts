@@ -131,8 +131,8 @@ def load_approved(spark, approvals_table, environment, valid_hours=168):
 
 
 def job_protection_reason(settings, jid, protected_tags, exclude_ids, exclude_pipeline):
-    """Shared job-protection check used by both 01 (has the job object) and 05
-    (fetches settings by id), so the rule lives in one place and cannot drift.
+    """Shared job-protection check used by 01_job_cleanup, so the rule lives in
+    one place and cannot drift.
     `settings` is a jobs JobSettings or None. Returns a reason string if the job
     must never be deleted, else None."""
     if str(jid) in exclude_ids or f"job:{jid}" in exclude_ids:

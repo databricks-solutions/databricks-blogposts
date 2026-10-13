@@ -37,6 +37,7 @@ with open(f"{config_path}/thresholds.yaml") as f:
 # Review thresholds for the CASE logic below - configurable in one place
 # (thresholds.yaml) instead of hard-coded in the SQL.
 job_inactive_days = thresholds.get("job_inactive_days", 90)
+job_activity_window_days = thresholds.get("job_activity_window_days", 180)
 job_review_cost = thresholds.get("job_review_cost", 1000)
 job_review_max_runs = thresholds.get("job_review_max_runs", 5)
 job_fail_ratio = thresholds.get("job_fail_ratio", 0.8)
@@ -84,7 +85,7 @@ idle_jobs = spark.sql(f"""
                 THEN 1 ELSE 0 END) AS failed_runs,
             SUM(run_duration_seconds) / 3600.0 AS total_hours
         FROM system.lakeflow.job_run_timeline
-        WHERE period_start_time >= DATEADD(DAY, -180, CURRENT_DATE())
+        WHERE period_start_time >= DATEADD(DAY, -{job_activity_window_days}, CURRENT_DATE())
             AND workspace_id = {workspace_id}
         GROUP BY job_id
     ),
@@ -326,12 +327,27 @@ print(f"System table analysis complete. {flushed} items flagged.")
 
 # COMMAND ----------
 
-# Discovery only - this notebook never deletes. Persist the CANDIDATE_DELETE jobs
-# and their 90-day cost to a table in the audit schema (OVERWRITTEN each run) so
-# 01_job_cleanup, a SEPARATE job task with its own Spark session, can attach the
-# cost to the jobs it flags or deletes. 01 verifies and deletes via the SDK; it is
-# the single job-deletion path, so max_deletions_per_run is one cap for jobs.
+# Discovery only - this notebook never deletes. Persist every job's last run and
+# 90-day cost so 01_job_cleanup (a SEPARATE job task with its own Spark session)
+# can use them. 01 needs the system-table last run because the Jobs API keeps only
+# ~60 days of run history - shorter than job_inactive_days - so without it 01 would
+# see every long-idle job as "never run". 01 is the single job-deletion path.
+# Rows are scoped by environment + workspace and only this scope is replaced, so
+# environments that share an audit table do not overwrite each other.
 _cat, _sch, _ = config.get("audit_table", "maintenance.cleanup.cleanup_log").split(".")
-(spark.sql("SELECT CAST(job_id AS STRING) AS job_id, COALESCE(cost_90d, 0) AS cost "
-           "FROM job_analysis WHERE recommendation = 'CANDIDATE_DELETE'")
-    .write.mode("overwrite").saveAsTable(f"{_cat}.{_sch}.job_delete_candidates"))
+_activity_table = f"{_cat}.{_sch}.job_activity"
+_scope = f"environment = '{env}' AND workspace_id = {workspace_id}"
+_activity = spark.sql(f"""
+    SELECT '{env}' AS environment,
+           CAST({workspace_id} AS BIGINT) AS workspace_id,
+           CAST(job_id AS STRING) AS job_id,
+           unix_millis(last_run) AS last_run_ms,
+           CAST(COALESCE(cost_90d, 0) AS DOUBLE) AS cost,
+           recommendation,
+           current_timestamp() AS analyzed_at
+    FROM job_analysis
+""")
+_writer = _activity.write.mode("overwrite")
+if spark.catalog.tableExists(_activity_table):
+    _writer = _writer.option("replaceWhere", _scope)
+_writer.saveAsTable(_activity_table)

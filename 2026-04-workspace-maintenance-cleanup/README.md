@@ -8,7 +8,7 @@ System tables and the SDK are not alternatives - they do different jobs in one w
 
 | | System tables | Databricks SDK (`WorkspaceClient`) |
 |---|---|---|
-| **Discover** | Cost x activity: `system.billing.usage` + `list_prices`, `system.lakeflow.job_run_timeline`, `system.compute.clusters`, `system.query.history`, `system.serving.*` (notebook 04) | What system tables can't see: jobs idle beyond the analysis window or never run, protected tags, pipeline tasks, orphaned AI Search source tables (notebooks 01-03) |
+| **Discover** | Cost x activity: `system.billing.usage` + `list_prices`, `system.lakeflow.job_run_timeline`, `system.compute.clusters`, `system.query.history`, `system.serving.*` (notebook 04) | What system tables can't see: whether a run is active right now, protected tags, pipeline tasks, orphaned AI Search source tables (notebooks 01-03) |
 | **Verify** | - | Re-checks current state (protection, still idle / orphaned) right before acting |
 | **Execute** | Cannot | `w.jobs.delete` (01), `w.lakeview.trash` (02), `w.vector_search_indexes.delete_index` (03) - one deleting task per resource type |
 
@@ -27,6 +27,7 @@ Every action (flagged, skipped, deleted, failed) is logged to a Delta table for 
 - **Protected resources are never deleted.** Lakeflow/SDP pipeline jobs, anything carrying a protected tag (`retain`, `production-critical`), and any id in `exclude_ids` are skipped - configured under `protected:` in `config.yaml`.
 - **Blast-radius cap.** `max_deletions_per_run` (default 25) limits how many resources of each type a single live run will delete; the rest are logged `SKIPPED`. Each resource type has exactly one deleting task (jobs: `job_cleanup`, dashboards: `dashboard_cleanup`, AI Search indexes: `ai_search_index_cleanup`), so the cap is never split across tasks.
 - **Clusters, SQL warehouses, and serving endpoints are flagged for human review only** - the system-table analysis surfaces them, but the workflow never deletes them.
+- **Job idleness uses system tables, not only the Jobs API.** The Jobs API keeps ~60 days of run history, shorter than `job_inactive_days` (90), so `job_cleanup` takes each job's last run from the `job_activity` table that the system-table analysis writes (window: `job_activity_window_days`, default 180). If that data is missing or stale, jobs with no API runs are skipped for manual review, never deleted.
 - **Jobs that have never run are skipped** (flagged for manual review) unless `delete_never_run: true` is set in `thresholds.yaml`.
 - **Dashboards are trashed, not permanently deleted** (`w.lakeview.trash`), so they remain recoverable.
 - **AI Search indexes are only deleted when orphaned** - a delta-sync index whose source table no longer exists. Direct-access indexes and still-provisioning indexes are never treated as candidates.
