@@ -47,9 +47,11 @@ Every action (`FLAGGED`, `SKIPPED`, `DELETED`) is logged to a Delta table for au
 │   ├── 02_dashboard_cleanup.py # SDK: trash stale dashboards
 │   ├── 03_ai_search_index_cleanup.py  # SDK: purge orphaned AI Search indexes
 │   └── 04_system_table_analysis.py  # System tables: discover waste (never deletes)
-└── dashboards/
-    ├── cleanup_audit.lvdash.json  # Lakeview audit dashboard (deployed by the bundle)
-    └── cleanup_dashboard.sql      # The dashboard's queries, for reference
+├── dashboards/
+│   ├── cleanup_audit.lvdash.json  # Lakeview audit dashboard (deployed by the bundle)
+│   └── cleanup_dashboard.sql      # The dashboard's queries, for reference
+└── skills/
+    └── workspace-cleanup/SKILL.md # Optional Genie Code skill: explain candidates, draft approvals
 ```
 
 ## Quick Start
@@ -66,13 +68,19 @@ databricks bundle deploy --target prod
 databricks bundle run cleanup_discover --target prod
 ```
 
-**2. Approve.** Review the candidates in the Lakeview dashboard (reviewing is not approval), then record an approval for each one you want removed. Approvals are environment-scoped (an approval for `dev` does not authorize `prod`) and expire after 7 days:
+**2. Approve - a manual step.** No job records approvals. Review the candidates in the Lakeview dashboard (reviewing is not approval), then record an approval for each one you want removed, copying it from the audit log so you never type a resource ID by hand. Approvals are environment-scoped (an approval for `dev` does not authorize `prod`) and expire after 7 days:
 
 ```sql
 INSERT INTO maintenance.cleanup.cleanup_approvals
   (run_id, environment, resource_type, resource_id, approved_by, approved_at)
-VALUES ('<discover_run_id>', 'prod', 'job', '<job_id>', current_user(), current_timestamp());
+SELECT DISTINCT '<discover_run_id>', environment, resource_type, resource_id,
+       current_user(), current_timestamp()
+FROM maintenance.cleanup.cleanup_log
+WHERE action = 'FLAGGED' AND environment = 'prod'
+  AND resource_name = '<name shown in the dashboard>';
 ```
+
+Only approvers should be able to run this: `GRANT MODIFY, SELECT ON TABLE maintenance.cleanup.cleanup_approvals TO <approvers group>` (plus `USE CATALOG` / `USE SCHEMA`).
 
 ```bash
 # 3. Verify + execute - re-checks each approved item, deletes it only if it is
@@ -102,6 +110,12 @@ The notebooks run on serverless compute. Notebooks that use the Lakeview and Vec
 ## Audit dashboard
 
 Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table showing candidate counts by resource type, the action breakdown, and a detail table of exactly what would be removed - so you can review a discovery run before approving anything. Each panel counts a resource once per action over the last 7 days (one weekly discovery cycle), so re-running discovery does not inflate the numbers. Set the backing warehouse with `BUNDLE_VAR_warehouse_id` (or `--var warehouse_id=<id>`, or per target), and if you change `audit_table`, update the dashboard datasets to match.
+
+## Optional: Genie Code skill
+
+`skills/workspace-cleanup/SKILL.md` lets reviewers ask Genie Code about cleanup in plain language: "what did discovery flag in prod?", "why wasn't this job deleted?", "draft approvals for these two dashboards". The skill only reads the audit tables and drafts SQL. It never inserts an approval, never runs `cleanup_execute`, and never calls a delete API, so the approval stays a person's decision.
+
+To use it, copy the `workspace-cleanup` folder into a Genie Code skills folder: your own (`/Users/<you>/.assistant/skills/`) or the workspace-wide one (`/Workspace/.assistant/skills/`). If you changed `audit_table`, update the table names in the skill. Genie runs as the user, so `SELECT` on `cleanup_log` is enough to review, and only users with `MODIFY` on `cleanup_approvals` can run the drafted INSERT.
 
 ## Blog Post
 
