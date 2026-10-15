@@ -117,17 +117,16 @@ def load_approved(spark, approvals_table, environment, valid_hours=168):
     approval also expires after valid_hours (default 7 days), so a one-time approval
     does not become permanent standing authorization for a recurring live run -
     re-approve for a new cycle, or raise approval_valid_hours if your review-to-run
-    window is longer. Rows with a NULL approved_at never expire (an explicit opt-in to
-    a standing approval), so an approval is never silently dropped just because the
-    timestamp was omitted. Reviewing the dashboard is not itself authorization; a live
+    window is longer. A row with no approved_at is not an approval: otherwise a
+    forgotten column would become a permanent approval that never expires.
+    Reviewing the dashboard is not itself authorization; a live
     delete only acts on rows here. Matching is by (resource_type, resource_id): within
     the validity window a newly created resource that reuses an old id would be treated
     as approved, so keep the window tight where ids are recycled."""
     rows = spark.sql(
         f"SELECT DISTINCT resource_type, resource_id FROM {approvals_table} "
         f"WHERE environment = '{environment}' "
-        f"AND (approved_at IS NULL "
-        f"     OR approved_at >= current_timestamp() - INTERVAL {int(valid_hours)} HOURS)"
+        f"AND approved_at >= current_timestamp() - INTERVAL {int(valid_hours)} HOURS"
     ).collect()
     return {(r.resource_type, str(r.resource_id)) for r in rows}
 

@@ -43,16 +43,22 @@ not deleted, `reason` says why), or `DELETED`. `resource_type` is one of `job`,
 
 ### What was flagged?
 
-Use the last 7 days (one weekly discovery cycle) and count each resource once:
+Use the last 7 days (one weekly discovery cycle), count each resource once, and
+leave out items that have been deleted since they were flagged:
 
 ```sql
-SELECT resource_type, resource_name, resource_id, owner,
-       max_by(reason, timestamp) AS reason, max(timestamp) AS last_flagged
-FROM maintenance.cleanup.cleanup_log
-WHERE action = 'FLAGGED' AND environment = '<env>'
-  AND timestamp >= current_timestamp() - INTERVAL 7 DAYS
-GROUP BY resource_type, resource_name, resource_id, owner
-ORDER BY resource_type, last_flagged DESC;
+SELECT f.resource_type, f.resource_name, f.resource_id, f.owner,
+       max_by(f.reason, f.timestamp) AS reason, max(f.timestamp) AS last_flagged
+FROM maintenance.cleanup.cleanup_log f
+WHERE f.action = 'FLAGGED' AND f.environment = '<env>'
+  AND f.timestamp >= current_timestamp() - INTERVAL 7 DAYS
+  AND NOT EXISTS (
+    SELECT 1 FROM maintenance.cleanup.cleanup_log d
+    WHERE d.action = 'DELETED' AND d.environment = f.environment
+      AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id
+      AND d.timestamp >= f.timestamp)
+GROUP BY f.resource_type, f.resource_name, f.resource_id, f.owner
+ORDER BY f.resource_type, last_flagged DESC;
 ```
 
 Summarise by type, say which items can be deleted and which are review-only,

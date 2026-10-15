@@ -375,31 +375,41 @@ for view_name, res_type in _flag_views:
         flagged = spark.sql(f"SELECT * FROM {view_name} WHERE recommendation != 'HEALTHY'{_known}").collect()
         for row in flagged:
             row_dict = row.asDict()
-            if view_name == "job_analysis":
-                # Check the job's live settings (tags, pipeline tasks) before flagging it.
-                # If it can't be read, don't flag it: 01 still evaluates every job itself.
-                try:
-                    _settings = w.jobs.get(job_id=int(row_dict["job_id"])).settings
-                except Exception as e:
-                    print(f"Not flagging job {row_dict['job_id']}: could not read it ({e})")
-                    continue
-                if job_protection_reason(_settings, row_dict["job_id"], _protected_tags,
-                                         _exclude_ids, _exclude_pipeline):
-                    continue
-            cost = row_dict.get("cost_90d", row_dict.get("cost_30d", 0))
-            logger.log(
-                environment=env, resource_type=res_type,
-                resource_id=str(row_dict.get("job_id", row_dict.get("cluster_id",
-                    row_dict.get("warehouse_id", row_dict.get("endpoint_id", "unknown"))))),
-                resource_name=(row_dict.get("job_name") or row_dict.get("cluster_name")
-                               or row_dict.get("warehouse_name")
-                               or row_dict.get("endpoint_name") or res_type),
-                owner=row_dict.get("owner", "system_scan"),
-                action="FLAGGED",
-                reason=f"{row_dict.get('recommendation', 'REVIEW')}: ${cost} cost",
-                dry_run=True,
-                details={"cost": float(cost)}
-            )
+            _rid = str(row_dict.get("job_id", row_dict.get("cluster_id",
+                row_dict.get("warehouse_id", row_dict.get("endpoint_id", "unknown")))))
+            # One bad row (e.g. a NULL cost) must not drop the rest of this resource
+            # type: record it as SKIPPED and move on to the next row.
+            try:
+                if view_name == "job_analysis":
+                    # Check the job's live settings (tags, pipeline tasks) before flagging it.
+                    # If it can't be read, don't flag it: 01 still evaluates every job itself.
+                    try:
+                        _settings = w.jobs.get(job_id=int(row_dict["job_id"])).settings
+                    except Exception as e:
+                        print(f"Not flagging job {row_dict['job_id']}: could not read it ({e})")
+                        continue
+                    if job_protection_reason(_settings, row_dict["job_id"], _protected_tags,
+                                             _exclude_ids, _exclude_pipeline):
+                        continue
+                cost = row_dict.get("cost_90d", row_dict.get("cost_30d")) or 0
+                logger.log(
+                    environment=env, resource_type=res_type,
+                    resource_id=_rid,
+                    resource_name=(row_dict.get("job_name") or row_dict.get("cluster_name")
+                                   or row_dict.get("warehouse_name")
+                                   or row_dict.get("endpoint_name") or res_type),
+                    owner=row_dict.get("owner", "system_scan"),
+                    action="FLAGGED",
+                    reason=f"{row_dict.get('recommendation', 'REVIEW')}: ${cost} cost",
+                    dry_run=True,
+                    details={"cost": float(cost)}
+                )
+            except Exception as e:
+                logger.log(
+                    environment=env, resource_type=res_type, resource_id=_rid,
+                    resource_name=res_type, owner="system_scan", action="SKIPPED",
+                    reason=f"Could not analyze this resource: {e}", dry_run=True,
+                )
     except Exception as e:
         print(f"Skipping {view_name}: {e}")
 

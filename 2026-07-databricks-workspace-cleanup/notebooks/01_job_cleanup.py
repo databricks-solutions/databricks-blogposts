@@ -50,7 +50,7 @@ if env not in valid_envs:
     dbutils.notebook.exit(f"Unknown environment '{env}' - expected one of {sorted(valid_envs)}")
 config = _deep_merge(config_all.get("defaults", {}), config_all[env])  # env overrides defaults, per key
 with open(f"{config_path}/thresholds.yaml") as f:
-    thresholds = yaml.safe_load(f)
+    thresholds = yaml.safe_load(f) or {}
 
 if not config.get("job_cleanup", False):
     dbutils.notebook.exit(f"Job cleanup disabled for {env}")
