@@ -216,7 +216,8 @@ try:
                     reason=f"Stale {days_stale} days (not edited, viewed, or queried)",
                     dry_run=dry_run,
                     details={"last_updated": last_updated.isoformat() if last_updated else None,
-                             "state": str(dash.lifecycle_state)},
+                             "state": str(dash.lifecycle_state),
+                             **gate.approval("dashboard", dash_id)},  # who approved it, when
                 )
                 deleted += 1
             else:

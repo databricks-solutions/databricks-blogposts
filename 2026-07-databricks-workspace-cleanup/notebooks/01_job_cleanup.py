@@ -286,7 +286,8 @@ try:
                         action="DELETED" if not dry_run else "FLAGGED",
                         reason="Never run",
                         dry_run=dry_run, details={"last_run": None, "total_runs": 0,
-                                                  "cost": job_cost(job_id)},
+                                                  "cost": job_cost(job_id),
+                                                  **gate.approval("job", job_id)},
                     )
                     deleted += 1
                 else:
@@ -376,7 +377,8 @@ try:
                             f"(threshold: {inactive_days}, source: {idle_source})"),
                     dry_run=dry_run,
                     details={"last_run": last_run.isoformat() if last_run else None,
-                             "cost": job_cost(job_id)},
+                             "cost": job_cost(job_id),
+                             **gate.approval("job", job_id)},  # who approved it, when
                 )
                 deleted += 1
             else:

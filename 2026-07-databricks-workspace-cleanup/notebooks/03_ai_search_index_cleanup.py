@@ -149,7 +149,8 @@ try:
                         action="DELETED" if not dry_run else "FLAGGED",
                         reason=f"Orphaned - source table {source_table} no longer exists",
                         dry_run=dry_run,
-                        details={"endpoint": ep.name, "source_table": source_table},
+                        details={"endpoint": ep.name, "source_table": source_table,
+                                 **gate.approval("ai_search_index", idx_name)},  # who approved it, when
                     )
                     deleted += 1
                 else:

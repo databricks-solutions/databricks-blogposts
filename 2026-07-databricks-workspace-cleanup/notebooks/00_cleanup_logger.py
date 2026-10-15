@@ -111,7 +111,8 @@ def ensure_approvals_table(spark, approvals_table):
 
 
 def load_approved(spark, approvals_table, environment, valid_hours=168):
-    """Return the set of (resource_type, resource_id) approved FOR THIS environment.
+    """Return {(resource_type, resource_id): {"approved_by", "approved_at"}} for the
+    items approved FOR THIS environment (the latest approval per item).
     Approvals are environment-scoped: resource ids are per-workspace, so an approval
     recorded in one environment must not authorize deletion in another. A timestamped
     approval also expires after valid_hours (default 7 days), so a one-time approval
@@ -124,11 +125,16 @@ def load_approved(spark, approvals_table, environment, valid_hours=168):
     the validity window a newly created resource that reuses an old id would be treated
     as approved, so keep the window tight where ids are recycled."""
     rows = spark.sql(
-        f"SELECT DISTINCT resource_type, resource_id FROM {approvals_table} "
+        f"SELECT resource_type, resource_id, max_by(approved_by, approved_at) AS approved_by, "
+        f"max(approved_at) AS approved_at FROM {approvals_table} "
         f"WHERE environment = '{environment}' "
-        f"AND approved_at >= current_timestamp() - INTERVAL {int(valid_hours)} HOURS"
+        f"AND approved_at >= current_timestamp() - INTERVAL {int(valid_hours)} HOURS "
+        f"GROUP BY resource_type, resource_id"
     ).collect()
-    return {(r.resource_type, str(r.resource_id)) for r in rows}
+    return {(r.resource_type, str(r.resource_id)):
+            {"approved_by": r.approved_by,
+             "approved_at": r.approved_at.isoformat() if r.approved_at else None}
+            for r in rows}
 
 
 def job_protection_reason(settings, jid, protected_tags, exclude_ids, exclude_pipeline):
@@ -164,7 +170,12 @@ class DeletionGate:
         # record approvals between a dry-run and the first live run.
         ensure_approvals_table(spark, self.approvals_table)
         self.approved = (load_approved(spark, self.approvals_table, environment, approval_valid_hours)
-                         if (require_approval and not dry_run) else set())
+                         if (require_approval and not dry_run) else {})
+
+    def approval(self, resource_type, resource_id):
+        """Who approved this item and when, for the DELETED row's details, so the
+        audit log alone shows who authorized each deletion. Empty if not approved."""
+        return dict(self.approved.get((resource_type, str(resource_id)), {}))
 
     def block_reason(self, resource_type, resource_id, deleted_so_far):
         if self.dry_run:

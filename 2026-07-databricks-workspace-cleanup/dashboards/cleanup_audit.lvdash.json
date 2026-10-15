@@ -27,6 +27,20 @@
       "queryLines": [
         "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1), open_flags AS (SELECT f.* FROM recent f LEFT JOIN recent d ON d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp WHERE f.action = 'FLAGGED' AND d.resource_id IS NULL) SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp FROM open_flags ORDER BY timestamp DESC LIMIT 200"
       ]
+    },
+    {
+      "name": "pending_approvals",
+      "displayName": "Pending approvals",
+      "queryLines": [
+        "WITH approvals AS (SELECT environment, resource_type, resource_id, max_by(approved_by, approved_at) AS approved_by, max(approved_at) AS approved_at FROM maintenance.cleanup.cleanup_approvals WHERE approved_at >= current_timestamp() - INTERVAL 7 DAYS GROUP BY environment, resource_type, resource_id), names AS (SELECT environment, resource_type, resource_id, max_by(resource_name, timestamp) AS resource_name FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 30 DAYS GROUP BY environment, resource_type, resource_id), deletions AS (SELECT environment, resource_type, resource_id, max(timestamp) AS deleted_at FROM maintenance.cleanup.cleanup_log WHERE action = 'DELETED' GROUP BY environment, resource_type, resource_id) SELECT a.environment, a.resource_type, n.resource_name, a.resource_id, a.approved_by, a.approved_at, a.approved_at + INTERVAL 7 DAYS AS expires_at FROM approvals a LEFT JOIN names n USING (environment, resource_type, resource_id) LEFT JOIN deletions x USING (environment, resource_type, resource_id) WHERE x.deleted_at IS NULL OR x.deleted_at < a.approved_at ORDER BY expires_at"
+      ]
+    },
+    {
+      "name": "recent_deletions",
+      "displayName": "Recent deletions",
+      "queryLines": [
+        "WITH d AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE action = 'DELETED' AND timestamp >= current_timestamp() - INTERVAL 30 DAYS), a AS (SELECT d.environment, d.resource_type, d.resource_id, d.timestamp, ap.approved_by, ap.approved_at FROM d JOIN maintenance.cleanup.cleanup_approvals ap ON ap.environment = d.environment AND ap.resource_type = d.resource_type AND ap.resource_id = d.resource_id AND ap.approved_at <= d.timestamp QUALIFY ROW_NUMBER() OVER (PARTITION BY d.environment, d.resource_type, d.resource_id, d.timestamp ORDER BY ap.approved_at DESC) = 1) SELECT d.timestamp AS deleted_at, d.environment, d.resource_type, d.resource_name, d.resource_id, COALESCE(get_json_object(d.details, '$.approved_by'), a.approved_by) AS approved_by, COALESCE(CAST(get_json_object(d.details, '$.approved_at') AS TIMESTAMP), a.approved_at) AS approved_at, d.reason FROM d LEFT JOIN a ON a.environment = d.environment AND a.resource_type = d.resource_type AND a.resource_id = d.resource_id AND a.timestamp = d.timestamp ORDER BY deleted_at DESC LIMIT 200"
+      ]
     }
   ],
   "pages": [
@@ -40,7 +54,7 @@
             "name": "title",
             "multilineTextboxSpec": {
               "lines": [
-                "## \ud83e\uddf9 Workspace Cleanup \u2014 Audit"
+                "## 🧹 Workspace Cleanup - Audit"
               ]
             }
           },
@@ -434,7 +448,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Flagged items \u2014 what would be deleted (dry-run)"
+                "title": "Flagged items - what would be deleted (dry-run)"
               }
             }
           },
@@ -443,6 +457,210 @@
             "y": 13,
             "width": 6,
             "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr3",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Approvals"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 21,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "pending-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "pending_approvals",
+                  "fields": [
+                    {
+                      "name": "environment",
+                      "expression": "`environment`"
+                    },
+                    {
+                      "name": "resource_type",
+                      "expression": "`resource_type`"
+                    },
+                    {
+                      "name": "resource_name",
+                      "expression": "`resource_name`"
+                    },
+                    {
+                      "name": "resource_id",
+                      "expression": "`resource_id`"
+                    },
+                    {
+                      "name": "approved_by",
+                      "expression": "`approved_by`"
+                    },
+                    {
+                      "name": "approved_at",
+                      "expression": "`approved_at`"
+                    },
+                    {
+                      "name": "expires_at",
+                      "expression": "`expires_at`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment"
+                  },
+                  {
+                    "fieldName": "resource_type",
+                    "displayName": "Type"
+                  },
+                  {
+                    "fieldName": "resource_name",
+                    "displayName": "Resource"
+                  },
+                  {
+                    "fieldName": "resource_id",
+                    "displayName": "Resource ID"
+                  },
+                  {
+                    "fieldName": "approved_by",
+                    "displayName": "Approved by"
+                  },
+                  {
+                    "fieldName": "approved_at",
+                    "displayName": "Approved at"
+                  },
+                  {
+                    "fieldName": "expires_at",
+                    "displayName": "Expires"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Approved, waiting for cleanup_execute (approvals expire after 7 days)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "deleted-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "recent_deletions",
+                  "fields": [
+                    {
+                      "name": "deleted_at",
+                      "expression": "`deleted_at`"
+                    },
+                    {
+                      "name": "environment",
+                      "expression": "`environment`"
+                    },
+                    {
+                      "name": "resource_type",
+                      "expression": "`resource_type`"
+                    },
+                    {
+                      "name": "resource_name",
+                      "expression": "`resource_name`"
+                    },
+                    {
+                      "name": "resource_id",
+                      "expression": "`resource_id`"
+                    },
+                    {
+                      "name": "approved_by",
+                      "expression": "`approved_by`"
+                    },
+                    {
+                      "name": "approved_at",
+                      "expression": "`approved_at`"
+                    },
+                    {
+                      "name": "reason",
+                      "expression": "`reason`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "deleted_at",
+                    "displayName": "Deleted at"
+                  },
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment"
+                  },
+                  {
+                    "fieldName": "resource_type",
+                    "displayName": "Type"
+                  },
+                  {
+                    "fieldName": "resource_name",
+                    "displayName": "Resource"
+                  },
+                  {
+                    "fieldName": "resource_id",
+                    "displayName": "Resource ID"
+                  },
+                  {
+                    "fieldName": "approved_by",
+                    "displayName": "Approved by"
+                  },
+                  {
+                    "fieldName": "approved_at",
+                    "displayName": "Approved at"
+                  },
+                  {
+                    "fieldName": "reason",
+                    "displayName": "Reason"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Deleted in the last 30 days, and who approved each one"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 28,
+            "width": 6,
+            "height": 7
           }
         }
       ]

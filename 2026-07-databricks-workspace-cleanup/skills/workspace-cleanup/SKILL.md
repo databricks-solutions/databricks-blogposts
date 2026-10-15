@@ -137,12 +137,18 @@ Tell the user to run the `cleanup_execute` job for the same target (Jobs UI, or
 `databricks bundle run cleanup_execute --target <env>`), then check the result:
 
 ```sql
-SELECT resource_type, resource_name, action, reason
+SELECT resource_type, resource_name, action, reason,
+       get_json_object(details, '$.approved_by') AS approved_by
 FROM maintenance.cleanup.cleanup_log
 WHERE environment = '<env>' AND dry_run = false
   AND timestamp >= current_timestamp() - INTERVAL 1 DAY
 ORDER BY timestamp DESC;
 ```
+
+Each `DELETED` row records who approved it and when in `details`
+(`approved_by`, `approved_at`). The audit dashboard's Approvals section shows
+approvals still waiting for `cleanup_execute` and recent deletions with their
+approver.
 
 Deleted dashboards go to the trash and can be restored for 30 days. Deleted
 jobs and AI Search indexes cannot be restored.
