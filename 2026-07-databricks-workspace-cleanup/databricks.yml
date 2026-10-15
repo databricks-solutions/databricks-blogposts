@@ -63,6 +63,8 @@ resources:
               environment: ${var.environment}
               config_path: ${workspace.file_path}/config
               mode: discover
+              # Lets 02 skip the audit dashboard this bundle deploys.
+              audit_dashboard_id: ${resources.dashboards.cleanup_audit.id}
 
         - task_key: ai_search_index_cleanup
           depends_on:
@@ -114,6 +116,8 @@ resources:
               environment: ${var.environment}
               config_path: ${workspace.file_path}/config
               mode: execute
+              # Lets 02 skip the audit dashboard this bundle deploys.
+              audit_dashboard_id: ${resources.dashboards.cleanup_audit.id}
 
         - task_key: ai_search_index_cleanup
           depends_on:

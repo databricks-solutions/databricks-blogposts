@@ -25,7 +25,7 @@ SELECT action, COUNT(*) AS n FROM recent GROUP BY action;
 
 -- 4. Flagged detail
 WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1)
-SELECT resource_type, resource_name, reason, owner, timestamp FROM recent WHERE action='FLAGGED' ORDER BY timestamp DESC LIMIT 200;
+SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp FROM recent WHERE action='FLAGGED' ORDER BY timestamp DESC LIMIT 200;
 
 -- 5. Full audit trail (ad hoc, not on the dashboard)
 SELECT timestamp, environment, resource_type, resource_id,

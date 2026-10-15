@@ -26,11 +26,11 @@ Every action (`FLAGGED`, `SKIPPED`, `DELETED`) is logged to a Delta table for au
 
 - **Discover never deletes.** `cleanup_discover` only logs `FLAGGED` candidates, in every environment. Deletion happens only in `cleanup_execute`, which exits without touching anything unless the environment sets `allow_execute: true` (default `false`; `stage` and `prod` opt in, `dev` does not).
 - **Approval gate.** With `require_approval: true`, `cleanup_execute` only deletes resources that have a recorded approval in `<audit catalog.schema>.cleanup_approvals` (environment-scoped, valid for 7 days). Reviewing the dashboard is not authorization - after a discovery run, a reviewer records approvals: `INSERT INTO <...>.cleanup_approvals (run_id, environment, resource_type, resource_id, approved_by, approved_at) VALUES (...)`.
-- **Protected resources are never deleted.** Lakeflow/SDP pipeline jobs, anything carrying a protected tag (`retain`, `production-critical`), and any id in `exclude_ids` are skipped - configured under `protected:` in `config.yaml`. The bundle tags its own Discover and Execute jobs `retain`, so the cleanup never flags itself (keep `retain` in `protected.tags`).
+- **Protected resources are never deleted.** Lakeflow/SDP pipeline jobs, anything carrying a protected tag (`retain`, `production-critical`), and any id in `exclude_ids` are skipped - configured under `protected:` in `config.yaml`. The bundle tags its own Discover and Execute jobs `retain`, so the cleanup never flags itself (keep `retain` in `protected.tags`), and never trashes its own audit dashboard ("Workspace Cleanup - Audit").
 - **Blast-radius cap.** `max_deletions_per_run` (default 25) limits how many resources of each type a single `cleanup_execute` run will delete; the rest are logged `SKIPPED`. Each resource type has exactly one deleting task (jobs: `job_cleanup`, dashboards: `dashboard_cleanup`, AI Search indexes: `ai_search_index_cleanup`), so the cap is never split across tasks.
 - **Clusters, SQL warehouses, and serving endpoints are flagged for human review only** - the system-table analysis surfaces them, but the workflow never deletes them.
 - **Job idleness uses system tables, not only the Jobs API.** The Jobs API keeps ~60 days of run history, shorter than `job_inactive_days` (90), so `job_cleanup` takes each job's last run from the `job_activity` table that the system-table analysis writes (window: `job_activity_window_days`, default 180). If that data is missing or stale, jobs with no API runs are skipped for manual review, never deleted.
-- **Jobs that have never run are skipped** (flagged for manual review) unless `delete_never_run: true` is set in `thresholds.yaml`.
+- **Jobs that have never run are skipped** (flagged for manual review) unless `delete_never_run: true` is set in `thresholds.yaml`. Even then, a job counts as never run only if the system-table run history goes back to when the job was created; otherwise it is skipped for manual review.
 - **Dashboards are trashed, not permanently deleted** (`w.lakeview.trash`), so they remain recoverable.
 - **AI Search indexes are only deleted when orphaned** - a delta-sync index whose source table no longer exists. Direct-access indexes and still-provisioning indexes are never treated as candidates.
 
@@ -82,7 +82,7 @@ WHERE action = 'FLAGGED' AND environment = 'prod'
   AND resource_name = '<name shown in the dashboard>';
 ```
 
-Run the `SELECT DISTINCT ...` part on its own first and check it returns exactly the items you mean. Names are not unique - two jobs or dashboards can share one - so if it returns more than one row, replace the name filter with `resource_id = '<id>'`.
+Run the `SELECT DISTINCT ...` part on its own first and check it returns exactly the items you mean. Names are not unique - two jobs or dashboards can share one - so if it returns more than one row, replace the name filter with `resource_id = '<id>'` (the dashboard's detail table shows each item's environment and resource ID).
 
 Only approvers should be able to run this: `GRANT MODIFY, SELECT ON TABLE maintenance.cleanup.cleanup_approvals TO <approvers group>` (plus `USE CATALOG` / `USE SCHEMA`).
 
@@ -113,7 +113,7 @@ The notebooks run on serverless compute. Notebooks that use the Lakeview and Vec
 
 ## Audit dashboard
 
-Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table showing candidate counts by resource type, the action breakdown, and a detail table of exactly what would be removed - so you can review a discovery run before approving anything. Each panel counts a resource once per action over the last 7 days (one weekly discovery cycle), so re-running discovery does not inflate the numbers. Set the backing warehouse with `BUNDLE_VAR_warehouse_id` (or `--var warehouse_id=<id>`, or per target), and if you change `audit_table`, update the dashboard datasets to match.
+Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table showing candidate counts by resource type, the action breakdown, and a detail table of exactly what would be removed, with each item's environment and resource ID - so you can review a discovery run before approving anything. Each panel counts a resource once per action over the last 7 days (one weekly discovery cycle), so re-running discovery does not inflate the numbers. Set the backing warehouse with `BUNDLE_VAR_warehouse_id` (or `--var warehouse_id=<id>`, or per target), and if you change `audit_table`, update the dashboard datasets to match.
 
 ## Optional: Genie Code skill
 

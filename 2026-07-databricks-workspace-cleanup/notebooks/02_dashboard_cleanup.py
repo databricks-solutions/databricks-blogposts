@@ -85,6 +85,13 @@ require_approval = config_all.get("require_approval", True)
 # str(): an unquoted id in YAML is read as a number and would never match.
 _exclude_ids = {str(x) for x in (((config_all.get("protected") or {}).get("exclude_ids")) or [])}
 
+# Never trash the cleanup's own audit dashboard. The bundle passes this deployment's
+# dashboard id; the name (display_name in databricks.yml) also covers other
+# deployments of the bundle in the same workspace, e.g. dev and prod.
+dbutils.widgets.text("audit_dashboard_id", "")
+_audit_dashboard_id = dbutils.widgets.get("audit_dashboard_id")
+AUDIT_DASHBOARD_NAME = "Workspace Cleanup - Audit"
+
 # COMMAND ----------
 
 # MAGIC %run ./00_cleanup_logger
@@ -169,6 +176,15 @@ try:
                 continue
 
             if is_stale:
+                if (_audit_dashboard_id and dash_id == _audit_dashboard_id) or dash_name == AUDIT_DASHBOARD_NAME:
+                    logger.log(
+                        environment=env, resource_type="dashboard",
+                        resource_id=dash_id, resource_name=dash_name, owner=creator,
+                        action="SKIPPED", reason="Protected - the cleanup's own audit dashboard",
+                        dry_run=dry_run,
+                    )
+                    skipped += 1
+                    continue
                 if str(dash_id) in _exclude_ids or f"dashboard:{dash_id}" in _exclude_ids:
                     logger.log(
                         environment=env, resource_type="dashboard",

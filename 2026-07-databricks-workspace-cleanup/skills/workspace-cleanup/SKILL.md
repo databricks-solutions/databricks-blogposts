@@ -109,6 +109,8 @@ Common reasons:
 | `max_deletions_per_run` | The per-run cap was reached; run `cleanup_execute` again |
 | `Protected` | Tagged `retain` / `production-critical`, a pipeline job, or in `protected.exclude_ids` |
 | `Never run` | Never-run jobs are skipped unless `delete_never_run: true` |
+| `shorter than the job's age` | No runs found, but the system-table history doesn't go back to the job's creation, so "never run" can't be confirmed |
+| `own audit dashboard` | The cleanup never trashes its own audit dashboard |
 | `Active` | Not a candidate: a run is still in progress, the job ran recently, or the dashboard was viewed or queried recently |
 | `manual review required` | Not enough history to decide safely (for example, system tables hold fewer days than `job_activity_window_days`, or dashboard view history is unavailable) |
 

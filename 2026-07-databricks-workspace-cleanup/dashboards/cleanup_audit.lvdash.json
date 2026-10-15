@@ -25,7 +25,7 @@
       "name": "flagged_detail",
       "displayName": "Flagged detail",
       "queryLines": [
-        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1) SELECT resource_type, resource_name, reason, owner, timestamp FROM recent WHERE action='FLAGGED' ORDER BY timestamp DESC LIMIT 200"
+        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1) SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp FROM recent WHERE action='FLAGGED' ORDER BY timestamp DESC LIMIT 200"
       ]
     }
   ],
@@ -365,12 +365,20 @@
                   "datasetName": "flagged_detail",
                   "fields": [
                     {
+                      "name": "environment",
+                      "expression": "`environment`"
+                    },
+                    {
                       "name": "resource_type",
                       "expression": "`resource_type`"
                     },
                     {
                       "name": "resource_name",
                       "expression": "`resource_name`"
+                    },
+                    {
+                      "name": "resource_id",
+                      "expression": "`resource_id`"
                     },
                     {
                       "name": "reason",
@@ -395,12 +403,20 @@
               "encodings": {
                 "columns": [
                   {
+                    "fieldName": "environment",
+                    "displayName": "Environment"
+                  },
+                  {
                     "fieldName": "resource_type",
                     "displayName": "Type"
                   },
                   {
                     "fieldName": "resource_name",
                     "displayName": "Resource"
+                  },
+                  {
+                    "fieldName": "resource_id",
+                    "displayName": "Resource ID"
                   },
                   {
                     "fieldName": "reason",

@@ -245,8 +245,26 @@ try:
                 skipped += 1
                 continue
 
+            # "Never run" is only known if the system-table history goes back to the
+            # job's creation; otherwise a run can be too old for the Jobs API (~60 days)
+            # and older than the history too.
+            if latest_run is None and days_idle is None:
+                job_age = (now - created).days if created else None
+                if job_age is None or history_days is None or history_days < job_age:
+                    logger.log(
+                        environment=env, resource_type="job",
+                        resource_id=job_id, resource_name=job_name, owner=creator,
+                        action="SKIPPED",
+                        reason=(f"No runs in Jobs API history (~60 days); system-table history "
+                                f"({history_days} days) is shorter than the job's age "
+                                f"({job_age} days) - manual review required"),
+                        dry_run=dry_run,
+                    )
+                    skipped += 1
+                    continue
+
             # Genuinely never run (no API runs, none in system tables, job created
-            # within the analysis window).
+            # within the analysis window and the system-table history).
             if latest_run is None and days_idle is None:
                 if delete_never_run:
                     block = gate.block_reason("job", job_id, deleted)
