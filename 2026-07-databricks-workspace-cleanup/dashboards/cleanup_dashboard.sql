@@ -9,17 +9,25 @@
 -- table names here and in the dashboard JSON.
 --
 -- Every discovery run re-logs the same candidates, so each dataset keeps
--- only the latest row per resource and action from the last 7 days (one
--- weekly cleanup_discover cycle). Without this, counts grow with each run.
+-- only the latest row per resource (per resource and action in query 2)
+-- from the last 7 days (one weekly cleanup_discover cycle). Without this, counts grow with each run.
 -- open_flags drops candidates that have since been DELETED, so the flagged
 -- panels show only what is still waiting for review.
 -- ============================================================
 
--- 1. Flagged detail: candidates waiting for review (also the 'Waiting for review'
---    counter and the by-type chart)
-WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1)
-, open_flags AS (SELECT f.* FROM recent f LEFT JOIN recent d ON d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp WHERE f.action = 'FLAGGED' AND d.resource_id IS NULL)
-SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp FROM open_flags ORDER BY timestamp DESC;
+-- 1. Flagged detail: candidates waiting for review (also the 'Waiting for
+--    approval' counter, which sums `deletable`, and the by-type chart).
+--    01-03 log every job, dashboard and index on each discovery run, so their
+--    newest dry-run row is the current state: a resource found active again
+--    drops out. 04's system-table flags (reason CANDIDATE_...) are review
+--    signals and log nothing for healthy resources, so only its latest scan
+--    per environment is shown. deletable = 0 for those.
+WITH recent AS (SELECT *, reason LIKE 'CANDIDATE\\_%' AS from_scan FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS)
+, state AS (SELECT * FROM recent WHERE dry_run AND NOT from_scan QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id ORDER BY timestamp DESC) = 1)
+, scan AS (SELECT * FROM recent WHERE from_scan AND action = 'FLAGGED' QUALIFY timestamp >= max(timestamp) OVER (PARTITION BY environment) - INTERVAL 15 MINUTES AND ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id ORDER BY timestamp DESC) = 1)
+, flags AS (SELECT * FROM state WHERE action = 'FLAGGED' UNION ALL SELECT s.* FROM scan s WHERE NOT EXISTS (SELECT 1 FROM state f WHERE f.action = 'FLAGGED' AND f.environment = s.environment AND f.resource_type = s.resource_type AND f.resource_id = s.resource_id))
+, open_flags AS (SELECT f.* FROM flags f WHERE NOT EXISTS (SELECT 1 FROM recent d WHERE d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp))
+SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp, CASE WHEN from_scan THEN 0 ELSE 1 END AS deletable FROM open_flags ORDER BY timestamp DESC;
 
 -- 2. Action breakdown: what the cleanup did in the last 7 days
 WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1)

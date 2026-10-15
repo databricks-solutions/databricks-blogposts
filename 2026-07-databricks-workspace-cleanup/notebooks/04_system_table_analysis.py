@@ -43,6 +43,8 @@ with open(f"{config_path}/thresholds.yaml") as f:
 # re-logging the same FLAGGED rows the discovery run already wrote.
 dbutils.widgets.text("mode", "discover")
 mode = dbutils.widgets.get("mode")
+if mode not in ("discover", "execute"):
+    dbutils.notebook.exit(f"Unknown mode '{mode}' - expected 'discover' or 'execute'")
 
 job_inactive_days = thresholds.get("job_inactive_days", 90)
 job_activity_window_days = thresholds.get("job_activity_window_days", 180)
@@ -220,7 +222,6 @@ cluster_analysis = spark.sql(f"""
             WHEN COALESCE(cc.active_days, 0) = 0 THEN 'CANDIDATE_DELETE'
             WHEN cc.cost_30d > {cluster_review_cost} AND cc.active_days < {cluster_review_active_days}
                 THEN 'CANDIDATE_REVIEW'
-            WHEN ci.cluster_source = 'UI' THEN 'CANDIDATE_REVIEW'
             ELSE 'HEALTHY'
         END AS recommendation
     FROM cluster_info ci

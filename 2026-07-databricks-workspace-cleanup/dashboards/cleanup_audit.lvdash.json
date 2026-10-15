@@ -4,7 +4,7 @@
       "name": "flagged_detail",
       "displayName": "Flagged detail",
       "queryLines": [
-        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1), open_flags AS (SELECT f.* FROM recent f LEFT JOIN recent d ON d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp WHERE f.action = 'FLAGGED' AND d.resource_id IS NULL) SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp FROM open_flags ORDER BY timestamp DESC"
+        "WITH recent AS (SELECT *, reason LIKE 'CANDIDATE\\\\_%' AS from_scan FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS), state AS (SELECT * FROM recent WHERE dry_run AND NOT from_scan QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id ORDER BY timestamp DESC) = 1), scan AS (SELECT * FROM recent WHERE from_scan AND action = 'FLAGGED' QUALIFY timestamp >= max(timestamp) OVER (PARTITION BY environment) - INTERVAL 15 MINUTES AND ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id ORDER BY timestamp DESC) = 1), flags AS (SELECT * FROM state WHERE action = 'FLAGGED' UNION ALL SELECT s.* FROM scan s WHERE NOT EXISTS (SELECT 1 FROM state f WHERE f.action = 'FLAGGED' AND f.environment = s.environment AND f.resource_type = s.resource_type AND f.resource_id = s.resource_id)), open_flags AS (SELECT f.* FROM flags f WHERE NOT EXISTS (SELECT 1 FROM recent d WHERE d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp)) SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp, CASE WHEN from_scan THEN 0 ELSE 1 END AS deletable FROM open_flags ORDER BY timestamp DESC"
       ]
     },
     {
@@ -33,7 +33,6 @@
     {
       "name": "overview",
       "displayName": "Overview",
-      "pageType": "PAGE_TYPE_CANVAS",
       "layout": [
         {
           "widget": {
@@ -47,7 +46,7 @@
           "position": {
             "x": 0,
             "y": 0,
-            "width": 6,
+            "width": 12,
             "height": 1
           }
         },
@@ -63,7 +62,7 @@
           "position": {
             "x": 0,
             "y": 1,
-            "width": 6,
+            "width": 12,
             "height": 1
           }
         },
@@ -160,7 +159,7 @@
           "position": {
             "x": 0,
             "y": 2,
-            "width": 2,
+            "width": 4,
             "height": 2
           }
         },
@@ -174,9 +173,9 @@
             }
           },
           "position": {
-            "x": 2,
+            "x": 4,
             "y": 2,
-            "width": 4,
+            "width": 8,
             "height": 2
           }
         },
@@ -190,8 +189,8 @@
                   "datasetName": "flagged_detail",
                   "fields": [
                     {
-                      "name": "count(resource_id)",
-                      "expression": "COUNT(`resource_id`)"
+                      "name": "sum(deletable)",
+                      "expression": "SUM(`deletable`)"
                     }
                   ],
                   "disaggregated": false
@@ -203,21 +202,21 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "count(resource_id)",
-                  "displayName": "1. Waiting for review"
+                  "fieldName": "sum(deletable)",
+                  "displayName": "1. Waiting for approval"
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "1. Waiting for review"
+                "title": "1. Waiting for approval (deletable)"
               }
             }
           },
           "position": {
             "x": 0,
             "y": 4,
-            "width": 2,
-            "height": 3
+            "width": 4,
+            "height": 1
           }
         },
         {
@@ -239,6 +238,10 @@
               }
             ],
             "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "2. Approved, not yet run"
+              },
               "version": 2,
               "widgetType": "counter",
               "encodings": {
@@ -247,17 +250,16 @@
                   "displayName": "2. Approved, not yet run"
                 }
               },
-              "frame": {
-                "showTitle": true,
-                "title": "2. Approved, not yet run"
+              "data": {
+                "queryName": "main_query"
               }
             }
           },
           "position": {
-            "x": 2,
+            "x": 4,
             "y": 4,
-            "width": 2,
-            "height": 3
+            "width": 4,
+            "height": 1
           }
         },
         {
@@ -294,10 +296,10 @@
             }
           },
           "position": {
-            "x": 4,
+            "x": 8,
             "y": 4,
-            "width": 2,
-            "height": 3
+            "width": 4,
+            "height": 1
           }
         },
         {
@@ -311,8 +313,8 @@
           },
           "position": {
             "x": 0,
-            "y": 7,
-            "width": 6,
+            "y": 5,
+            "width": 12,
             "height": 1
           }
         },
@@ -404,7 +406,7 @@
           },
           "position": {
             "x": 0,
-            "y": 8,
+            "y": 6,
             "width": 3,
             "height": 5
           }
@@ -475,7 +477,7 @@
           },
           "position": {
             "x": 3,
-            "y": 8,
+            "y": 6,
             "width": 3,
             "height": 5
           }
@@ -559,15 +561,15 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Flagged in the last 7 days and not deleted (nothing is deleted without approval)"
+                "title": "Candidates from the latest discovery, not deleted yet (clusters, warehouses and endpoints are review only)"
               }
             }
           },
           "position": {
-            "x": 0,
-            "y": 13,
+            "x": 6,
+            "y": 6,
             "width": 6,
-            "height": 7
+            "height": 5
           }
         },
         {
@@ -581,8 +583,8 @@
           },
           "position": {
             "x": 0,
-            "y": 20,
-            "width": 6,
+            "y": 11,
+            "width": 12,
             "height": 1
           }
         },
@@ -671,9 +673,9 @@
           },
           "position": {
             "x": 0,
-            "y": 21,
-            "width": 6,
-            "height": 5
+            "y": 12,
+            "width": 12,
+            "height": 2
           }
         },
         {
@@ -687,8 +689,8 @@
           },
           "position": {
             "x": 0,
-            "y": 26,
-            "width": 6,
+            "y": 14,
+            "width": 12,
             "height": 1
           }
         },
@@ -785,12 +787,14 @@
           },
           "position": {
             "x": 0,
-            "y": 27,
-            "width": 6,
+            "y": 15,
+            "width": 12,
             "height": 6
           }
         }
-      ]
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
     }
   ],
   "uiSettings": {

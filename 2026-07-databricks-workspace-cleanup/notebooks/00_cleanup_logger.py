@@ -115,10 +115,10 @@ def load_approved(spark, approvals_table, environment, valid_hours=168):
     items approved FOR THIS environment (the latest approval per item).
     Approvals are environment-scoped: resource ids are per-workspace, so an approval
     recorded in one environment must not authorize deletion in another. A timestamped
-    approval also expires after valid_hours (default 7 days), so a one-time approval
+    approval also expires after valid_hours (7 days), so a one-time approval
     does not become permanent standing authorization for a recurring live run -
-    re-approve for a new cycle, or raise approval_valid_hours if your review-to-run
-    window is longer. A row with no approved_at is not an approval: otherwise a
+    re-approve for a new cycle. The dashboard and docs assume 7 days, so change
+    them too if you pass a different value. A row with no approved_at is not an approval: otherwise a
     forgotten column would become a permanent approval that never expires.
     Reviewing the dashboard is not itself authorization; a live
     delete only acts on rows here. Matching is by (resource_type, resource_id): within

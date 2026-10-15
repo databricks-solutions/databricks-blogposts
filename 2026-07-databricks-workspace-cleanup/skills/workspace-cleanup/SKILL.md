@@ -43,27 +43,45 @@ not deleted, `reason` says why), or `DELETED`. `resource_type` is one of `job`,
 
 ### What was flagged?
 
-Use the last 7 days (one weekly discovery cycle), count each resource once, and
-leave out items that have been deleted since they were flagged:
+Use the last 7 days (one weekly discovery cycle) and show each resource once,
+in its current state: leave out items deleted since they were flagged, and
+items a later discovery run found active again. This is the same rule the audit
+dashboard uses:
 
 ```sql
-SELECT f.resource_type, f.resource_name, f.resource_id, f.owner,
-       max_by(f.reason, f.timestamp) AS reason, max(f.timestamp) AS last_flagged
-FROM maintenance.cleanup.cleanup_log f
-WHERE f.action = 'FLAGGED' AND f.environment = '<env>'
-  AND f.timestamp >= current_timestamp() - INTERVAL 7 DAYS
-  AND NOT EXISTS (
-    SELECT 1 FROM maintenance.cleanup.cleanup_log d
-    WHERE d.action = 'DELETED' AND d.environment = f.environment
-      AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id
-      AND d.timestamp >= f.timestamp)
-GROUP BY f.resource_type, f.resource_name, f.resource_id, f.owner
-ORDER BY f.resource_type, last_flagged DESC;
+WITH recent AS (
+  SELECT *, reason LIKE 'CANDIDATE\\_%' AS from_scan  -- system-table review flags (04)
+  FROM maintenance.cleanup.cleanup_log
+  WHERE environment = '<env>' AND timestamp >= current_timestamp() - INTERVAL 7 DAYS),
+state AS (  -- jobs, dashboards, indexes: checked on every run, newest row = current state
+  SELECT * FROM recent WHERE dry_run AND NOT from_scan
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY resource_type, resource_id ORDER BY timestamp DESC) = 1),
+scan AS (   -- review flags from the latest system-table scan only
+  SELECT * FROM recent WHERE from_scan AND action = 'FLAGGED'
+  QUALIFY timestamp >= max(timestamp) OVER () - INTERVAL 15 MINUTES
+      AND ROW_NUMBER() OVER (PARTITION BY resource_type, resource_id ORDER BY timestamp DESC) = 1),
+candidates AS (
+  SELECT * FROM state WHERE action = 'FLAGGED'
+  UNION ALL
+  SELECT * FROM scan s WHERE NOT EXISTS (
+    SELECT 1 FROM state f WHERE f.action = 'FLAGGED'
+      AND f.resource_type = s.resource_type AND f.resource_id = s.resource_id))
+SELECT resource_type, resource_name, resource_id, owner, reason,
+       timestamp AS last_flagged, NOT from_scan AS deletable
+FROM candidates c
+WHERE NOT EXISTS (
+  SELECT 1 FROM recent d WHERE d.action = 'DELETED'
+    AND d.resource_type = c.resource_type AND d.resource_id = c.resource_id
+    AND d.timestamp >= c.timestamp)
+ORDER BY resource_type, last_flagged DESC;
 ```
 
-Summarise by type, say which items can be deleted and which are review-only,
-and show the `reason` for each (for example "Inactive 120 days", "Stale 75
-days", "Orphaned - source table no longer exists").
+Summarise by type, say which items can be deleted (`deletable = true`) and
+which are review-only, and show the `reason` for each (for example "Inactive
+120 days", "Stale 75 days", "Orphaned - source table no longer exists").
+Rows with `deletable = false` come from the system-table scan (reason starts
+with `CANDIDATE_`): clusters, warehouses, and serving endpoints, plus cost or
+failure signals for jobs. `cleanup_execute` doesn't act on those signals.
 
 ### Draft an approval
 
@@ -118,7 +136,8 @@ Common reasons:
 | `shorter than the job's age` | No runs found, but the system-table history doesn't go back to the job's creation, so "never run" can't be confirmed |
 | `own audit dashboard` | The cleanup never trashes its own audit dashboard |
 | `Active` | Not a candidate: a run is still in progress, the job ran recently, or the dashboard was viewed or queried recently |
-| `manual review required` | Not enough history to decide safely (for example, system tables hold fewer days than `job_activity_window_days`, or dashboard view history is unavailable) |
+| `manual review required` | Not enough history to decide safely (for example, system tables hold fewer days than `job_activity_window_days`, or the audit log holds fewer days than `dashboard_inactive_days`) |
+| `Could not list indexes on endpoint` | The AI Search endpoint couldn't be read (offline or no permission); its indexes were not checked this run |
 
 If the only rows are `FLAGGED` with `dry_run = true`, `cleanup_execute` has not
 run since discovery.

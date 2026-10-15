@@ -143,12 +143,18 @@ if not activity_loaded:
 # job_run_timeline holds that many days for this workspace. If the system schema was
 # enabled later, a run can be too old for the Jobs API and too old for the table, so
 # such jobs are skipped for manual review instead of being scored idle.
-history_days = None
+history_days, ever_ran = None, None
 try:
     history_days = spark.sql(
         f"SELECT datediff(current_timestamp(), min(period_start_time)) AS d "
         f"FROM system.lakeflow.job_run_timeline WHERE workspace_id = {workspace_id}"
     ).first().d
+    # Every job with a run anywhere in the history, not just in the analysis window:
+    # a job older than the window with no run in it may still have run before it.
+    ever_ran = {str(r.job_id) for r in spark.sql(
+        f"SELECT DISTINCT job_id FROM system.lakeflow.job_run_timeline "
+        f"WHERE workspace_id = {workspace_id}"
+    ).collect()}
 except Exception as e:
     print(f"Could not read job_run_timeline history ({e}).")
 # 2 days of slack: the table's retention trims its oldest rows every day.
@@ -228,10 +234,16 @@ try:
                         )
                         skipped += 1
                         continue
-                    # Existed for the whole analysis window with no run in it: idle for
-                    # at least activity_window_days (exact last run is unknown).
-                    days_idle = activity_window_days
-                    idle_source = f"system tables (no run in {activity_window_days}d)"
+                    # No run at all, and the history goes back to the job's creation:
+                    # it never ran, so leave days_idle unset and let the never-run
+                    # check below (delete_never_run) decide.
+                    never_ran = (ever_ran is not None and str(job_id) not in ever_ran
+                                 and history_days >= (now - created).days)
+                    if not never_ran:
+                        # Existed for the whole analysis window with no run in it: idle
+                        # for at least activity_window_days (exact last run is unknown).
+                        days_idle = activity_window_days
+                        idle_source = f"system tables (no run in {activity_window_days}d)"
 
             if latest_run is None and days_idle is None and not activity_loaded:
                 logger.log(
@@ -263,8 +275,8 @@ try:
                     skipped += 1
                     continue
 
-            # Genuinely never run (no API runs, none in system tables, job created
-            # within the analysis window and the system-table history).
+            # Genuinely never run (no API runs, none in system tables, and the
+            # system-table history goes back to the job's creation).
             if latest_run is None and days_idle is None:
                 if delete_never_run:
                     block = gate.block_reason("job", job_id, deleted)

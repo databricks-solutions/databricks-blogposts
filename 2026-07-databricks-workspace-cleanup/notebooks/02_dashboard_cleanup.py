@@ -111,8 +111,14 @@ now = datetime.now(timezone.utc)
 # counted, because this notebook calls it on every dashboard.
 workspace_id = (dbutils.notebook.entry_point.getDbutils()
                 .notebook().getContext().workspaceId().get())
-days_since_use, usage_loaded = {}, False
+days_since_use, usage_loaded, audit_days = {}, False, None
 try:
+    # How far back the audit log goes. If it holds fewer days than inactive_days,
+    # "no view found" doesn't mean "not used for inactive_days".
+    audit_days = spark.sql(f"""
+        SELECT datediff(current_date(), min(event_date)) AS d
+        FROM system.access.audit WHERE workspace_id = {workspace_id}
+    """).first().d
     days_since_use = {r.dashboard_id: r.days for r in spark.sql(f"""
         SELECT request_params.dashboard_id AS dashboard_id,
                datediff(current_timestamp(), max(event_time)) AS days
@@ -123,7 +129,7 @@ try:
           AND request_params.dashboard_id IS NOT NULL
         GROUP BY 1
     """).collect()}
-    usage_loaded = True
+    usage_loaded = audit_days is not None
 except Exception as e:
     print(f"Could not read dashboard usage from system.access.audit ({e}) - "
           "dashboards not edited recently will be skipped for manual review.")
@@ -170,6 +176,17 @@ try:
                     resource_id=dash_id, resource_name=dash_name, owner=creator,
                     action="SKIPPED",
                     reason=f"Not edited for {days_stale} days, view history unavailable - manual review required",
+                    dry_run=dry_run,
+                )
+                skipped += 1
+                continue
+            if is_stale and audit_days < inactive_days:
+                logger.log(
+                    environment=env, resource_type="dashboard",
+                    resource_id=dash_id, resource_name=dash_name, owner=creator,
+                    action="SKIPPED",
+                    reason=(f"Not edited for {days_stale} days, view history covers only "
+                            f"{audit_days} of {inactive_days} days - manual review required"),
                     dry_run=dry_run,
                 )
                 skipped += 1

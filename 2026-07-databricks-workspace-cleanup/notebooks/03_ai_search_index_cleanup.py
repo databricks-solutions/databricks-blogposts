@@ -87,7 +87,21 @@ deleted, skipped = 0, 0
 
 try:
     for ep in w.vector_search_endpoints.list_endpoints():
-        for mini in w.vector_search_indexes.list_indexes(endpoint_name=ep.name):
+        # One endpoint that can't be listed (offline, no permission) must not stop the
+        # scan of the others: record it and move on to the next endpoint.
+        try:
+            indexes = list(w.vector_search_indexes.list_indexes(endpoint_name=ep.name))
+        except Exception as e:
+            logger.log(
+                environment=env, resource_type="ai_search_index",
+                resource_id=ep.name, resource_name=ep.name, owner="unknown",
+                action="SKIPPED",
+                reason=f"Could not list indexes on endpoint {ep.name}: {e}",
+                dry_run=dry_run, details={"endpoint": ep.name},
+            )
+            skipped += 1
+            continue
+        for mini in indexes:
             idx_name = mini.name
             try:
                 # Fetch full index to read the delta-sync source table.
