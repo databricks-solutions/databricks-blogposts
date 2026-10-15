@@ -57,7 +57,7 @@ ORDER BY resource_type, last_flagged DESC;
 
 Summarise by type, say which items can be deleted and which are review-only,
 and show the `reason` for each (for example "Inactive 120 days", "Stale 75
-days", "source table missing").
+days", "Orphaned - source table no longer exists").
 
 ### Draft an approval
 

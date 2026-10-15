@@ -5,6 +5,8 @@
 
 import yaml
 
+from databricks.sdk import WorkspaceClient
+
 dbutils.widgets.text("environment", "dev")
 env = dbutils.widgets.get("environment")
 
@@ -67,6 +69,14 @@ workspace_id = (dbutils.notebook.entry_point.getDbutils()
 
 # COMMAND ----------
 logger = CleanupLogger(spark, table=config.get("audit_table", "maintenance.cleanup.cleanup_log"))
+
+# Same protection rule as 01 (job_protection_reason in 00_cleanup_logger), so a
+# protected job is never logged as a candidate for someone to approve.
+w = WorkspaceClient()
+_protected = config_all.get("protected", {}) or {}
+_protected_tags = set(_protected.get("tags", []) or [])
+_exclude_ids = {str(x) for x in (_protected.get("exclude_ids", []) or [])}
+_exclude_pipeline = _protected.get("exclude_pipeline_jobs", True)
 
 # COMMAND ----------
 
@@ -365,6 +375,17 @@ for view_name, res_type in _flag_views:
         flagged = spark.sql(f"SELECT * FROM {view_name} WHERE recommendation != 'HEALTHY'{_known}").collect()
         for row in flagged:
             row_dict = row.asDict()
+            if view_name == "job_analysis":
+                # Check the job's live settings (tags, pipeline tasks) before flagging it.
+                # If it can't be read, don't flag it: 01 still evaluates every job itself.
+                try:
+                    _settings = w.jobs.get(job_id=int(row_dict["job_id"])).settings
+                except Exception as e:
+                    print(f"Not flagging job {row_dict['job_id']}: could not read it ({e})")
+                    continue
+                if job_protection_reason(_settings, row_dict["job_id"], _protected_tags,
+                                         _exclude_ids, _exclude_pipeline):
+                    continue
             cost = row_dict.get("cost_90d", row_dict.get("cost_30d", 0))
             logger.log(
                 environment=env, resource_type=res_type,
