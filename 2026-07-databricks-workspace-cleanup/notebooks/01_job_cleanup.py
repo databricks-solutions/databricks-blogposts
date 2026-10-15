@@ -82,7 +82,9 @@ require_approval = config_all.get("require_approval", True)
 # Protected resources are never deleted, regardless of thresholds.
 _protected = config_all.get("protected", {}) or {}
 _protected_tags = set(_protected.get("tags", []) or [])
-_exclude_ids = set(_protected.get("exclude_ids", []) or [])
+# str(): YAML reads an unquoted id (exclude_ids: [123]) as an int, which would never
+# match the string ids the checks compare against.
+_exclude_ids = {str(x) for x in (_protected.get("exclude_ids", []) or [])}
 _exclude_pipeline = _protected.get("exclude_pipeline_jobs", True)
 
 
@@ -137,6 +139,21 @@ if not activity_loaded:
     print("No recent system-table job activity for this environment - jobs with no "
           "Jobs API runs (~60 days) will be skipped for manual review.")
 
+# "No row in job_activity" only means "no run in activity_window_days" if
+# job_run_timeline holds that many days for this workspace. If the system schema was
+# enabled later, a run can be too old for the Jobs API and too old for the table, so
+# such jobs are skipped for manual review instead of being scored idle.
+history_days = None
+try:
+    history_days = spark.sql(
+        f"SELECT datediff(current_timestamp(), min(period_start_time)) AS d "
+        f"FROM system.lakeflow.job_run_timeline WHERE workspace_id = {workspace_id}"
+    ).first().d
+except Exception as e:
+    print(f"Could not read job_run_timeline history ({e}).")
+# 2 days of slack: the table's retention trims its oldest rows every day.
+history_covers_window = history_days is not None and history_days >= activity_window_days - 2
+
 
 def job_cost(jid):
     return (job_activity.get(str(jid)) or {}).get("cost")
@@ -146,10 +163,28 @@ def job_cost(jid):
 deleted, skipped = 0, 0
 
 try:
-    for job in w.jobs.list(expand_tasks=False):
+    # expand_tasks=True: without it the list has no tasks, so the pipeline-job check
+    # in job_protection_reason could never match.
+    for job in w.jobs.list(expand_tasks=True):
         job_id = job.job_id
         job_name = job.settings.name if job.settings else "unnamed"
         creator = job.creator_user_name or "unknown"
+
+        # The list returns at most 100 tasks per job; has_more means some are missing,
+        # so read the full job before deciding whether it is a pipeline job.
+        if getattr(job, "has_more", False):
+            try:
+                job = w.jobs.get(job_id=job_id)
+            except Exception as e:
+                logger.log(
+                    environment=env, resource_type="job",
+                    resource_id=job_id, resource_name=job_name, owner=creator,
+                    action="SKIPPED",
+                    reason=f"Could not read all tasks ({e}) - manual review required",
+                    dry_run=dry_run,
+                )
+                skipped += 1
+                continue
 
         # Never touch protected jobs (pipeline/SDP, tagged, or explicitly excluded).
         prot = is_protected(job)
@@ -181,6 +216,18 @@ try:
                     days_idle = (now - last_run).days
                     idle_source = "system tables"
                 elif created and (now - created).days > activity_window_days:
+                    if not history_covers_window:
+                        logger.log(
+                            environment=env, resource_type="job",
+                            resource_id=job_id, resource_name=job_name, owner=creator,
+                            action="SKIPPED",
+                            reason=(f"No runs in Jobs API history (~60 days) and system-table "
+                                    f"history covers only {history_days} of {activity_window_days} "
+                                    f"days - manual review required"),
+                            dry_run=dry_run,
+                        )
+                        skipped += 1
+                        continue
                     # Existed for the whole analysis window with no run in it: idle for
                     # at least activity_window_days (exact last run is unknown).
                     days_idle = activity_window_days
@@ -271,6 +318,22 @@ try:
 
                 last_run = datetime.fromtimestamp(last_activity_ms / 1000, tz=timezone.utc)
                 days_idle = (now - last_run).days
+
+            # list_runs(limit=1) only shows the NEWEST run, and an older run can still be
+            # going: e.g. a long run whose newer trigger was SKIPPED by
+            # max_concurrent_runs. Check for any active run before flagging.
+            if days_idle > inactive_days and latest_run is not None:
+                active_run = next(iter(w.jobs.list_runs(job_id=job_id, active_only=True, limit=1)), None)
+                if active_run is not None:
+                    logger.log(
+                        environment=env, resource_type="job",
+                        resource_id=job_id, resource_name=job_name, owner=creator,
+                        action="SKIPPED",
+                        reason=f"Active - run {active_run.run_id} still in progress",
+                        dry_run=dry_run,
+                    )
+                    skipped += 1
+                    continue
 
             # Branch on the idle count directly (both sides are timezone-aware).
             if days_idle > inactive_days:

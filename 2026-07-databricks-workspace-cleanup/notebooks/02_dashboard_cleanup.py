@@ -82,7 +82,8 @@ inactive_days = thresholds.get("dashboard_inactive_days", 60)
 max_deletions = config_all.get("max_deletions_per_run", 25)
 require_approval = config_all.get("require_approval", True)
 # protected.exclude_ids (config.yaml): "<type>:<id>" or a bare id is never deleted.
-_exclude_ids = set(((config_all.get("protected") or {}).get("exclude_ids")) or [])
+# str(): an unquoted id in YAML is read as a number and would never match.
+_exclude_ids = {str(x) for x in (((config_all.get("protected") or {}).get("exclude_ids")) or [])}
 
 # COMMAND ----------
 
@@ -96,6 +97,29 @@ logger = CleanupLogger(spark, table=audit_table)
 gate = DeletionGate(spark, environment=env, dry_run=dry_run, require_approval=require_approval,
                     max_deletions=max_deletions, audit_table=audit_table)
 now = datetime.now(timezone.utc)
+
+# update_time is the last EDIT, not the last use - a dashboard people view every day
+# may not be edited for months. Days since the last real use per dashboard, from
+# the audit log: published/embedded views and query runs. getDashboard is not
+# counted, because this notebook calls it on every dashboard.
+workspace_id = (dbutils.notebook.entry_point.getDbutils()
+                .notebook().getContext().workspaceId().get())
+days_since_use, usage_loaded = {}, False
+try:
+    days_since_use = {r.dashboard_id: r.days for r in spark.sql(f"""
+        SELECT request_params.dashboard_id AS dashboard_id,
+               datediff(current_timestamp(), max(event_time)) AS days
+        FROM system.access.audit
+        WHERE workspace_id = {workspace_id} AND service_name = 'dashboards'
+          AND action_name IN ('getPublishedDashboard', 'getPublishedDashboardEmbedded', 'executeQuery')
+          AND event_date >= current_date() - {int(inactive_days) + 1}
+          AND request_params.dashboard_id IS NOT NULL
+        GROUP BY 1
+    """).collect()}
+    usage_loaded = True
+except Exception as e:
+    print(f"Could not read dashboard usage from system.access.audit ({e}) - "
+          "dashboards not edited recently will be skipped for manual review.")
 
 # COMMAND ----------
 
@@ -120,6 +144,29 @@ try:
                 last_updated, days_stale = None, None
 
             is_stale = days_stale is not None and days_stale > inactive_days
+
+            # Not edited recently, but still in use: not a candidate.
+            used = days_since_use.get(dash_id)
+            if is_stale and used is not None and used <= inactive_days:
+                logger.log(
+                    environment=env, resource_type="dashboard",
+                    resource_id=dash_id, resource_name=dash_name, owner=creator,
+                    action="SKIPPED",
+                    reason=f"Active - viewed or queried {used} days ago (last edit {days_stale} days ago)",
+                    dry_run=dry_run,
+                )
+                skipped += 1
+                continue
+            if is_stale and not usage_loaded:
+                logger.log(
+                    environment=env, resource_type="dashboard",
+                    resource_id=dash_id, resource_name=dash_name, owner=creator,
+                    action="SKIPPED",
+                    reason=f"Not edited for {days_stale} days, view history unavailable - manual review required",
+                    dry_run=dry_run,
+                )
+                skipped += 1
+                continue
 
             if is_stale:
                 if str(dash_id) in _exclude_ids or f"dashboard:{dash_id}" in _exclude_ids:
@@ -150,7 +197,7 @@ try:
                     environment=env, resource_type="dashboard",
                     resource_id=dash_id, resource_name=dash_name, owner=creator,
                     action="DELETED" if not dry_run else "FLAGGED",
-                    reason=f"Stale {days_stale} days",
+                    reason=f"Stale {days_stale} days (not edited, viewed, or queried)",
                     dry_run=dry_run,
                     details={"last_updated": last_updated.isoformat() if last_updated else None,
                              "state": str(dash.lifecycle_state)},

@@ -109,8 +109,8 @@ Common reasons:
 | `max_deletions_per_run` | The per-run cap was reached; run `cleanup_execute` again |
 | `Protected` | Tagged `retain` / `production-critical`, a pipeline job, or in `protected.exclude_ids` |
 | `Never run` | Never-run jobs are skipped unless `delete_never_run: true` |
-| `Active` | No longer a candidate when execute re-checked it |
-| `manual review required` | Not enough run history to decide safely |
+| `Active` | Not a candidate: a run is still in progress, the job ran recently, or the dashboard was viewed or queried recently |
+| `manual review required` | Not enough history to decide safely (for example, system tables hold fewer days than `job_activity_window_days`, or dashboard view history is unavailable) |
 
 If the only rows are `FLAGGED` with `dry_run = true`, `cleanup_execute` has not
 run since discovery.

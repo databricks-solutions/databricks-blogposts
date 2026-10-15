@@ -66,7 +66,8 @@ dry_run = mode != "execute"
 max_deletions = config_all.get("max_deletions_per_run", 25)
 require_approval = config_all.get("require_approval", True)
 # protected.exclude_ids (config.yaml): "<type>:<id>" or a bare id is never deleted.
-_exclude_ids = set(((config_all.get("protected") or {}).get("exclude_ids")) or [])
+# str(): an unquoted id in YAML is read as a number and would never match.
+_exclude_ids = {str(x) for x in (((config_all.get("protected") or {}).get("exclude_ids")) or [])}
 
 # COMMAND ----------
 

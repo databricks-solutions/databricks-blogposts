@@ -8,7 +8,7 @@ System tables and the SDK are not alternatives - they do different jobs in one w
 
 | | System tables | Databricks SDK (`WorkspaceClient`) |
 |---|---|---|
-| **Discover** | Cost x activity: `system.billing.usage` + `list_prices`, `system.lakeflow.job_run_timeline`, `system.compute.clusters`, `system.query.history`, `system.serving.*` (notebook 04) | What system tables can't see: whether a run is active right now, protected tags, pipeline tasks, orphaned AI Search source tables (notebooks 01-03) |
+| **Discover** | Cost x activity: `system.billing.usage` + `list_prices`, `system.lakeflow.job_run_timeline`, `system.compute.clusters`, `system.query.history`, `system.serving.*` (notebook 04); `system.access.audit` for dashboard views (notebook 02) | What system tables can't see: whether a run is active right now, protected tags, pipeline tasks, orphaned AI Search source tables (notebooks 01-03) |
 | **Verify** | - | Re-checks current state (protection, still idle / orphaned) right before acting |
 | **Execute** | Cannot | `w.jobs.delete` (01), `w.lakeview.trash` (02), `w.vector_search_indexes.delete_index` (03) - one deleting task per resource type |
 
@@ -77,8 +77,12 @@ SELECT DISTINCT '<discover_run_id>', environment, resource_type, resource_id,
        current_user(), current_timestamp()
 FROM maintenance.cleanup.cleanup_log
 WHERE action = 'FLAGGED' AND environment = 'prod'
+  AND resource_type IN ('job', 'dashboard', 'ai_search_index')
+  AND timestamp >= current_timestamp() - INTERVAL 7 DAYS
   AND resource_name = '<name shown in the dashboard>';
 ```
+
+Run the `SELECT DISTINCT ...` part on its own first and check it returns exactly the items you mean. Names are not unique - two jobs or dashboards can share one - so if it returns more than one row, replace the name filter with `resource_id = '<id>'`.
 
 Only approvers should be able to run this: `GRANT MODIFY, SELECT ON TABLE maintenance.cleanup.cleanup_approvals TO <approvers group>` (plus `USE CATALOG` / `USE SCHEMA`).
 
