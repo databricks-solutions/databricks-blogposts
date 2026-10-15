@@ -92,9 +92,11 @@ def approvals_table_for(audit_table):
 
 def ensure_approvals_table(spark, approvals_table):
     """Create the approvals table if missing so reviewers can INSERT into it after
-    a dry-run and before the first live run (environment must match the run's env):
+    a dry-run and before the first live run (environment must match the run's env).
+    Copy the item from the audit log rather than typing its id (see README Quick Start):
       INSERT INTO <approvals_table> (run_id, environment, resource_type, resource_id, approved_by, approved_at)
-      VALUES ('<run>', '<env>', 'job', '<id>', current_user(), current_timestamp());
+      SELECT DISTINCT '<run>', environment, resource_type, resource_id, current_user(), current_timestamp()
+      FROM <audit_table> WHERE action = 'FLAGGED' AND environment = '<env>' AND resource_id = '<id>';
     """
     spark.sql(f"""
         CREATE TABLE IF NOT EXISTS {approvals_table} (
