@@ -91,8 +91,12 @@ Only approvers should be able to run this: `GRANT MODIFY, SELECT ON TABLE mainte
 #    still a candidate, up to max_deletions_per_run per resource type.
 databricks bundle run cleanup_execute --target prod
 
-# 4. Verify the outcome in the audit log.
-#    SELECT action, count(*) FROM maintenance.cleanup.cleanup_log GROUP BY action;
+# 4. Verify the outcome in the audit log (or the dashboard's section 3):
+#    SELECT resource_type, resource_name, action, reason,
+#           get_json_object(details, '$.approved_by') AS approved_by
+#    FROM maintenance.cleanup.cleanup_log
+#    WHERE environment = 'prod' AND dry_run = false
+#      AND timestamp >= current_timestamp() - INTERVAL 1 DAY;
 ```
 
 Anything without a valid approval is logged `SKIPPED` ("no approval recorded"); nothing else is touched.
@@ -113,7 +117,7 @@ The notebooks run on serverless compute. Notebooks that use the Lakeview and Vec
 
 ## Audit dashboard
 
-Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table showing candidate counts by resource type, the action breakdown, and a detail table of exactly what would be removed, with each item's environment and resource ID - so you can review a discovery run before approving anything. Each panel counts a resource once per action over the last 7 days (one weekly discovery cycle), so re-running discovery does not inflate the numbers. The flagged panels leave out items that have been deleted since they were flagged, so they show only what is still waiting for review. An **Approvals** section shows approvals still waiting for `cleanup_execute` (with when each expires) and the deletions of the last 30 days with who approved each one; these two panels also read the `cleanup_approvals` table next to the audit table. Set the backing warehouse with `BUNDLE_VAR_warehouse_id` (or `--var warehouse_id=<id>`, or per target), and if you change `audit_table`, update the dashboard datasets to match.
+Every action (deleted / skipped / flagged) is logged to the `audit_table` from `config.yaml` (default `maintenance.cleanup.cleanup_log`). The bundle deploys a Lakeview dashboard (`dashboards/cleanup_audit.lvdash.json`) over that table, laid out in the same three phases. An environment filter applies to every panel, and three counters show what is waiting for review, approved but not yet run, and deleted in the last 30 days. **1. Discover** shows candidates by resource type, what the cleanup did in the last 7 days, and a table of every candidate with its reason, owner, and resource ID (the ID you copy into the approval). **2. Approve** lists approvals still waiting for `cleanup_execute` and when each expires. **3. Execute** lists the deletions of the last 30 days and who approved each one. Each resource is counted once per action over the last 7 days, so re-running discovery does not inflate the numbers, and items deleted since they were flagged drop out of the candidate panels. Sections 2 and 3 also read the `cleanup_approvals` table next to the audit table. Set the backing warehouse with `BUNDLE_VAR_warehouse_id` (or `--var warehouse_id=<id>`, or per target), and if you change `audit_table`, update the dashboard datasets to match.
 
 ## Optional: Genie Code skill
 

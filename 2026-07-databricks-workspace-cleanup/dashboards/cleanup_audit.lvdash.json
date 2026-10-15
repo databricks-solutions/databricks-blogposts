@@ -1,31 +1,17 @@
 {
   "datasets": [
     {
-      "name": "kpis",
-      "displayName": "KPIs",
+      "name": "flagged_detail",
+      "displayName": "Flagged detail",
       "queryLines": [
-        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1), open_flags AS (SELECT f.* FROM recent f LEFT JOIN recent d ON d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp WHERE f.action = 'FLAGGED' AND d.resource_id IS NULL) SELECT (SELECT COUNT(*) FROM open_flags) AS flagged, COUNT_IF(action='SKIPPED') AS retained, COUNT_IF(action='DELETED') AS deleted, (SELECT COUNT(DISTINCT resource_type) FROM open_flags) AS types FROM recent"
-      ]
-    },
-    {
-      "name": "flagged_by_type",
-      "displayName": "Flagged by type",
-      "queryLines": [
-        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1), open_flags AS (SELECT f.* FROM recent f LEFT JOIN recent d ON d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp WHERE f.action = 'FLAGGED' AND d.resource_id IS NULL) SELECT resource_type, COUNT(*) AS candidates FROM open_flags GROUP BY resource_type"
+        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1), open_flags AS (SELECT f.* FROM recent f LEFT JOIN recent d ON d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp WHERE f.action = 'FLAGGED' AND d.resource_id IS NULL) SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp FROM open_flags ORDER BY timestamp DESC"
       ]
     },
     {
       "name": "action_breakdown",
       "displayName": "Action breakdown",
       "queryLines": [
-        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1) SELECT action, COUNT(*) AS n FROM recent GROUP BY action"
-      ]
-    },
-    {
-      "name": "flagged_detail",
-      "displayName": "Flagged detail",
-      "queryLines": [
-        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1), open_flags AS (SELECT f.* FROM recent f LEFT JOIN recent d ON d.action = 'DELETED' AND d.environment = f.environment AND d.resource_type = f.resource_type AND d.resource_id = f.resource_id AND d.timestamp >= f.timestamp WHERE f.action = 'FLAGGED' AND d.resource_id IS NULL) SELECT environment, resource_type, resource_name, resource_id, reason, owner, timestamp FROM open_flags ORDER BY timestamp DESC LIMIT 200"
+        "WITH recent AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE timestamp >= current_timestamp() - INTERVAL 7 DAYS QUALIFY ROW_NUMBER() OVER (PARTITION BY environment, resource_type, resource_id, action ORDER BY timestamp DESC) = 1) SELECT environment, action, COUNT(*) AS n FROM recent GROUP BY environment, action"
       ]
     },
     {
@@ -39,7 +25,7 @@
       "name": "recent_deletions",
       "displayName": "Recent deletions",
       "queryLines": [
-        "WITH d AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE action = 'DELETED' AND timestamp >= current_timestamp() - INTERVAL 30 DAYS), a AS (SELECT d.environment, d.resource_type, d.resource_id, d.timestamp, ap.approved_by, ap.approved_at FROM d JOIN maintenance.cleanup.cleanup_approvals ap ON ap.environment = d.environment AND ap.resource_type = d.resource_type AND ap.resource_id = d.resource_id AND ap.approved_at <= d.timestamp QUALIFY ROW_NUMBER() OVER (PARTITION BY d.environment, d.resource_type, d.resource_id, d.timestamp ORDER BY ap.approved_at DESC) = 1) SELECT d.timestamp AS deleted_at, d.environment, d.resource_type, d.resource_name, d.resource_id, COALESCE(get_json_object(d.details, '$.approved_by'), a.approved_by) AS approved_by, COALESCE(CAST(get_json_object(d.details, '$.approved_at') AS TIMESTAMP), a.approved_at) AS approved_at, d.reason FROM d LEFT JOIN a ON a.environment = d.environment AND a.resource_type = d.resource_type AND a.resource_id = d.resource_id AND a.timestamp = d.timestamp ORDER BY deleted_at DESC LIMIT 200"
+        "WITH d AS (SELECT * FROM maintenance.cleanup.cleanup_log WHERE action = 'DELETED' AND timestamp >= current_timestamp() - INTERVAL 30 DAYS), a AS (SELECT d.environment, d.resource_type, d.resource_id, d.timestamp, ap.approved_by, ap.approved_at FROM d JOIN maintenance.cleanup.cleanup_approvals ap ON ap.environment = d.environment AND ap.resource_type = d.resource_type AND ap.resource_id = d.resource_id AND ap.approved_at <= d.timestamp QUALIFY ROW_NUMBER() OVER (PARTITION BY d.environment, d.resource_type, d.resource_id, d.timestamp ORDER BY ap.approved_at DESC) = 1) SELECT d.timestamp AS deleted_at, d.environment, d.resource_type, d.resource_name, d.resource_id, COALESCE(get_json_object(d.details, '$.approved_by'), a.approved_by) AS approved_by, COALESCE(CAST(get_json_object(d.details, '$.approved_at') AS TIMESTAMP), a.approved_at) AS approved_at, d.reason FROM d LEFT JOIN a ON a.environment = d.environment AND a.resource_type = d.resource_type AND a.resource_id = d.resource_id AND a.timestamp = d.timestamp ORDER BY deleted_at DESC"
       ]
     }
   ],
@@ -54,7 +40,7 @@
             "name": "title",
             "multilineTextboxSpec": {
               "lines": [
-                "## 🧹 Workspace Cleanup - Audit"
+                "## Workspace Cleanup - Audit"
               ]
             }
           },
@@ -70,7 +56,7 @@
             "name": "subtitle",
             "multilineTextboxSpec": {
               "lines": [
-                "What each cleanup run flagged, skipped, or deleted. In dry-run, FLAGGED = what *would* be removed."
+                "Discovery flags unused resources every week, a person approves what may go, and **cleanup_execute** deletes only approved items. Every action is logged."
               ]
             }
           },
@@ -83,34 +69,91 @@
         },
         {
           "widget": {
-            "name": "kpi-flagged",
+            "name": "filter-environment",
             "queries": [
               {
-                "name": "main_query",
+                "name": "env_flagged_detail",
                 "query": {
-                  "datasetName": "kpis",
+                  "datasetName": "flagged_detail",
                   "fields": [
                     {
-                      "name": "flagged",
-                      "expression": "`flagged`"
+                      "name": "environment",
+                      "expression": "`environment`"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "env_action_breakdown",
+                "query": {
+                  "datasetName": "action_breakdown",
+                  "fields": [
+                    {
+                      "name": "environment",
+                      "expression": "`environment`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "env_pending_approvals",
+                "query": {
+                  "datasetName": "pending_approvals",
+                  "fields": [
+                    {
+                      "name": "environment",
+                      "expression": "`environment`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "env_recent_deletions",
+                "query": {
+                  "datasetName": "recent_deletions",
+                  "fields": [
+                    {
+                      "name": "environment",
+                      "expression": "`environment`"
+                    }
+                  ],
+                  "disaggregated": false
                 }
               }
             ],
             "spec": {
               "version": 2,
-              "widgetType": "counter",
+              "widgetType": "filter-multi-select",
               "encodings": {
-                "value": {
-                  "fieldName": "flagged",
-                  "displayName": "Candidates flagged"
-                }
+                "fields": [
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment",
+                    "queryName": "env_flagged_detail"
+                  },
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment",
+                    "queryName": "env_action_breakdown"
+                  },
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment",
+                    "queryName": "env_pending_approvals"
+                  },
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment",
+                    "queryName": "env_recent_deletions"
+                  }
+                ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Candidates flagged"
+                "title": "Environment"
               }
             }
           },
@@ -118,64 +161,40 @@
             "x": 0,
             "y": 2,
             "width": 2,
-            "height": 3
+            "height": 2
           }
         },
         {
           "widget": {
-            "name": "kpi-retained",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "kpis",
-                  "fields": [
-                    {
-                      "name": "retained",
-                      "expression": "`retained`"
-                    }
-                  ],
-                  "disaggregated": true
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "widgetType": "counter",
-              "encodings": {
-                "value": {
-                  "fieldName": "retained",
-                  "displayName": "Retained (skipped)"
-                }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Retained (skipped)"
-              }
+            "name": "how-to",
+            "multilineTextboxSpec": {
+              "lines": [
+                "**How to approve:** copy a **Resource ID** from section 1 into the approval INSERT (see the README, Quick Start step 2). Approvals expire after 7 days."
+              ]
             }
           },
           "position": {
             "x": 2,
             "y": 2,
-            "width": 2,
-            "height": 3
+            "width": 4,
+            "height": 2
           }
         },
         {
           "widget": {
-            "name": "kpi-types",
+            "name": "kpi-review",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "kpis",
+                  "datasetName": "flagged_detail",
                   "fields": [
                     {
-                      "name": "types",
-                      "expression": "`types`"
+                      "name": "count(resource_id)",
+                      "expression": "COUNT(`resource_id`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -184,35 +203,115 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "types",
-                  "displayName": "Resource types affected"
+                  "fieldName": "count(resource_id)",
+                  "displayName": "1. Waiting for review"
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Resource types affected"
+                "title": "1. Waiting for review"
               }
             }
           },
           "position": {
-            "x": 4,
-            "y": 2,
+            "x": 0,
+            "y": 4,
             "width": 2,
             "height": 3
           }
         },
         {
           "widget": {
-            "name": "hdr1",
+            "name": "kpi-approved",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "pending_approvals",
+                  "fields": [
+                    {
+                      "name": "count(resource_id)",
+                      "expression": "COUNT(`resource_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(resource_id)",
+                  "displayName": "2. Approved, not yet run"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "2. Approved, not yet run"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 4,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-deleted",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "recent_deletions",
+                  "fields": [
+                    {
+                      "name": "count(resource_id)",
+                      "expression": "COUNT(`resource_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(resource_id)",
+                  "displayName": "3. Deleted (last 30 days)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "3. Deleted (last 30 days)"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 4,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr-discover",
             "multilineTextboxSpec": {
               "lines": [
-                "### What's flagged for cleanup"
+                "### 1. Discover - candidates waiting for review"
               ]
             }
           },
           "position": {
             "x": 0,
-            "y": 5,
+            "y": 7,
             "width": 6,
             "height": 1
           }
@@ -224,15 +323,15 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "flagged_by_type",
+                  "datasetName": "flagged_detail",
                   "fields": [
                     {
                       "name": "resource_type",
                       "expression": "`resource_type`"
                     },
                     {
-                      "name": "sum(candidates)",
-                      "expression": "SUM(`candidates`)"
+                      "name": "count(resource_id)",
+                      "expression": "COUNT(`resource_id`)"
                     }
                   ],
                   "disaggregated": false
@@ -254,11 +353,44 @@
                   "displayName": "Resource type"
                 },
                 "y": {
-                  "fieldName": "sum(candidates)",
+                  "fieldName": "count(resource_id)",
                   "scale": {
                     "type": "quantitative"
                   },
                   "displayName": "Candidates"
+                },
+                "color": {
+                  "fieldName": "resource_type",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "job",
+                        "color": "#2272B4"
+                      },
+                      {
+                        "value": "dashboard",
+                        "color": "#00A972"
+                      },
+                      {
+                        "value": "ai_search_index",
+                        "color": "#AB4057"
+                      },
+                      {
+                        "value": "cluster",
+                        "color": "#FFAB00"
+                      },
+                      {
+                        "value": "sql_warehouse",
+                        "color": "#8BCAE7"
+                      },
+                      {
+                        "value": "serving_endpoint",
+                        "color": "#BF7080"
+                      }
+                    ]
+                  },
+                  "displayName": "Resource type"
                 },
                 "label": {
                   "show": true
@@ -266,23 +398,15 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Cleanup candidates by resource type"
-              },
-              "mark": {
-                "colors": [
-                  "#FF3621",
-                  "#FFAB00",
-                  "#00A972",
-                  "#8BCAE7"
-                ]
+                "title": "Candidates waiting for review, by type"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 6,
+            "y": 8,
             "width": 3,
-            "height": 6
+            "height": 5
           }
         },
         {
@@ -295,12 +419,12 @@
                   "datasetName": "action_breakdown",
                   "fields": [
                     {
-                      "name": "action",
-                      "expression": "`action`"
-                    },
-                    {
                       "name": "sum(n)",
                       "expression": "SUM(`n`)"
+                    },
+                    {
+                      "name": "action",
+                      "expression": "`action`"
                     }
                   ],
                   "disaggregated": false
@@ -316,7 +440,7 @@
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Count"
+                  "displayName": "Resources"
                 },
                 "color": {
                   "fieldName": "action",
@@ -329,7 +453,7 @@
                       },
                       {
                         "value": "SKIPPED",
-                        "color": "#00A972"
+                        "color": "#919191"
                       },
                       {
                         "value": "DELETED",
@@ -338,35 +462,22 @@
                     ]
                   },
                   "displayName": "Action"
+                },
+                "label": {
+                  "show": true
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Actions logged"
+                "title": "What the cleanup did in the last 7 days"
               }
             }
           },
           "position": {
             "x": 3,
-            "y": 6,
+            "y": 8,
             "width": 3,
-            "height": 6
-          }
-        },
-        {
-          "widget": {
-            "name": "hdr2",
-            "multilineTextboxSpec": {
-              "lines": [
-                "### Flagged items detail"
-              ]
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 12,
-            "width": 6,
-            "height": 1
+            "height": 5
           }
         },
         {
@@ -379,10 +490,6 @@
                   "datasetName": "flagged_detail",
                   "fields": [
                     {
-                      "name": "environment",
-                      "expression": "`environment`"
-                    },
-                    {
                       "name": "resource_type",
                       "expression": "`resource_type`"
                     },
@@ -391,16 +498,20 @@
                       "expression": "`resource_name`"
                     },
                     {
-                      "name": "resource_id",
-                      "expression": "`resource_id`"
-                    },
-                    {
                       "name": "reason",
                       "expression": "`reason`"
                     },
                     {
                       "name": "owner",
                       "expression": "`owner`"
+                    },
+                    {
+                      "name": "resource_id",
+                      "expression": "`resource_id`"
+                    },
+                    {
+                      "name": "environment",
+                      "expression": "`environment`"
                     },
                     {
                       "name": "timestamp",
@@ -417,20 +528,12 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "environment",
-                    "displayName": "Environment"
-                  },
-                  {
                     "fieldName": "resource_type",
                     "displayName": "Type"
                   },
                   {
                     "fieldName": "resource_name",
                     "displayName": "Resource"
-                  },
-                  {
-                    "fieldName": "resource_id",
-                    "displayName": "Resource ID"
                   },
                   {
                     "fieldName": "reason",
@@ -441,14 +544,22 @@
                     "displayName": "Owner"
                   },
                   {
+                    "fieldName": "resource_id",
+                    "displayName": "Resource ID"
+                  },
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment"
+                  },
+                  {
                     "fieldName": "timestamp",
-                    "displayName": "When"
+                    "displayName": "Flagged at"
                   }
                 ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Flagged items - what would be deleted (dry-run)"
+                "title": "Flagged in the last 7 days and not deleted (nothing is deleted without approval)"
               }
             }
           },
@@ -456,21 +567,21 @@
             "x": 0,
             "y": 13,
             "width": 6,
-            "height": 8
+            "height": 7
           }
         },
         {
           "widget": {
-            "name": "hdr3",
+            "name": "hdr-approve",
             "multilineTextboxSpec": {
               "lines": [
-                "### Approvals"
+                "### 2. Approve - approved, waiting for cleanup_execute"
               ]
             }
           },
           "position": {
             "x": 0,
-            "y": 21,
+            "y": 20,
             "width": 6,
             "height": 1
           }
@@ -485,20 +596,12 @@
                   "datasetName": "pending_approvals",
                   "fields": [
                     {
-                      "name": "environment",
-                      "expression": "`environment`"
-                    },
-                    {
                       "name": "resource_type",
                       "expression": "`resource_type`"
                     },
                     {
                       "name": "resource_name",
                       "expression": "`resource_name`"
-                    },
-                    {
-                      "name": "resource_id",
-                      "expression": "`resource_id`"
                     },
                     {
                       "name": "approved_by",
@@ -511,6 +614,14 @@
                     {
                       "name": "expires_at",
                       "expression": "`expires_at`"
+                    },
+                    {
+                      "name": "resource_id",
+                      "expression": "`resource_id`"
+                    },
+                    {
+                      "name": "environment",
+                      "expression": "`environment`"
                     }
                   ],
                   "disaggregated": true
@@ -523,20 +634,12 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "environment",
-                    "displayName": "Environment"
-                  },
-                  {
                     "fieldName": "resource_type",
                     "displayName": "Type"
                   },
                   {
                     "fieldName": "resource_name",
                     "displayName": "Resource"
-                  },
-                  {
-                    "fieldName": "resource_id",
-                    "displayName": "Resource ID"
                   },
                   {
                     "fieldName": "approved_by",
@@ -549,20 +652,44 @@
                   {
                     "fieldName": "expires_at",
                     "displayName": "Expires"
+                  },
+                  {
+                    "fieldName": "resource_id",
+                    "displayName": "Resource ID"
+                  },
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment"
                   }
                 ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Approved, waiting for cleanup_execute (approvals expire after 7 days)"
+                "title": "Run cleanup_execute before each approval expires"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 22,
+            "y": 21,
             "width": 6,
-            "height": 6
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "hdr-execute",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### 3. Execute - deleted in the last 30 days"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 26,
+            "width": 6,
+            "height": 1
           }
         },
         {
@@ -579,20 +706,12 @@
                       "expression": "`deleted_at`"
                     },
                     {
-                      "name": "environment",
-                      "expression": "`environment`"
-                    },
-                    {
                       "name": "resource_type",
                       "expression": "`resource_type`"
                     },
                     {
                       "name": "resource_name",
                       "expression": "`resource_name`"
-                    },
-                    {
-                      "name": "resource_id",
-                      "expression": "`resource_id`"
                     },
                     {
                       "name": "approved_by",
@@ -605,6 +724,14 @@
                     {
                       "name": "reason",
                       "expression": "`reason`"
+                    },
+                    {
+                      "name": "resource_id",
+                      "expression": "`resource_id`"
+                    },
+                    {
+                      "name": "environment",
+                      "expression": "`environment`"
                     }
                   ],
                   "disaggregated": true
@@ -621,20 +748,12 @@
                     "displayName": "Deleted at"
                   },
                   {
-                    "fieldName": "environment",
-                    "displayName": "Environment"
-                  },
-                  {
                     "fieldName": "resource_type",
                     "displayName": "Type"
                   },
                   {
                     "fieldName": "resource_name",
                     "displayName": "Resource"
-                  },
-                  {
-                    "fieldName": "resource_id",
-                    "displayName": "Resource ID"
                   },
                   {
                     "fieldName": "approved_by",
@@ -647,20 +766,28 @@
                   {
                     "fieldName": "reason",
                     "displayName": "Reason"
+                  },
+                  {
+                    "fieldName": "resource_id",
+                    "displayName": "Resource ID"
+                  },
+                  {
+                    "fieldName": "environment",
+                    "displayName": "Environment"
                   }
                 ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Deleted in the last 30 days, and who approved each one"
+                "title": "Every deletion with who approved it"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 28,
+            "y": 27,
             "width": 6,
-            "height": 7
+            "height": 6
           }
         }
       ]
