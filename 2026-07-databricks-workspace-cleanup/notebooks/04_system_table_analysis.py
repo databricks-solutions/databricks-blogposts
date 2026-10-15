@@ -204,7 +204,11 @@ cluster_analysis = spark.sql(f"""
             WHERE workspace_id = {workspace_id}
             QUALIFY ROW_NUMBER() OVER (PARTITION BY cluster_id ORDER BY change_time DESC) = 1
         )
+        -- Job and pipeline (DLT/SDP) clusters exist for one run and terminate with it;
+        -- their cost is billed to the job or pipeline, so only all-purpose clusters
+        -- are reviewed here.
         WHERE delete_time IS NULL
+          AND cluster_source NOT IN ('JOB', 'PIPELINE', 'PIPELINE_MAINTENANCE')
     )
     SELECT
         ci.cluster_id, ci.cluster_name, ci.owner,
