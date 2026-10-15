@@ -26,6 +26,9 @@ resources:
     # table and refreshes job_activity. Reviewers then record approvals (Phase 2).
     cleanup_discover:
       name: "[Maintenance] Workspace Cleanup - Discover"
+      # Protected (config.yaml protected.tags), so the cleanup never flags itself.
+      tags:
+        retain: ""
       schedule:
         quartz_cron_expression: "0 0 2 ? * SUN"
         timezone_id: "UTC"
@@ -77,6 +80,9 @@ resources:
     # sets allow_execute: true in config.yaml.
     cleanup_execute:
       name: "[Maintenance] Workspace Cleanup - Execute"
+      # Protected (config.yaml protected.tags), so the cleanup never flags itself.
+      tags:
+        retain: ""
       parameters:
         - name: environment
           default: ${var.environment}
