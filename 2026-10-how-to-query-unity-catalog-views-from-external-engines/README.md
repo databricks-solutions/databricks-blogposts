@@ -10,6 +10,8 @@ Companion code for the blog "How to Query Unity Catalog Views from External Engi
 
 `_common.py` holds the shared helpers: profile, warehouse, service principal state and the Spark session builders. `_ui.py` is the terminal UX toolkit.
 
+For a step-by-step walkthrough with the expected output of every step, troubleshooting, and the full list of what the demo creates, see [RUNBOOK.md](RUNBOOK.md).
+
 ## What gets deployed
 
 | Object | Details |
