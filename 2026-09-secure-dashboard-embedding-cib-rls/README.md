@@ -1,7 +1,9 @@
-# Public App, Private Workspace: Secure Dashboard Embedding with Context-Based Ingress and RLS
+# Embedding Databricks AI/BI Dashboards for External Users, Without Workspace Access
+ “Databricks Apps as the host, context-based ingress for reachability, per-viewer filtering for what each user sees”
 
-This folder accompanies the blog post **"Public App, Private Workspace: securely embedding
-Databricks AI/BI dashboards with context-based ingress and row-level security."**
+
+
+This folder accompanies the blog post **"Embedding Databricks AI/BI Dashboards for External Users, Without Workspace Access."**
 
 > Blog post: _link to be added once published._
 
@@ -23,7 +25,8 @@ filters the rows each viewer sees.
 
 ## Flow
 
-![External embedding with context-based ingress](images/external-embedding-cib-flow.png)
+<img width="1041" height="821" alt="image" src="https://github.com/user-attachments/assets/f2bfb09c-49a8-4f25-b804-892f7a65e613" />
+
 
 1. **Context-based ingress** allows only three contexts publicly: **Apps runtime**,
    workspace API **`dashboard`**, and workspace API **`settings`**. Workspace UI, notebooks,
@@ -31,8 +34,7 @@ filters the rows each viewer sees.
    Databricks OAuth / SSO login complete; without it the embedded dashboard fails at login.
 2. Because this is a **Databricks App**, the viewer signs in through the workspace's
    identity provider (e.g. Entra ID SSO) and must be a provisioned Databricks user. That
-   authenticated identity is how the app knows their groups. (A truly login-less external
-   viewer would require hosting the app outside Databricks.)
+   authenticated identity is how the app knows their groups. 
 3. The app backend mints a **scoped embed token** (3-step OAuth, the service-principal
    secret never reaches the browser), so the viewer needs **no** dashboard or table grants.
 4. The token carries `external_value`, which the dashboard's dataset SQL reads back as the
@@ -53,8 +55,8 @@ One scope value is resolved once, server-side, and enforced in the query:
 The dataset SQL:
 
 ```sql
-WHERE nullif(__aibi_external_value, '') is null                         -- admin -> all rows
-   or array_contains(split(__aibi_external_value, ','), upper(region))  -- "EMEA" / "EMEA,APAC"
+SELECT * FROM your_table
+WHERE region = __aibi_external_value 
 ```
 
 Because the value is resolved from the authenticated identity and signed into the token,
