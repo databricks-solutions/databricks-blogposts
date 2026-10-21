@@ -3,8 +3,16 @@
 -- Generate a complete Nordic e-commerce test dataset in pure SQL
 -- =============================================================================
 -- Requirements: Databricks Serverless SQL Warehouse + Foundation Model APIs
+--               + a Unity Catalog catalog where you can create a schema
+--               (USE CATALOG + CREATE SCHEMA), or an existing schema where
+--               you can create tables (USE SCHEMA + CREATE TABLE)
 -- Adjust catalog.schema below to match your environment
 -- =============================================================================
+
+-- Step 0: Target catalog and schema (all tables below are created here)
+USE CATALOG main;
+CREATE SCHEMA IF NOT EXISTS synthetic_test_data;
+USE SCHEMA synthetic_test_data;
 
 -- Step 1: Customers (AI-generated profiles with geographic diversity)
 -- Uses ai_query with responseFormat for structured JSON output
@@ -62,15 +70,18 @@ FROM parsed;
 -- transactional data when combined with AI-generated dimensions.
 
 CREATE OR REPLACE TABLE test_orders AS
-SELECT
-  ROW_NUMBER() OVER (ORDER BY RAND()) AS order_id,
-  c.customer_id, p.product_id,
-  DATE_ADD(DATE '2025-01-01', CAST(RAND() * 365 AS INT)) AS order_date,
-  CAST(1 + FLOOR(RAND() * 3) AS INT) AS quantity,
-  ROUND(p.price * (1 + FLOOR(RAND() * 3)), 2) AS total
-FROM test_customers c
-CROSS JOIN test_products p
-WHERE RAND() < 0.3;
+SELECT order_id, customer_id, product_id, order_date, quantity,
+  ROUND(price * quantity, 2) AS total
+FROM (
+  SELECT
+    ROW_NUMBER() OVER (ORDER BY RAND()) AS order_id,
+    c.customer_id, p.product_id, p.price,
+    DATE_ADD(DATE '2025-01-01', CAST(RAND() * 365 AS INT)) AS order_date,
+    CAST(1 + FLOOR(RAND() * 3) AS INT) AS quantity
+  FROM test_customers c
+  CROSS JOIN test_products p
+  WHERE RAND() < 0.3
+);
 
 -- Step 4: Support tickets (AI-generated free text with topic cycling)
 -- Uses modulo to guarantee coverage across issue types

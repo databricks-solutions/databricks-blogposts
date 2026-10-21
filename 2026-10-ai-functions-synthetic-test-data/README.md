@@ -17,10 +17,13 @@ Generates a full Nordic e-commerce test dataset with four relational tables, all
 
 - Databricks workspace with a **Serverless SQL Warehouse**
 - Access to **Foundation Model APIs** (enabled by default on most workspaces)
+- A **Unity Catalog** catalog where you have `USE CATALOG` and `CREATE SCHEMA`, or an existing schema where you have `USE SCHEMA` and `CREATE TABLE`
 
 ## Usage
 
-Open `generate_synthetic_data.sql` in a Databricks SQL editor and run each step sequentially. Adjust the catalog and schema names to match your environment.
+Open `generate_synthetic_data.sql` in a Databricks SQL editor and run each step sequentially. Step 0 sets the target location (`main.synthetic_test_data` by default). Change the catalog and schema names to match your environment, or drop the `CREATE SCHEMA` line if you're using an existing schema.
+
+See [`sample_run.md`](sample_run.md) for a full run log: per-step timings, row counts, sample rows from each table and integrity checks. The whole script runs in about a minute on a serverless warehouse.
 
 ## Key patterns
 
