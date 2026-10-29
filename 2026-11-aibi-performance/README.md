@@ -11,7 +11,7 @@ Stacked, the cold browser load went from **10.3 s to 1.0 s** (−91%). On its ow
 table −55%, dropdowns from small tables −23%, materialized grain −22%, fewer widgets −20%. Liquid clustering itself
 gave no gain at 10M rows.
 
-Write-up: [`blog/blog_post.md`](blog/blog_post.md) (PDF: `blog/blog_post.pdf`). Full numbers, findings and method:
+Blog post: link will be added once it is published. Draft: [`blog/blog_post.md`](blog/blog_post.md) (PDF: `blog/blog_post.pdf`). Full numbers, findings and method:
 [`RESULTS.md`](RESULTS.md); raw runs: `results/`.
 
 The first run (cumulative steps on an unclustered star schema with inline SQL, 9.4 s → 1.0 s) is archived on the
@@ -194,3 +194,16 @@ autoscaling; larger data or more users will shift the absolute numbers. Lakehous
 idling takes about 2 s, and its queries did not show up in `system.query.history` at the time of testing. If the
 workspace uses an IP access list, keep the client IP stable during long runs; a blocked IP makes the SQL connector
 retry for 15 minutes before it fails.
+
+## Licenses
+
+The code in this folder is provided under the Databricks License of this repository. Third-party Python packages
+used (installed from PyPI via `requirements.txt`, not bundled here):
+
+| Package | License |
+|---|---|
+| [databricks-sdk](https://github.com/databricks/databricks-sdk-py) | Apache License 2.0 |
+| [databricks-sql-connector](https://github.com/databricks/databricks-sql-python) | Apache License 2.0 |
+| [Markdown](https://github.com/Python-Markdown/markdown) | BSD 3-Clause License |
+
+All data is synthetic and generated in SQL by `sql/01_dims.sql` and `sql/02_fact.sql`; no dataset is included.
