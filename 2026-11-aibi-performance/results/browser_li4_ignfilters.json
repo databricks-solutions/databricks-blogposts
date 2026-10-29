@@ -1,0 +1,33 @@
+{
+ "variant": "li4_ignfilters",
+ "first_load_runs_s": [
+  8.18,
+  8.29,
+  7.83,
+  7.73,
+  7.25,
+  7.74,
+  7.48,
+  7.19,
+  8.58,
+  8.99
+ ],
+ "subsequent_load_runs_s": [
+  2.03,
+  2.26,
+  2.46,
+  2.19,
+  2.11,
+  2.15,
+  2.58,
+  2.11,
+  1.95,
+  2.81
+ ],
+ "first_load_mean_s": 7.926,
+ "first_load_stdev_s": 0.5808652549812601,
+ "subsequent_load_mean_s": 2.265,
+ "subsequent_load_stdev_s": 0.2699073915253157,
+ "first_load_method": "Refresh button after step.sh (invalidate.sh; r_nolc: invalidate.sh nolc)",
+ "subsequent_method": "page navigation right before the Refresh (dashboard cache)"
+}
