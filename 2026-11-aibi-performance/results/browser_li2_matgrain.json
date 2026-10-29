@@ -1,0 +1,33 @@
+{
+ "variant": "li2_matgrain",
+ "first_load_runs_s": [
+  8.16,
+  7.73,
+  7.01,
+  7.48,
+  9.33,
+  8.34,
+  7.64,
+  9.32,
+  7.73,
+  7.54
+ ],
+ "subsequent_load_runs_s": [
+  2.45,
+  2.26,
+  2.52,
+  2.45,
+  2.42,
+  2.55,
+  2.43,
+  2.37,
+  2.55,
+  2.25
+ ],
+ "first_load_mean_s": 8.028,
+ "first_load_stdev_s": 0.7733160917618215,
+ "subsequent_load_mean_s": 2.425,
+ "subsequent_load_stdev_s": 0.1066927051551948,
+ "first_load_method": "Refresh button after step.sh (invalidate.sh; r_nolc: invalidate.sh nolc)",
+ "subsequent_method": "page navigation right before the Refresh (dashboard cache)"
+}
