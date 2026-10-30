@@ -1,12 +1,18 @@
 # Query Unity Catalog views from external engines: demo code
 
-Companion code for the blog "How to Query Unity Catalog Views from External Engines". Three interactive scripts work against any Databricks workspace on AWS; pick the workspace with `-p <profile>` (a Databricks CLI profile). Each one shows a numbered agenda with a progress bar, shows every SQL statement before running it, and waits for Enter between steps.
+Companion code for the Databricks Community blog "How to Query Unity Catalog Views from External Engines" (the link is added here once the post is published). Three interactive scripts work against any Databricks workspace on AWS; pick the workspace with `-p <profile>` (a Databricks CLI profile). Each one shows a numbered agenda with a progress bar, shows every SQL statement before running it, and waits for Enter between steps.
 
 | Script | What it does |
 | --- | --- |
 | `deploy.py` | Builds everything, explaining each step: a SQL warehouse, a catalog with TPC-H copied into managed Delta and Iceberg tables, the views, a non-admin service principal for the external engine, and its grants |
 | `run.py` | The guided demo. Open source Apache Spark™ on your machine queries the views through the Unity REST API and the Iceberg REST Catalog, as the service principal, then shows governance in action |
 | `destroy.py` | Shows everything the demo created, asks once to confirm, then removes it all |
+
+## Why it matters
+
+Most lakehouses expose their curated layer as views: a revenue metric defined once, a join that hides raw tables, a projection with only the columns a team needs. Until now, engines outside Databricks could read Unity Catalog tables but not the views built on them, so teams copied view logic into every engine or materialized views into extra tables, and the definitions drifted apart.
+
+With external access to views, you define a view once in Unity Catalog and query it from open source Apache Spark™, through the Unity REST API (views over Delta tables, generally available) or the Iceberg REST Catalog (views over Iceberg tables, Beta). Every engine gets the same numbers from the same governed definition. Unity Catalog still governs every read: the external reader needs access to the view and to every table it reads, so a view never becomes a way around table permissions. This demo shows both paths and the governance check on TPC-H data.
 
 `_common.py` holds the shared helpers: profile, warehouse, service principal state and the Spark session builders. `_ui.py` is the terminal UX toolkit.
 
@@ -85,3 +91,18 @@ Copy `.env.example` to `.env`.
 | `DEMO_WAREHOUSE_NAME` | `uc-views-demo` | Name of the warehouse that's found or created |
 | `DEMO_READER_SP_NAME` | `uc-views-demo-reader` | Name of the reader service principal |
 | `SPARK_REPOSITORIES` | — | Maven mirror, if Maven Central is blocked on your network |
+
+## Licenses
+
+This folder is covered by the Databricks License in the repository root ([LICENSE](../LICENSE) and [NOTICE](../NOTICE)). It bundles no third-party code. These libraries are downloaded at install or Spark start, each under its own license:
+
+| Library | Used for | License |
+|---|---|---|
+| [PySpark](https://github.com/apache/spark) 4.0.1 | Local Apache Spark | Apache-2.0 |
+| [Databricks SDK for Python](https://github.com/databricks/databricks-sdk-py) | Setup, grants and teardown | Apache-2.0 |
+| [Unity Catalog Spark connector](https://github.com/unitycatalog/unitycatalog) (`io.unitycatalog:unitycatalog-spark_4.0_2.13:0.6.0`) | Unity REST API catalog | Apache-2.0 |
+| [Delta Lake](https://github.com/delta-io/delta) (`io.delta:delta-spark_4.0_2.13:4.3.0`) | Reading Delta tables | Apache-2.0 |
+| [Apache Hadoop AWS](https://github.com/apache/hadoop) (`org.apache.hadoop:hadoop-aws:3.4.1`) | S3 access for Delta | Apache-2.0 |
+| [Apache Iceberg](https://github.com/apache/iceberg) (`iceberg-spark-runtime-4.0_2.13` and `iceberg-aws-bundle`, 1.10.0) | Iceberg REST Catalog and S3 access | Apache-2.0 |
+
+The scripts also use the [Databricks CLI](https://github.com/databricks/cli) for the OAuth login (Databricks License).
