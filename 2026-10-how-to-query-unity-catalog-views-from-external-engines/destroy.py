@@ -6,10 +6,12 @@
 Removes the demo catalog (CASCADE: schemas, tables, views), the reader service
 principal, its local secret file, and the SQL warehouse named
 DEMO_WAREHOUSE_NAME. A warehouse pinned with DATABRICKS_WAREHOUSE_ID is never
-deleted.
+deleted; only the reader's access to it is removed.
 """
 import argparse
 import os
+
+from databricks.sdk.errors import NotFound
 
 import _common as c
 import _ui as ui
@@ -66,25 +68,34 @@ def main() -> None:
     with ui.working("finding the demo's resources"):
         try:
             w.catalogs.get(C)
-            objects = sorted([t.schema_name, t.name, t.table_type.value if t.table_type else ""]
-                             for s in w.schemas.list(catalog_name=C) if s.name != "information_schema"
-                             for t in w.tables.list(catalog_name=C, schema_name=s.name))
             catalog_exists = True
-        except Exception:  # noqa: BLE001
-            objects, catalog_exists = [], False
+        except NotFound:
+            catalog_exists = False
+        objects = None  # None: the catalog exists but couldn't be listed (it's still dropped)
+        if catalog_exists:
+            try:
+                objects = sorted([t.schema_name, t.name, t.table_type.value if t.table_type else ""]
+                                 for s in w.schemas.list(catalog_name=C) if s.name != "information_schema"
+                                 for t in w.tables.list(catalog_name=C, schema_name=s.name))
+            except Exception as e:  # noqa: BLE001
+                listing_error = str(e).splitlines()[0][:150]
         sp = c.find_reader_sp(w)
-        pinned = bool(os.environ.get("DATABRICKS_WAREHOUSE_ID"))
+        pinned = os.environ.get("DATABRICKS_WAREHOUSE_ID")
         warehouse = None if pinned else c.find_warehouse(w)
         state_file = c.state_path()
-    if catalog_exists:
+    if catalog_exists and objects is not None:
         ui.narrate(f"Catalog {C}, with {len(objects)} tables and views:")
         ui.show_table(["schema", "name", "type"], objects)
+    elif catalog_exists:
+        ui.info(f"Catalog {C} exists, but its contents couldn't be listed ({listing_error}). Dropping it with "
+                "CASCADE still removes everything in it.")
     ui.show_config("Will be removed", [
         ("Catalog", f"{C} (CASCADE)" if catalog_exists else "— (not found)"),
         ("Service principal", f"{sp.display_name} ({sp.application_id})" if sp else "— (not found)"),
         ("Local secret file", str(state_file) if state_file.exists() else "— (not found)"),
         ("SQL warehouse", f"{warehouse.name} ({warehouse.id})" if warehouse else
-         ("— (pinned with DATABRICKS_WAREHOUSE_ID, kept)" if pinned else "— (not found)")),
+         ("— (pinned with DATABRICKS_WAREHOUSE_ID, kept; the reader's access to it is removed)" if pinned
+          else "— (not found)")),
     ])
     if not (catalog_exists or sp or state_file.exists() or warehouse):
         ui.narrate("Nothing to remove. The demo isn't deployed in this workspace.")
@@ -138,6 +149,11 @@ def main() -> None:
         with ui.working(f"deleting warehouse {warehouse.name}"):
             w.warehouses.delete(warehouse.id)
         ui.narrate(f"Warehouse {warehouse.name} deleted.")
+    elif pinned and sp:
+        with ui.working(f"removing the reader's access to pinned warehouse {pinned}"):
+            removed = c.remove_warehouse_access(w, pinned, sp.application_id)
+        ui.narrate(f"Removed CAN USE for {sp.display_name} on warehouse {pinned}; the warehouse itself is kept."
+                   if removed else f"{sp.display_name} had no direct access to warehouse {pinned}; it's kept.")
     else:
         ui.info("No demo warehouse to delete.")
 

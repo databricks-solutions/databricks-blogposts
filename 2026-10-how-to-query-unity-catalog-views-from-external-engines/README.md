@@ -57,6 +57,7 @@ python destroy.py -p <profile>
 ```
 
 - `DEMO_AUTO=1` runs any script without Enter prompts. `destroy.py` then needs `--yes`.
+- `run.py` exits with status 1 if any step fails, and its recap marks the failed steps with ✗, so a hands-free run can be checked by its exit status.
 - `DEMO_VERBOSE=1` shows Spark's startup logs.
 - Rerunning `deploy.py` is safe: it replaces the tables and views and reuses the service principal.
 
@@ -80,7 +81,7 @@ Copy `.env.example` to `.env`.
 | `UC_CATALOG` | `uc_views_demo` | Demo catalog |
 | `TPCH_FROM` / `TPCH_TO` | `1998-01-01` / `1998-03-31` | Order dates copied from `samples.tpch` |
 | `UC_MANAGED_LOCATION` | — | `MANAGED LOCATION` for `CREATE CATALOG`, needed when the metastore has no root storage |
-| `DATABRICKS_WAREHOUSE_ID` | find or create `uc-views-demo` | Use an existing SQL warehouse. `destroy.py` never deletes it |
+| `DATABRICKS_WAREHOUSE_ID` | find or create `uc-views-demo` | Use an existing SQL warehouse. `destroy.py` never deletes it; it removes only the reader's access |
 | `DEMO_WAREHOUSE_NAME` | `uc-views-demo` | Name of the warehouse that's found or created |
 | `DEMO_READER_SP_NAME` | `uc-views-demo-reader` | Name of the reader service principal |
 | `SPARK_REPOSITORIES` | — | Maven mirror, if Maven Central is blocked on your network |

@@ -22,6 +22,7 @@ import datetime
 import os
 import sys
 import tempfile
+import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -157,6 +158,24 @@ def create_warehouse(w) -> str:
     ).result().id
 
 
+def remove_warehouse_access(w, wh: str, sp_application_id: str) -> bool:
+    """Remove a service principal's direct permission on a warehouse, keeping everyone
+    else's. Returns False if it had none."""
+    from databricks.sdk.service.sql import WarehouseAccessControlRequest
+    keep, found = [], False
+    for e in w.warehouses.get_permissions(wh).access_control_list or []:
+        direct = [perm for perm in e.all_permissions or [] if not perm.inherited]
+        if e.service_principal_name == sp_application_id:
+            found = found or bool(direct)
+            continue
+        keep += [WarehouseAccessControlRequest(user_name=e.user_name, group_name=e.group_name,
+                                               service_principal_name=e.service_principal_name,
+                                               permission_level=perm.permission_level) for perm in direct]
+    if found:
+        w.warehouses.set_permissions(wh, access_control_list=keep)
+    return found
+
+
 def warehouse_id(w) -> str:
     wh = find_warehouse(w)
     if not wh:
@@ -170,9 +189,11 @@ def run_sql(w, wh: str, statement: str):
     from databricks.sdk.service.sql import StatementState
     r = w.statement_execution.execute_statement(warehouse_id=wh, statement=statement, wait_timeout="50s")
     while r.status.state in (StatementState.PENDING, StatementState.RUNNING):
+        time.sleep(2)
         r = w.statement_execution.get_statement(r.statement_id)
     if r.status.state != StatementState.SUCCEEDED:
-        raise RuntimeError(f"{r.status.error.message}\n  while running: {statement}")
+        reason = r.status.error.message if r.status.error else f"statement {r.status.state.value}"
+        raise RuntimeError(f"{reason}\n  while running: {statement}")
     cols = [col.name for col in r.manifest.schema.columns] if r.manifest and r.manifest.schema else []
     rows = r.result.data_array if r.result and r.result.data_array else []
     return cols, rows
@@ -194,7 +215,10 @@ def reader_credentials() -> tuple[str, str]:
     return st["READER_CLIENT_ID"], st["READER_CLIENT_SECRET"]
 
 
-def reader_token() -> str:
+HTTP_TIMEOUT = 60  # seconds, for the reader's direct REST calls
+
+
+def reader_token(h: str) -> str:
     """OAuth M2M access token for the reader service principal (client credentials grant)."""
     import base64
     import json
@@ -203,11 +227,11 @@ def reader_token() -> str:
     import urllib.request
     client_id, client_secret = reader_credentials()
     req = urllib.request.Request(
-        f"{host()}/oidc/v1/token",
+        f"{h}/oidc/v1/token",
         data=urllib.parse.urlencode({"grant_type": "client_credentials", "scope": "all-apis"}).encode(),
         headers={"Authorization": "Basic " + base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()})
     try:
-        with urllib.request.urlopen(req) as r:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
             return json.load(r)["access_token"]
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"OAuth token request failed (HTTP {e.code}): {e.read().decode()[:300]}") from None
@@ -216,16 +240,16 @@ def reader_token() -> str:
 def reader_sql(wh: str, statement: str):
     """Run a statement on the SQL warehouse as the reader service principal -> (columns, rows)."""
     import json
-    import time
     import urllib.error
     import urllib.request
-    headers = {"Authorization": f"Bearer {reader_token()}", "Content-Type": "application/json"}
+    h = host()
+    headers = {"Authorization": f"Bearer {reader_token(h)}", "Content-Type": "application/json"}
 
     def call(method: str, path: str, body=None):
-        req = urllib.request.Request(f"{host()}{path}", method=method, headers=headers,
+        req = urllib.request.Request(f"{h}{path}", method=method, headers=headers,
                                      data=json.dumps(body).encode() if body else None)
         try:
-            with urllib.request.urlopen(req) as r:
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
             raise RuntimeError(f"HTTP {e.code}: {e.read().decode()[:300]}") from None
@@ -265,9 +289,15 @@ def _quiet_stderr():
         tmp.close()
 
 
+# Spark's default redaction pattern plus "credential", the Iceberg key that holds
+# the client ID and secret, so the Spark UI shows it as *********(redacted).
+REDACTION_REGEX = r"(?i)secret|password|token|access[.]key|credential"
+
+
 def _build(app: str, packages: list[str], conf: dict):
     from pyspark.sql import SparkSession
-    b = SparkSession.builder.appName(app).config("spark.jars.packages", ",".join(packages))
+    b = (SparkSession.builder.appName(app).config("spark.jars.packages", ",".join(packages))
+         .config("spark.redaction.regex", REDACTION_REGEX))
     for k, v in conf.items():
         b = b.config(k, v)
     if SPARK_REPOSITORIES:

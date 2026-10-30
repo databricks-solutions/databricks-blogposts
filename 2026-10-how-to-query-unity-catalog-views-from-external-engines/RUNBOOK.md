@@ -1,6 +1,6 @@
 # Runbook: Query Unity Catalog Views from External Engines (demo)
 
-This runbook walks you through the demo end to end, from a local folder against your Databricks workspace: set up your machine, deploy the demo, run it, and remove everything afterwards. Allow about 15–20 minutes.
+This runbook walks you through the demo end to end, from a local folder against your Databricks workspace on AWS: set up your machine, deploy the demo, run it, and remove everything afterwards. Allow about 15–20 minutes.
 
 ![Architecture: open source Spark queries Unity Catalog views through the Unity REST API and the Iceberg REST Catalog](images/architecture.png)
 
@@ -31,7 +31,7 @@ export PROFILE=<your-cli-profile>
 
 | Requirement | How to check |
 | :---- | :---- |
-| A Databricks workspace with Unity Catalog | Open the workspace URL |
+| A Databricks workspace on AWS with Unity Catalog | Open the workspace URL |
 | External data access enabled on the metastore | Catalog > gear icon > Metastore > Details > External data access |
 | Beta preview **External Access to Views via Iceberg REST Catalog** turned on (needed only for the Iceberg views) | Settings > Previews, search "external" |
 | Workspace admin (needed to create the reader service principal) | You're in the workspace `admins` group |
@@ -91,7 +91,7 @@ All settings are optional:
 | `UC_CATALOG` | `uc_views_demo` | Catalog the demo creates |
 | `TPCH_FROM` / `TPCH_TO` | Q1 1998 | Date range of orders and line items copied from `samples.tpch` |
 | `UC_MANAGED_LOCATION` | — | Only if the metastore has no root storage |
-| `DATABRICKS_WAREHOUSE_ID` | — | Use an existing SQL warehouse instead of creating one |
+| `DATABRICKS_WAREHOUSE_ID` | — | Use an existing SQL warehouse instead of creating one. destroy.py keeps it and removes only the reader's access |
 | `SPARK_REPOSITORIES` | — | A Maven mirror, if your network blocks Maven Central |
 
 `.env` is gitignored; keep it local.
@@ -150,7 +150,7 @@ Open source Apache Spark runs on your machine and authenticates as the service p
 | 10. Query a view over Iceberg tables | `SELECT * FROM analytics.revenue_by_nation_ice … LIMIT 10` | 10 rows: ASIA INDONESIA 1,682,265,357.85 at the top, then MIDDLE EAST IRAQ, EUROPE GERMANY… |
 | 11. Query an Iceberg view built on another view | `SELECT * FROM analytics.revenue_by_region_ice` (it reads `revenue_by_nation_ice`) | The same 5 rows as step 3: ASIA 56843 orders 8,250,496,500.50 at the top. Both views are resolved through the Iceberg REST Catalog |
 
-The run ends with a green-ticked recap. You can run `run.py` again as many times as you like. The numbers above are for the default Q1 1998 data.
+The run ends with a recap. Every step is green-ticked, or the failed steps are marked ✗ and run.py exits with status 1. You can run `run.py` again as many times as you like. The numbers above are for the default Q1 1998 data.
 
 ## Phase 3: Destroy
 
@@ -199,7 +199,7 @@ To start over, run Phase 1 again.
 
 | Object | Name | Removed by destroy.py |
 | :---- | :---- | :---- |
-| SQL warehouse | `uc-views-demo` (2X-Small serverless) | Yes |
+| SQL warehouse | `uc-views-demo` (2X-Small serverless) | Yes. A warehouse pinned with `DATABRICKS_WAREHOUSE_ID` is kept, and only the reader's access to it is removed |
 | Catalog | `uc_views_demo` (schemas `tpch`, `tpch_iceberg`, `analytics`) | Yes (CASCADE) |
 | Tables | `region`, `nation`, `customer`, `orders`, `lineitem`, as Delta and as Iceberg | Yes, with the catalog |
 | Views | `revenue_by_nation`, `revenue_by_region`, `top_customers`, `revenue_by_nation_ice`, `revenue_by_region_ice` | Yes, with the catalog |

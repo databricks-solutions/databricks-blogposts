@@ -78,6 +78,16 @@ GROUP BY region""",
 LOAD_VIEW_ENDPOINT = "GET /v1/{prefix}/namespaces/{namespace}/views/{view}"
 
 
+def saved_secret_works(h: str) -> bool:
+    """True if the OAuth secret in the state file still gets a token (it may have been revoked)."""
+    try:
+        with ui.working("checking the saved OAuth secret"):
+            c.reader_token(h)
+        return True
+    except RuntimeError:
+        return False
+
+
 def run_all(w, wh, statements: list[str], spinner: str) -> None:
     for sql in statements:
         ui.show_sql(sql)
@@ -200,7 +210,8 @@ def main() -> None:
             from databricks.sdk.service.iam import ComplexValue
             sp = w.service_principals.create(display_name=c.READER_SP_NAME,
                                              entitlements=[ComplexValue(value="workspace-access")])
-    if state.get("READER_CLIENT_ID") == sp.application_id and state.get("READER_CLIENT_SECRET"):
+    if state.get("READER_CLIENT_ID") == sp.application_id and state.get("READER_CLIENT_SECRET") and \
+            saved_secret_works(h):
         ui.narrate(f"Reusing service principal {sp.application_id} and its saved OAuth secret.")
     else:
         with ui.working("creating an OAuth secret"):

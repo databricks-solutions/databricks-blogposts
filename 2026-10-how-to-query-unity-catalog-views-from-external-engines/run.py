@@ -38,6 +38,11 @@ STEPS = [
 ]
 # Child phases: name -> (first step, last step), 0-based
 PHASES = {"delta": (1, 4), "governance": (5, 7), "iceberg": (8, 10)}
+# A child phase that ran to the end but had failed steps exits with FAILED plus a
+# bitmask of those steps (bit 0 = the phase's first step), so the recap can mark them.
+FAILED = 32
+# What a permission error from the connector looks like (the step 6 check)
+PERMISSION_DENIED = ("HTTP 403", "PermissionDenied", "PERMISSION_DENIED")
 
 REGION_QUERY = f"SELECT * FROM {c.fq('revenue_by_region')} ORDER BY revenue DESC"
 DELTA_QUERIES = [
@@ -98,7 +103,8 @@ def check_deployment(w, ag, profile: str) -> None:
 
 
 # --- Spark phases (child processes) -----------------------------------------
-def phase_delta(ag) -> None:
+# Each phase returns the 0-based steps that failed.
+def phase_delta(ag) -> set[int]:
     ag.tick()
     ui.narrate("Open source Apache Spark with the Unity Catalog Spark connector and Delta Lake, running outside "
                "Databricks. It authenticates as the service principal with OAuth M2M; the connector fetches "
@@ -120,14 +126,16 @@ def phase_delta(ag) -> None:
             ui.step(["filter a view", "join a view with a table", "see governance in action"][i])
     finally:
         spark.stop()
+    return set()
 
 
-def phase_governance(ag) -> None:
+def phase_governance(ag) -> set[int]:
     w = c.ws()
     wh = c.warehouse_id(w)
     reader = c.reader_credentials()[0]
     revoke = f"REVOKE SELECT ON SCHEMA {C}.{T} FROM `{reader}`"
     grant = f"GRANT SELECT ON SCHEMA {C}.{T} TO `{reader}`"
+    failed = set()
 
     ag.tick()
     ui.narrate(f"The reader keeps SELECT on the views in {A}. Take away SELECT on {T}, the schema holding the "
@@ -142,13 +150,20 @@ def phase_governance(ag) -> None:
         try:
             with ui.working("Apache Spark querying the view"):
                 spark.sql(REGION_QUERY).collect()
+            failed.add(ag.i)
             ui.info("Unexpected: the query succeeded. Check whether the reader holds SELECT on the tpch tables "
                     "through a group or a catalog-level grant, or has admin rights.")
         except Exception as e:  # noqa: BLE001
-            ui.blocked(c.error_message(e))
-            ui.narrate("Blocked. The external engine runs the view's SQL itself, so it must read the tables, and "
-                       "Unity Catalog won't vend credentials for tables the reader can't SELECT. A view never "
-                       "becomes a way around table permissions. ✦")
+            msg = c.error_message(e)
+            ui.blocked(msg)
+            if any(s in msg for s in PERMISSION_DENIED):
+                ui.narrate("Blocked. The external engine runs the view's SQL itself, so it must read the tables, "
+                           "and Unity Catalog won't vend credentials for tables the reader can't SELECT. A view "
+                           "never becomes a way around table permissions. ✦")
+            else:
+                failed.add(ag.i)
+                ui.info("That isn't the permission error this step expects (HTTP 403, PermissionDenied), so it "
+                        "doesn't show governance. Fix the error above, then rerun.")
         finally:
             spark.stop()
         ui.step("try the same reader in Databricks SQL")
@@ -164,9 +179,12 @@ def phase_governance(ag) -> None:
                        "on the view is enough. An external engine has to read the tables itself, which is why "
                        "external access needs SELECT on every table the view references.")
         except Exception as e:  # noqa: BLE001
+            failed.add(ag.i)
             ui.blocked(str(e).splitlines()[0][:400])
-    finally:
         ui.step("grant SELECT back")
+    finally:
+        # Restore access with no prompt first, so it also runs after Ctrl-C or an error
+        ag.i = PHASES["governance"][1] - 1
         ag.tick()
         ui.show_sql(grant)
         try:
@@ -183,9 +201,10 @@ def phase_governance(ag) -> None:
     finally:
         spark.stop()
     ui.step("switch to the Iceberg REST Catalog")
+    return failed
 
 
-def phase_iceberg(ag) -> None:
+def phase_iceberg(ag) -> set[int]:
     ag.tick()
     ui.narrate("Now the plain Apache Iceberg Spark runtime, with no Databricks or Unity Catalog library, pointed "
                "at the Unity Catalog Iceberg REST Catalog endpoint. Same service principal, same OAuth M2M.")
@@ -200,29 +219,25 @@ def phase_iceberg(ag) -> None:
         if not iceberg_query(spark, ICEBERG_QUERY,
                              "Iceberg's REST client loaded the view with the Iceberg REST LoadView call, resolved "
                              "the Iceberg tables it reads, and received vended credentials for each. ✦"):
-            return
+            return {ag.i, ag.i + 1}  # the next step needs the same Iceberg view support
         ui.step("query an Iceberg view built on another view")
 
         ag.tick()
         ui.narrate("revenue_by_region_ice reads another Iceberg view, revenue_by_nation_ice. Spark loads both views "
                    "through the Iceberg REST Catalog, then the tables underneath:")
-        iceberg_query(spark, ICEBERG_REGION_QUERY,
-                      "The same numbers as revenue_by_region over the Delta tables: one view definition chain, "
-                      "resolved entirely through the Iceberg REST Catalog. ✦")
+        if not iceberg_query(spark, ICEBERG_REGION_QUERY,
+                             "The same numbers as revenue_by_region over the Delta tables: one view definition "
+                             "chain, resolved entirely through the Iceberg REST Catalog. ✦"):
+            return {ag.i}
     finally:
         spark.stop()
+    return set()
 
 
 def iceberg_query(spark, sql: str, done_note: str) -> bool:
     """Run an Iceberg view query and show the result; explain failures. Returns True on success."""
-    ui.show_sql(sql)
     try:
-        with ui.working("Apache Spark running the query"):
-            df = spark.sql(sql)
-            cols, rows = df.columns, [list(r) for r in df.collect()]
-        show_rows(cols, rows)
-        ui.narrate(done_note)
-        return True
+        spark_query(spark, sql)
     except Exception as e:  # noqa: BLE001
         msg = c.error_message(e)
         ui.blocked(msg)
@@ -231,14 +246,28 @@ def iceberg_query(spark, sql: str, done_note: str) -> bool:
                     "turns on 'External Access to Views via Iceberg REST Catalog' on the workspace Previews "
                     "page; it takes effect in a few minutes.")
         return False
+    ui.narrate(done_note)
+    return True
 
 
 # --- driver -----------------------------------------------------------------
-def run_phase(name: str, profile: str) -> None:
+def run_phase(name: str, profile: str) -> set[int]:
+    """Run one phase in a child process; return its failed steps. Exits if the child stopped or crashed."""
     sys.stdout.flush()
-    rc = subprocess.run([sys.executable, __file__, "-p", profile, "--phase", name]).returncode
+    child = subprocess.Popen([sys.executable, __file__, "-p", profile, "--phase", name])
+    while True:
+        try:
+            rc = child.wait()
+            break
+        except KeyboardInterrupt:
+            pass  # Ctrl-C reaches the child too; let it finish (governance restores access first)
+    first = PHASES[name][0]
+    if FAILED <= rc < 2 * FAILED:
+        mask = rc - FAILED
+        return {first + k for k in range(mask.bit_length()) if mask >> k & 1}
     if rc != 0:
-        sys.exit(rc)
+        sys.exit(rc if rc > 0 else 128 - rc)  # killed by signal N -> 128 + N, like a shell
+    return set()
 
 
 def main() -> None:
@@ -250,16 +279,22 @@ def main() -> None:
     ag = ui.Agenda(TITLE, STEPS)
 
     if args.phase:  # child process: continue the agenda where the parent left off
-        ag.i = PHASES[args.phase][0] - 1
-        {"delta": phase_delta, "governance": phase_governance, "iceberg": phase_iceberg}[args.phase](ag)
-        return
+        first = PHASES[args.phase][0]
+        ag.i = first - 1
+        failed = {"delta": phase_delta, "governance": phase_governance, "iceberg": phase_iceberg}[args.phase](ag)
+        sys.exit(FAILED + sum(1 << (i - first) for i in failed) if failed else 0)
 
     ag.render()
     ui.step("start")
     check_deployment(c.ws(), ag, profile)
+    failed = set()
     for name in ("delta", "governance", "iceberg"):
-        run_phase(name, profile)
+        failed |= run_phase(name, profile)
         ag.i = PHASES[name][1]
+    if failed:
+        ag.recap(f"{TITLE} — {len(failed)} step(s) failed", failed)
+        ui.info(f"See the messages at the failed steps above. Remove everything with: python destroy.py -p {profile}")
+        raise SystemExit(1)
     ag.recap(f"{TITLE} — complete 🎉")
     ui.info(f"Run it again any time. Remove everything with: python destroy.py -p {profile}")
 

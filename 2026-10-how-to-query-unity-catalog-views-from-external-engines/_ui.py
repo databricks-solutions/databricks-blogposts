@@ -162,20 +162,26 @@ class Agenda:
                 _emit(f"   {GY}○ {n}. {s}{_R}")
         _emit()
 
-    def recap(self, title: str = "Done — all steps complete 🎉") -> None:
-        """Final recap: the agenda in its original style, but every bullet green-ticked."""
+    def recap(self, title: str = "Done — all steps complete 🎉", failed: set[int] = frozenset()) -> None:
+        """Final recap: the agenda in its original style, every bullet green-ticked
+        except the `failed` steps (0-based), which get a ✗."""
         bar = "=" * (len(title) + 4)
         _emit(f"\n{_B}{MA}{bar}{_R}")
         _emit(f"{_B}{MA}  {title}{_R}")
         _emit(f"{_B}{MA}{bar}{_R}")
         for n, s in enumerate(self.steps, 1):
-            _emit(f"   {GR}✓{_R} {GY}{n}. {s}{_R}")
+            mark = f"{YE}✗{_R}" if n - 1 in failed else f"{GR}✓{_R}"
+            _emit(f"   {mark} {GY}{n}. {s}{_R}")
         _emit()
+
+
+STOPPED = 130  # exit status when the presenter stops at a prompt (Ctrl-C / EOF)
 
 
 def step(prompt: str = "continue") -> None:
     """Wait for the presenter to press Enter (unless DEMO_AUTO).
-    Blank line before; trailing ` ...` where only the dots blink."""
+    Blank line before; trailing ` ...` where only the dots blink.
+    Stopping at the prompt exits with STOPPED."""
     if AUTO:
         print(f"{_D}   (auto) {prompt}{_R}")
         return
@@ -185,7 +191,7 @@ def step(prompt: str = "continue") -> None:
         input(f"   {CY}{_B}▶ Press Enter to {prompt}{_R} \033[5m...\033[0m ")
     except (EOFError, KeyboardInterrupt):
         print(f"\n   {YE}⏹ stopped.{_R}")
-        raise SystemExit(0)
+        raise SystemExit(STOPPED)
     finally:
         _hide_cursor()
 
@@ -371,15 +377,16 @@ class working:
         self.t.start()
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, exc_type, *exc):
         self._stop.set()
         if self.t:
             self.t.join()
+        mark = "✗" if exc_type else "✓"   # ✗ when the block raised
         if not AUTO:
-            sys.stdout.write(f"\r   {GR}✓{_R} {self.msg}\033[K\n\n")
+            sys.stdout.write(f"\r   {YE if exc_type else GR}{mark}{_R} {self.msg}\033[K\n\n")
             sys.stdout.flush()
         else:
-            print(f"   ✓ {self.msg}\n")
+            print(f"   {mark} {self.msg}\n")
 
 
 def schema_url(host: str, catalog: str, schema: str) -> str:
