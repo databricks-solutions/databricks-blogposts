@@ -1,0 +1,194 @@
+<!--
+    API-scope policy: app-role-aware front for the Lakebase Data API (see README.md, app role access).
+
+    Differences from lakebase-data-api-mi-exchange.xml:
+      * Callers authenticate with an Entra token for the gateway app registration (no subscription key needed).
+      * The token must carry exactly one app role named Orders.AppRole<X>. That picks the app role's managed
+        identity, so the request reaches Postgres as that identity's role and row-level security filters the rows.
+      * One cached Databricks token per app role (cache key lakebase-dbx-token-app-role-<x>).
+
+    Named values (none are secrets):
+      entra-tenant-id                     Entra tenant (directory) ID
+      lakebase-gateway-app-id             application (client) ID of the gateway app registration
+      lakebase-workspace-url              https://adb-<workspace-id>.<n>.azuredatabricks.net   (no trailing slash)
+      lakebase-data-api-url               Data API REST endpoint, .../rest/<database>          (no trailing slash)
+      lakebase-mi-app-role-a-client-id    client ID of the managed identity for app role Orders.AppRoleA
+      lakebase-mi-app-role-b-client-id    client ID of the managed identity for app role Orders.AppRoleB
+
+    Adding an app role: an app role Orders.AppRole<X>, a managed identity attached to APIM (with its Databricks
+    service principal and federation policy), a named value, a <when> branch below, and a Postgres group role
+    orders_app_role_<x> with the managed identity's role as its member.
+
+    Response header X-Lakebase-App-Role shows which app role the request ran as; X-Lakebase-Token-Source shows
+    cache | exchange.
+-->
+<policies>
+    <inbound>
+        <base />
+        <!-- 1. Who is calling: a valid token from this Entra tenant, issued for the gateway app registration.
+             v1 tokens carry the api:// URI as aud, v2 tokens the bare app ID; accept both. -->
+        <validate-azure-ad-token tenant-id="{{entra-tenant-id}}" header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Missing or invalid Entra token for the Lakebase gateway" output-token-variable-name="client-jwt">
+            <audiences>
+                <audience>api://{{lakebase-gateway-app-id}}</audience>
+                <audience>{{lakebase-gateway-app-id}}</audience>
+            </audiences>
+        </validate-azure-ad-token>
+        <!-- 2. Which app role: exactly one Orders.AppRole<X>, otherwise refuse (never guess). -->
+        <set-variable name="app-role" value="@{
+            var jwt = (Jwt)context.Variables["client-jwt"];
+            var roles = jwt.Claims.ContainsKey("roles") ? jwt.Claims["roles"] : new string[0];
+            var matches = roles.Where(r => r.StartsWith("Orders.AppRole")).ToArray();
+            return matches.Length == 1 ? matches[0] : "";
+        }" />
+        <set-variable name="app-role-key" value="@(((string)context.Variables["app-role"]).Replace("Orders.AppRole", "").ToLowerInvariant())" />
+        <choose>
+            <when condition="@((string)context.Variables["app-role"] == "")">
+                <return-response>
+                    <set-status code="403" reason="Forbidden" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>{"error":"no_app_role","message":"The token must carry exactly one Orders.AppRole* app role (for example Orders.AppRoleA). Assign one to the client app on the gateway app registration."}</set-body>
+                </return-response>
+            </when>
+        </choose>
+        <!-- The caller's token stops here. -->
+        <set-header name="Authorization" exists-action="delete" />
+        <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
+        <set-variable name="cache-key" value="@("lakebase-dbx-token-app-role-" + (string)context.Variables["app-role-key"])" />
+        <set-variable name="token-source" value="cache" />
+        <cache-lookup-value key="@((string)context.Variables["cache-key"])" variable-name="dbx-token" />
+        <choose>
+            <when condition="@(!context.Variables.ContainsKey("dbx-token"))">
+                <set-variable name="token-source" value="exchange" />
+                <!-- 3. App role to managed identity. One branch per app role: the MI's client ID must be a fixed value. -->
+                <choose>
+                    <when condition="@((string)context.Variables["app-role-key"] == "a")">
+                        <set-variable name="mi-client-id" value="{{lakebase-mi-app-role-a-client-id}}" />
+                        <authentication-managed-identity resource="api://AzureADTokenExchange" client-id="{{lakebase-mi-app-role-a-client-id}}" output-token-variable-name="entra-token" ignore-error="false" />
+                    </when>
+                    <when condition="@((string)context.Variables["app-role-key"] == "b")">
+                        <set-variable name="mi-client-id" value="{{lakebase-mi-app-role-b-client-id}}" />
+                        <authentication-managed-identity resource="api://AzureADTokenExchange" client-id="{{lakebase-mi-app-role-b-client-id}}" output-token-variable-name="entra-token" ignore-error="false" />
+                    </when>
+                    <otherwise>
+                        <return-response>
+                            <set-status code="403" reason="Forbidden" />
+                            <set-header name="Content-Type" exists-action="override">
+                                <value>application/json</value>
+                            </set-header>
+                            <set-body>@(new JObject(
+                                new JProperty("error", "unknown_app_role"),
+                                new JProperty("message", "No managed identity is configured for app role '" + (string)context.Variables["app-role"] + "'.")).ToString())</set-body>
+                        </return-response>
+                    </otherwise>
+                </choose>
+                <!-- 4. Exchange the MI's Entra token for a Databricks token (same as the single-MI policy). -->
+                <send-request mode="new" response-variable-name="exchange-response" timeout="20" ignore-error="false">
+                    <set-url>{{lakebase-workspace-url}}/oidc/v1/token</set-url>
+                    <set-method>POST</set-method>
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/x-www-form-urlencoded</value>
+                    </set-header>
+                    <set-body>@("grant_type=" + System.Net.WebUtility.UrlEncode("urn:ietf:params:oauth:grant-type:token-exchange")
+                        + "&subject_token=" + (string)context.Variables["entra-token"]
+                        + "&subject_token_type=" + System.Net.WebUtility.UrlEncode("urn:ietf:params:oauth:token-type:jwt")
+                        + "&client_id=" + (string)context.Variables["mi-client-id"] + "&scope=all-apis")</set-body>
+                </send-request>
+                <choose>
+                    <when condition="@(((IResponse)context.Variables["exchange-response"]).StatusCode != 200)">
+                        <return-response>
+                            <set-status code="502" reason="Bad Gateway" />
+                            <set-header name="Content-Type" exists-action="override">
+                                <value>application/json</value>
+                            </set-header>
+                            <set-body>@{
+                                var r = (IResponse)context.Variables["exchange-response"];
+                                var upstream = r.Body.As<string>();
+                                var code = "";
+                                try { code = (string)JObject.Parse(upstream)["error"] ?? ""; } catch (Exception) { }
+                                return new JObject(
+                                    new JProperty("error", "lakebase_token_exchange_failed"),
+                                    new JProperty("app_role", (string)context.Variables["app-role"]),
+                                    new JProperty("message", "Databricks rejected the token exchange for this app role's managed identity. Check its service principal federation policy (issuer, audience, subject)."),
+                                    new JProperty("upstream_status", r.StatusCode),
+                                    new JProperty("upstream_error", code)).ToString();
+                            }</set-body>
+                        </return-response>
+                    </when>
+                </choose>
+                <set-variable name="exchange-json" value="@(((IResponse)context.Variables["exchange-response"]).Body.As<JObject>())" />
+                <set-variable name="dbx-token" value="@((string)((JObject)context.Variables["exchange-json"])["access_token"])" />
+                <cache-store-value key="@((string)context.Variables["cache-key"])" value="@((string)context.Variables["dbx-token"])" duration="@(Math.Max(60, (((JObject)context.Variables["exchange-json"]).Value<int?>("expires_in") ?? 3600) - 300))" />
+            </when>
+        </choose>
+        <set-header name="Authorization" exists-action="override">
+            <value>@("Bearer " + (string)context.Variables["dbx-token"])</value>
+        </set-header>
+        <set-backend-service base-url="{{lakebase-data-api-url}}" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+        <set-header name="X-Lakebase-App-Role" exists-action="override">
+            <value>@((string)context.Variables.GetValueOrDefault("app-role", ""))</value>
+        </set-header>
+        <set-header name="X-Lakebase-Token-Source" exists-action="override">
+            <value>@((string)context.Variables.GetValueOrDefault("token-source", "none"))</value>
+        </set-header>
+        <!-- Token problems come back as 400/401 with a message about the token: drop this app role's cached token. -->
+        <choose>
+            <when condition="@{
+                var s = context.Response.StatusCode;
+                if (s == 401) { return true; }
+                if (s != 400) { return false; }
+                var m = context.Response.Body.As<string>(preserveContent: true).ToLowerInvariant();
+                return m.Contains("jwk") || m.Contains("jwt") || m.Contains("token");
+            }">
+                <cache-remove-value key="@((string)context.Variables["cache-key"])" />
+            </when>
+        </choose>
+    </outbound>
+    <on-error>
+        <base />
+        <choose>
+            <when condition="@(context.LastError.Source == "authentication-managed-identity")">
+                <return-response>
+                    <set-status code="500" reason="Internal Server Error" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@(new JObject(
+                        new JProperty("error", "apim_managed_identity_token_failed"),
+                        new JProperty("app_role", (string)context.Variables.GetValueOrDefault("app-role", "")),
+                        new JProperty("message", context.LastError.Message)).ToString())</set-body>
+                </return-response>
+            </when>
+            <when condition="@(context.LastError.Source == "send-request")">
+                <return-response>
+                    <set-status code="502" reason="Bad Gateway" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@(new JObject(
+                        new JProperty("error", "databricks_token_endpoint_unreachable"),
+                        new JProperty("message", context.LastError.Message)).ToString())</set-body>
+                </return-response>
+            </when>
+            <when condition="@(context.LastError.Source == "forward-request")">
+                <return-response>
+                    <set-status code="@(context.LastError.Reason == "Timeout" ? 504 : 502)" reason="Bad Gateway" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@(new JObject(
+                        new JProperty("error", "lakebase_unreachable"),
+                        new JProperty("reason", context.LastError.Reason),
+                        new JProperty("message", context.LastError.Message)).ToString())</set-body>
+                </return-response>
+            </when>
+        </choose>
+    </on-error>
+</policies>

@@ -41,8 +41,11 @@
 /2026-05-coding-agent-sandboxes/* @jlieow
 /2026-06-rtm-on-sdp-flight-tracker/* @apingledbx
 /2026-07-cpg-brand-copilot-agent/* @sashankkotta-db @AyaskDatabricks
+/2026-07-databricks-workspace-cleanup/* @Amitkpdatabricks
 /2026-07-spark-declarative-pipeline-blueprint-demo/* @karimhamed-db @taras-cha
 /2026-07-sdp-foreachbatch-sink/* @jarmstrongdbrx
 /2026-06-llmops-quickstart/* @CEDipEngineering
 /2026-09-token-maxing-to-value-maxing/* @prachibari
+/2026-10-ai-functions-synthetic-test-data/* @brickster-douglas
+/2026-10-lakebase-data-api-apim/* @udaysat-db
 /2026-10-how-to-query-unity-catalog-views-from-external-engines/* @dipankarkush-db
