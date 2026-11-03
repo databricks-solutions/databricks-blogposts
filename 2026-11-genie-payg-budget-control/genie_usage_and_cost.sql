@@ -1,0 +1,181 @@
+-- Databricks notebook source
+-- MAGIC %md
+-- MAGIC # Genie usage and cost under the pay-as-you-go model
+-- MAGIC
+-- MAGIC Code from *Controlling Genie budget under the new pay-as-you-go model* (Magnus Helmvee, 3 Nov 2026).
+-- MAGIC Reviewed by Sam Le Corre (EMEA AI/BI SME team), Mike Dobing and Douglas Garcia Torres.
+-- MAGIC
+-- MAGIC Genie usage is billed in `system.billing.usage` with `billing_origin_product = 'GENIE'`:
+-- MAGIC
+-- MAGIC | Column | Meaning |
+-- MAGIC |---|---|
+-- MAGIC | `usage_metadata.genie.surface` | `GENIE_ONE`, `GENIE_AGENTS` or `GENIE_CODE` |
+-- MAGIC | `usage_metadata.genie.channel` | access channel, e.g. `UI` or `API` |
+-- MAGIC | `identity_metadata.run_as` | identity recorded for the workload |
+-- MAGIC | `sku_name` | `GENIE_FREE_USAGE` (tracked, not billed) vs. metered SKUs |
+-- MAGIC | `usage_quantity` | DBU quantity |
+-- MAGIC | `product_features.genie.offering_type` | offering type, e.g. `PAYGO` |
+-- MAGIC
+-- MAGIC Requires `SELECT` on `system.billing.usage` and `system.billing.list_prices`, and a SQL warehouse or serverless compute.
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## 1. Free vs. paid DBUs this month, per user, surface, channel and offering type
+-- MAGIC Answers "Which users are using Genie Code?" and "Where are we seeing free versus paid usage?".
+-- MAGIC Free-usage records start on 20 July 2026 (not backfilled).
+-- MAGIC Offering type is aggregated rather than grouped, so a user's free and paid DBUs always stay on the same row.
+
+-- COMMAND ----------
+
+SELECT
+  identity_metadata.run_as AS user_identity,
+  usage_metadata.genie.surface AS genie_surface,
+  usage_metadata.genie.channel AS access_channel,
+  SUM(CASE WHEN sku_name = 'GENIE_FREE_USAGE'
+    THEN usage_quantity ELSE 0 END) AS free_dbus,
+  SUM(CASE WHEN sku_name != 'GENIE_FREE_USAGE'
+    THEN usage_quantity ELSE 0 END) AS paid_dbus,
+  ARRAY_JOIN(COLLECT_SET(product_features.genie.offering_type), ', ') AS offering_types
+FROM system.billing.usage
+WHERE billing_origin_product = 'GENIE'
+  AND usage_date >= DATE_TRUNC('MONTH', CURRENT_DATE)
+GROUP BY
+  identity_metadata.run_as,
+  usage_metadata.genie.surface,
+  usage_metadata.genie.channel
+ORDER BY user_identity, genie_surface, access_channel;
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## 2. Estimated list cost of paid Genie usage this month
+-- MAGIC Month-to-date, like section 1 (widen the `usage_date` filter for longer history). Joins priced rows to
+-- MAGIC `system.billing.list_prices` on SKU, cloud, usage unit and the effective price window. This is a **list-price** estimate:
+-- MAGIC contractual discounts and promotions can lower the real charge. During the current promotion the 25% discount is
+-- MAGIC already in the billed `usage_quantity` — don't apply it again.
+
+-- COMMAND ----------
+
+SELECT
+  u.usage_date,
+  u.workspace_id,
+  u.identity_metadata.run_as AS user_identity,
+  u.usage_metadata.genie.surface AS genie_surface,
+  u.usage_metadata.genie.channel AS access_channel,
+  u.sku_name,
+  SUM(u.usage_quantity) AS dbus,
+  SUM(u.usage_quantity * lp.pricing.effective_list.default) AS estimated_list_cost
+FROM system.billing.usage u
+JOIN system.billing.list_prices lp
+  ON u.sku_name = lp.sku_name
+  AND u.cloud = lp.cloud
+  AND u.usage_unit = lp.usage_unit
+  AND u.usage_end_time >= lp.price_start_time
+  AND (lp.price_end_time IS NULL OR u.usage_end_time < lp.price_end_time)
+WHERE u.billing_origin_product = 'GENIE'
+  AND u.sku_name != 'GENIE_FREE_USAGE'
+  AND u.usage_date >= DATE_TRUNC('MONTH', CURRENT_DATE)
+GROUP BY
+  u.usage_date,
+  u.workspace_id,
+  u.identity_metadata.run_as,
+  u.usage_metadata.genie.surface,
+  u.usage_metadata.genie.channel,
+  u.sku_name
+ORDER BY u.usage_date DESC;
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## 3. Curated views for sharing
+-- MAGIC Publish a small set of views in your own catalog and schema instead of granting consumers the raw system tables.
+-- MAGIC **Attention:** the views below expect a catalog `finops` with a schema `observability`. Run the next cell to create
+-- MAGIC them (it's safe to re-run). It needs `CREATE CATALOG` on the metastore, and possibly a `MANAGED LOCATION` depending on
+-- MAGIC your metastore. If you don't have `CREATE CATALOG`, skip it and ask an admin to create `finops.observability`.
+
+-- COMMAND ----------
+
+CREATE CATALOG IF NOT EXISTS finops;
+CREATE SCHEMA IF NOT EXISTS finops.observability;
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ### Base view — free and paid usage, with list pricing where available
+-- MAGIC The `LEFT JOIN` is intentional: free usage has no list-price row, so an inner join would silently drop it.
+-- MAGIC `list_price_missing` flags paid rows with no matching price (e.g. a price-window gap or a new SKU): their cost is
+-- MAGIC `NULL`, so cost totals would otherwise be understated without any signal.
+
+-- COMMAND ----------
+
+CREATE OR REPLACE VIEW finops.observability.genie_usage_base_vw AS
+SELECT
+  u.usage_date,
+  u.usage_start_time,
+  u.usage_end_time,
+  u.workspace_id,
+  u.sku_name,
+  u.usage_unit,
+  u.usage_quantity,
+  u.billing_origin_product,
+  u.identity_metadata.run_as AS user_identity,
+  u.usage_metadata.genie.surface AS genie_surface,
+  u.usage_metadata.genie.channel AS access_channel,
+  lp.pricing.effective_list.default AS list_price_usd_per_unit,
+  CASE WHEN u.sku_name = 'GENIE_FREE_USAGE' THEN 0
+    ELSE u.usage_quantity * lp.pricing.effective_list.default
+  END AS estimated_list_cost_usd,
+  (u.sku_name != 'GENIE_FREE_USAGE' AND lp.sku_name IS NULL) AS list_price_missing
+FROM system.billing.usage u
+LEFT JOIN system.billing.list_prices lp
+  ON u.sku_name = lp.sku_name
+  AND u.cloud = lp.cloud
+  AND u.usage_unit = lp.usage_unit
+  AND u.usage_end_time >= lp.price_start_time
+  AND (lp.price_end_time IS NULL OR u.usage_end_time < lp.price_end_time)
+WHERE u.billing_origin_product = 'GENIE';
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ### Daily view — for dashboards and SQL alerts
+-- MAGIC Free and paid DBUs are kept in separate columns on purpose: during the promotion free usage is recorded at the raw
+-- MAGIC basis while paid usage is already reduced by 25%, so a plain sum of the two would be misleading.
+
+-- COMMAND ----------
+
+CREATE OR REPLACE VIEW finops.observability.genie_usage_daily_vw AS
+SELECT
+  usage_date,
+  workspace_id,
+  genie_surface,
+  access_channel,
+  user_identity,
+  SUM(CASE WHEN sku_name = 'GENIE_FREE_USAGE'
+  THEN usage_quantity ELSE 0 END) AS free_dbus,
+  SUM(CASE WHEN sku_name != 'GENIE_FREE_USAGE'
+  THEN usage_quantity ELSE 0 END) AS paid_dbus,
+  SUM(estimated_list_cost_usd) AS estimated_list_cost_usd,
+  BOOL_OR(list_price_missing) AS list_price_missing
+FROM finops.observability.genie_usage_base_vw
+GROUP BY usage_date, workspace_id, genie_surface,
+  access_channel, user_identity;
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## 4. Grant consumers only the curated daily view
+-- MAGIC Replace `analysts` with your consumer group. The person creating the views needs access to the source system
+-- MAGIC tables and permission to create objects in the target schema.
+-- MAGIC
+-- MAGIC **Be careful with user identities.** The daily view exposes `user_identity` (user emails and service principal IDs)
+-- MAGIC per user. Before granting it, check that sharing individual usage is allowed under your organization's privacy, HR
+-- MAGIC and works council policies and applicable regulations such as GDPR. If not, share an aggregated view (for example by
+-- MAGIC workspace, Genie surface or user group), or remove or mask `user_identity` before granting access.
+
+-- COMMAND ----------
+
+GRANT USE CATALOG ON CATALOG finops TO analysts;
+GRANT USE SCHEMA ON SCHEMA finops.observability TO analysts;
+GRANT SELECT ON VIEW finops.observability.genie_usage_daily_vw TO analysts;
