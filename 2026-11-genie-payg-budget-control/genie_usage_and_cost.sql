@@ -23,6 +23,7 @@
 -- MAGIC ## 1. Free vs. paid DBUs this month, per user, surface, channel and offering type
 -- MAGIC Answers "Which users are using Genie Code?" and "Where are we seeing free versus paid usage?".
 -- MAGIC Free-usage records start on 20 July 2026 (not backfilled).
+-- MAGIC Offering type is aggregated rather than grouped, so a user's free and paid DBUs always stay on the same row.
 
 -- COMMAND ----------
 
@@ -34,15 +35,14 @@ SELECT
     THEN usage_quantity ELSE 0 END) AS free_dbus,
   SUM(CASE WHEN sku_name != 'GENIE_FREE_USAGE'
     THEN usage_quantity ELSE 0 END) AS paid_dbus,
-  product_features.genie.offering_type
+  ARRAY_JOIN(COLLECT_SET(product_features.genie.offering_type), ', ') AS offering_types
 FROM system.billing.usage
 WHERE billing_origin_product = 'GENIE'
   AND usage_date >= DATE_TRUNC('MONTH', CURRENT_DATE)
 GROUP BY
   identity_metadata.run_as,
   usage_metadata.genie.surface,
-  usage_metadata.genie.channel,
-  product_features.genie.offering_type
+  usage_metadata.genie.channel
 ORDER BY user_identity, genie_surface, access_channel;
 
 -- COMMAND ----------
@@ -129,6 +129,8 @@ WHERE u.billing_origin_product = 'GENIE';
 
 -- MAGIC %md
 -- MAGIC ### Daily view — for dashboards and SQL alerts
+-- MAGIC Free and paid DBUs are kept in separate columns on purpose: during the promotion free usage is recorded at the raw
+-- MAGIC basis while paid usage is already reduced by 25%, so a plain sum of the two would be misleading.
 
 -- COMMAND ----------
 
@@ -143,7 +145,6 @@ SELECT
   THEN usage_quantity ELSE 0 END) AS free_dbus,
   SUM(CASE WHEN sku_name != 'GENIE_FREE_USAGE'
   THEN usage_quantity ELSE 0 END) AS paid_dbus,
-  SUM(usage_quantity) AS total_usage_quantity,
   SUM(estimated_list_cost_usd) AS estimated_list_cost_usd
 FROM finops.observability.genie_usage_base_vw
 GROUP BY usage_date, workspace_id, genie_surface,

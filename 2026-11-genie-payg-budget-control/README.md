@@ -15,7 +15,8 @@ Notebook sections:
    and offering type (`product_features.genie.offering_type`, e.g. `Paygo`).
 2. **Estimated list cost** of paid Genie usage, joined to `system.billing.list_prices` on the effective price window.
 3. **Curated views** — `finops.observability.genie_usage_base_vw` (free + paid, `LEFT JOIN` keeps free usage that
-   has no price row) and `finops.observability.genie_usage_daily_vw` (daily rollup for dashboards and SQL alerts).
+   has no price row) and `finops.observability.genie_usage_daily_vw` (daily rollup for dashboards and SQL alerts, with free and
+   paid DBUs in separate columns).
 4. **Grants** — give a consumer group (`analysts` in the example) only the daily view.
 
 ## Running it
@@ -53,4 +54,4 @@ Notebook sections:
 - [System tables reference](https://docs.databricks.com/aws/en/admin/system-tables/)
 - [Genie One MCP server](https://docs.databricks.com/aws/en/agents/mcp-tools/genie-mcp)
 - [September 2026 release notes](https://docs.databricks.com/aws/en/release-notes/product/2026/september)
-- For more monitoring ideas: [AI/BI adoption dashboard](https://github.com/Dynosphere/aibi-adoption-dashboard)
+- For more monitoring ideas: [Databricks adoption monitor](https://github.com/databricks-solutions/dbx-adoption-monitor)
