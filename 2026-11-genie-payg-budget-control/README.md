@@ -1,7 +1,7 @@
 # Genie budget control — usage and cost queries
 
-Code from the post *Controlling Genie budget under the new pay-as-you-go model* (Magnus Helmvee, reviewed by
-EMEA-AIBI-SME-TEAM / Sam Le Corre, 5 Oct 2026).
+Code from the post *Controlling Genie budget under the new pay-as-you-go model* (Magnus Helmvee, 3 Nov 2026).
+Reviewed by Sam Le Corre (EMEA AI/BI SME team), Mike Dobing and Douglas Garcia Torres.
 
 ## What's here
 

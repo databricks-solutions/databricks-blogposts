@@ -2,7 +2,8 @@
 -- MAGIC %md
 -- MAGIC # Genie usage and cost under the pay-as-you-go model
 -- MAGIC
--- MAGIC Code from *Controlling Genie budget under the new pay-as-you-go model* (Magnus Helmvee, 5 Oct 2026).
+-- MAGIC Code from *Controlling Genie budget under the new pay-as-you-go model* (Magnus Helmvee, 3 Nov 2026).
+-- MAGIC Reviewed by Sam Le Corre (EMEA AI/BI SME team), Mike Dobing and Douglas Garcia Torres.
 -- MAGIC
 -- MAGIC Genie usage is billed in `system.billing.usage` with `billing_origin_product = 'GENIE'`:
 -- MAGIC
