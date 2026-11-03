@@ -12,10 +12,12 @@ EMEA-AIBI-SME-TEAM / Sam Le Corre, 5 Oct 2026).
 Notebook sections:
 
 1. **Free vs. paid DBUs this month** per user, Genie surface (`GENIE_ONE`, `GENIE_AGENTS`, `GENIE_CODE`), channel
-   and offering type (`product_features.genie.offering_type`, e.g. `Paygo`).
-2. **Estimated list cost** of paid Genie usage, joined to `system.billing.list_prices` on the effective price window.
+   and offering type (`product_features.genie.offering_type`, e.g. `PAYGO`).
+2. **Estimated list cost** of paid Genie usage this month, joined to `system.billing.list_prices` on SKU, cloud,
+   usage unit and the effective price window.
 3. **Curated views** — `finops.observability.genie_usage_base_vw` (free + paid, `LEFT JOIN` keeps free usage that
-   has no price row) and `finops.observability.genie_usage_daily_vw` (daily rollup for dashboards and SQL alerts, with free and
+   has no price row; `list_price_missing` flags paid rows without a matching price) and
+   `finops.observability.genie_usage_daily_vw` (daily rollup for dashboards and SQL alerts, with free and
    paid DBUs in separate columns).
 4. **Grants** — give a consumer group (`analysts` in the example) only the daily view.
 
@@ -23,8 +25,8 @@ Notebook sections:
 
 - Attach the notebook to a SQL warehouse or serverless compute.
 - You need `SELECT` on `system.billing.usage` and `system.billing.list_prices`.
-- **Attention:** the views expect a catalog `finops` with a schema `observability` — create them before running
-  section 3 (the notebook does this with `CREATE ... IF NOT EXISTS`).
+- **Attention:** the views expect a catalog `finops` with a schema `observability`. The first cell of section 3 creates
+  them and is safe to re-run. If you don't have `CREATE CATALOG`, skip that cell and ask an admin to create the schema.
 - Sections 3–4 create a catalog/schema and views and grant access: they need `CREATE CATALOG` (or an existing
   `finops.observability` schema you can create views in) and the right to grant on it. Replace `analysts` with your group.
 

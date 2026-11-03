@@ -13,7 +13,7 @@
 -- MAGIC | `identity_metadata.run_as` | identity recorded for the workload |
 -- MAGIC | `sku_name` | `GENIE_FREE_USAGE` (tracked, not billed) vs. metered SKUs |
 -- MAGIC | `usage_quantity` | DBU quantity |
--- MAGIC | `product_features.genie.offering_type` | offering type, e.g. `Paygo` |
+-- MAGIC | `product_features.genie.offering_type` | offering type, e.g. `PAYGO` |
 -- MAGIC
 -- MAGIC Requires `SELECT` on `system.billing.usage` and `system.billing.list_prices`, and a SQL warehouse or serverless compute.
 
@@ -48,8 +48,9 @@ ORDER BY user_identity, genie_surface, access_channel;
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## 2. Estimated list cost of paid Genie usage
--- MAGIC Joins priced rows to `system.billing.list_prices` on the effective price window. This is a **list-price** estimate:
+-- MAGIC ## 2. Estimated list cost of paid Genie usage this month
+-- MAGIC Month-to-date, like section 1 (widen the `usage_date` filter for longer history). Joins priced rows to
+-- MAGIC `system.billing.list_prices` on SKU, cloud, usage unit and the effective price window. This is a **list-price** estimate:
 -- MAGIC contractual discounts and promotions can lower the real charge. During the current promotion the 25% discount is
 -- MAGIC already in the billed `usage_quantity` — don't apply it again.
 
@@ -67,10 +68,13 @@ SELECT
 FROM system.billing.usage u
 JOIN system.billing.list_prices lp
   ON u.sku_name = lp.sku_name
+  AND u.cloud = lp.cloud
+  AND u.usage_unit = lp.usage_unit
   AND u.usage_end_time >= lp.price_start_time
   AND (lp.price_end_time IS NULL OR u.usage_end_time < lp.price_end_time)
 WHERE u.billing_origin_product = 'GENIE'
   AND u.sku_name != 'GENIE_FREE_USAGE'
+  AND u.usage_date >= DATE_TRUNC('MONTH', CURRENT_DATE)
 GROUP BY
   u.usage_date,
   u.workspace_id,
@@ -85,8 +89,9 @@ ORDER BY u.usage_date DESC;
 -- MAGIC %md
 -- MAGIC ## 3. Curated views for sharing
 -- MAGIC Publish a small set of views in your own catalog and schema instead of granting consumers the raw system tables.
--- MAGIC **Attention:** the views below expect a catalog `finops` with a schema `observability` — create them first. Creating them needs `CREATE CATALOG` on the
--- MAGIC metastore (and possibly a `MANAGED LOCATION`, depending on your metastore) — skip this cell if they already exist.
+-- MAGIC **Attention:** the views below expect a catalog `finops` with a schema `observability`. Run the next cell to create
+-- MAGIC them (it's safe to re-run). It needs `CREATE CATALOG` on the metastore, and possibly a `MANAGED LOCATION` depending on
+-- MAGIC your metastore. If you don't have `CREATE CATALOG`, skip it and ask an admin to create `finops.observability`.
 
 -- COMMAND ----------
 
@@ -98,6 +103,8 @@ CREATE SCHEMA IF NOT EXISTS finops.observability;
 -- MAGIC %md
 -- MAGIC ### Base view — free and paid usage, with list pricing where available
 -- MAGIC The `LEFT JOIN` is intentional: free usage has no list-price row, so an inner join would silently drop it.
+-- MAGIC `list_price_missing` flags paid rows with no matching price (e.g. a price-window gap or a new SKU): their cost is
+-- MAGIC `NULL`, so cost totals would otherwise be understated without any signal.
 
 -- COMMAND ----------
 
@@ -117,10 +124,13 @@ SELECT
   lp.pricing.effective_list.default AS list_price_usd_per_unit,
   CASE WHEN u.sku_name = 'GENIE_FREE_USAGE' THEN 0
     ELSE u.usage_quantity * lp.pricing.effective_list.default
-  END AS estimated_list_cost_usd
+  END AS estimated_list_cost_usd,
+  (u.sku_name != 'GENIE_FREE_USAGE' AND lp.sku_name IS NULL) AS list_price_missing
 FROM system.billing.usage u
 LEFT JOIN system.billing.list_prices lp
   ON u.sku_name = lp.sku_name
+  AND u.cloud = lp.cloud
+  AND u.usage_unit = lp.usage_unit
   AND u.usage_end_time >= lp.price_start_time
   AND (lp.price_end_time IS NULL OR u.usage_end_time < lp.price_end_time)
 WHERE u.billing_origin_product = 'GENIE';
@@ -145,7 +155,8 @@ SELECT
   THEN usage_quantity ELSE 0 END) AS free_dbus,
   SUM(CASE WHEN sku_name != 'GENIE_FREE_USAGE'
   THEN usage_quantity ELSE 0 END) AS paid_dbus,
-  SUM(estimated_list_cost_usd) AS estimated_list_cost_usd
+  SUM(estimated_list_cost_usd) AS estimated_list_cost_usd,
+  BOOL_OR(list_price_missing) AS list_price_missing
 FROM finops.observability.genie_usage_base_vw
 GROUP BY usage_date, workspace_id, genie_surface,
   access_channel, user_identity;
