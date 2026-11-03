@@ -30,6 +30,10 @@ Notebook sections:
 
 ## Things to keep in mind
 
+- **Be careful with user identities.** The daily view exposes `user_identity` (user emails and service principal IDs)
+  per user. Before granting it, check that sharing individual usage is allowed under your organization's privacy, HR
+  and works council policies and applicable regulations such as GDPR. If not, share an aggregated view (for example by
+  workspace, Genie surface or user group), or remove or mask `user_identity` before granting access.
 - `GENIE_FREE_USAGE` is consumption tracking, not a charge, and has no list-price row. Free-usage records start on
   20 July 2026 and were not backfilled.
 - Billed Genie LLM usage uses the regional Serverless Real-Time Inference SKU, which other products share — always
