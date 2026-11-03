@@ -156,6 +156,11 @@ GROUP BY usage_date, workspace_id, genie_surface,
 -- MAGIC ## 4. Grant consumers only the curated daily view
 -- MAGIC Replace `analysts` with your consumer group. The person creating the views needs access to the source system
 -- MAGIC tables and permission to create objects in the target schema.
+-- MAGIC
+-- MAGIC **Be careful with user identities.** The daily view exposes `user_identity` (user emails and service principal IDs)
+-- MAGIC per user. Before granting it, check that sharing individual usage is allowed under your organization's privacy, HR
+-- MAGIC and works council policies and applicable regulations such as GDPR. If not, share an aggregated view (for example by
+-- MAGIC workspace, Genie surface or user group), or remove or mask `user_identity` before granting access.
 
 -- COMMAND ----------
 
