@@ -1,0 +1,33 @@
+{
+ "variant": "li1_prejoined",
+ "first_load_runs_s": [
+  4.58,
+  4.26,
+  5.41,
+  4.83,
+  4.78,
+  3.75,
+  4.27,
+  4.4,
+  4.52,
+  5.95
+ ],
+ "subsequent_load_runs_s": [
+  2.46,
+  2.34,
+  2.36,
+  2.35,
+  2.28,
+  2.74,
+  2.39,
+  2.53,
+  2.44,
+  2.33
+ ],
+ "first_load_mean_s": 4.675,
+ "first_load_stdev_s": 0.6237387273530481,
+ "subsequent_load_mean_s": 2.422,
+ "subsequent_load_stdev_s": 0.13331666562486982,
+ "first_load_method": "Refresh button after step.sh (invalidate.sh; r_nolc: invalidate.sh nolc)",
+ "subsequent_method": "page navigation right before the Refresh (dashboard cache)"
+}

@@ -1,0 +1,33 @@
+{
+ "variant": "r_nolc",
+ "first_load_runs_s": [
+  13.1,
+  8.95,
+  12.43,
+  7.88,
+  9.98,
+  8,
+  10.67,
+  8.23,
+  8.68,
+  8.86
+ ],
+ "subsequent_load_runs_s": [
+  2.4,
+  2.36,
+  2.4,
+  2.35,
+  2.55,
+  2.43,
+  2.47,
+  2.48,
+  2.37,
+  2.3
+ ],
+ "first_load_mean_s": 9.677999999999999,
+ "first_load_stdev_s": 1.846894089485853,
+ "subsequent_load_mean_s": 2.411,
+ "subsequent_load_stdev_s": 0.0734014834848573,
+ "first_load_method": "Refresh button after step.sh (invalidate.sh; r_nolc: invalidate.sh nolc)",
+ "subsequent_method": "page navigation right before the Refresh (dashboard cache)"
+}

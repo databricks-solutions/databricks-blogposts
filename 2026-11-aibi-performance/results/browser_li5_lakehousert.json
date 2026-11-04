@@ -1,0 +1,33 @@
+{
+ "variant": "li5_lakehousert",
+ "first_load_runs_s": [
+  3.51,
+  3.31,
+  3.63,
+  3.88,
+  3.5,
+  3.65,
+  3.28,
+  3.51,
+  3.62,
+  3.64
+ ],
+ "subsequent_load_runs_s": [
+  2.11,
+  3.97,
+  2.49,
+  2.09,
+  1.92,
+  2.09,
+  5.34,
+  2.14,
+  2.31,
+  2.55
+ ],
+ "first_load_mean_s": 3.553,
+ "first_load_stdev_s": 0.17461385970191487,
+ "subsequent_load_mean_s": 2.701,
+ "subsequent_load_stdev_s": 1.0962304096817928,
+ "first_load_method": "Refresh button after step.sh (invalidate.sh; r_nolc: invalidate.sh nolc)",
+ "subsequent_method": "page navigation right before the Refresh (dashboard cache)"
+}

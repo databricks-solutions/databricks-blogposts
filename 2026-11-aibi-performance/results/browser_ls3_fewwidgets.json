@@ -1,0 +1,33 @@
+{
+ "variant": "ls3_fewwidgets",
+ "first_load_runs_s": [
+  3.39,
+  3.92,
+  4.03,
+  3.52,
+  3.89,
+  3.9,
+  5.05,
+  3.87,
+  3.58,
+  3.99
+ ],
+ "subsequent_load_runs_s": [
+  2.4,
+  2.37,
+  2.44,
+  2.7,
+  2.41,
+  2.34,
+  2.43,
+  2.38,
+  2.3,
+  2.58
+ ],
+ "first_load_mean_s": 3.914,
+ "first_load_stdev_s": 0.45385264373166556,
+ "subsequent_load_mean_s": 2.435,
+ "subsequent_load_stdev_s": 0.1190938005663324,
+ "first_load_method": "Refresh button after step.sh (invalidate.sh; r_nolc: invalidate.sh nolc)",
+ "subsequent_method": "page navigation right before the Refresh (dashboard cache)"
+}

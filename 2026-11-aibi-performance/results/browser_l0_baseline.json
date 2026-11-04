@@ -1,0 +1,33 @@
+{
+ "variant": "l0_baseline",
+ "first_load_runs_s": [
+  9.54,
+  9.83,
+  9.2,
+  8.59,
+  12.56,
+  11.45,
+  12.7,
+  9.04,
+  10.12,
+  10.05
+ ],
+ "subsequent_load_runs_s": [
+  2.84,
+  2.41,
+  2.57,
+  2.35,
+  2.35,
+  2.36,
+  2.33,
+  2.57,
+  2.59,
+  2.29
+ ],
+ "first_load_mean_s": 10.308,
+ "first_load_stdev_s": 1.4454741628806638,
+ "subsequent_load_mean_s": 2.466,
+ "subsequent_load_stdev_s": 0.17244644901469483,
+ "first_load_method": "Refresh button after step.sh (invalidate.sh; r_nolc: invalidate.sh nolc)",
+ "subsequent_method": "page navigation right before the Refresh (dashboard cache)"
+}

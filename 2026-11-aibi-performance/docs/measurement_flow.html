@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI/BI dashboard benchmark – measurement flow</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --lane: #f6f8fa; --lane2: #eef1f4; --border: #d0d7de;
+    --node: #ffffff; --active: #2563eb; --active-bg: #e8f0fe; --dim: 0.28; --code-bg: #f6f8fa;
+    --c-agent: #7c3aed; --c-shell: #0f766e; --c-chrome: #c2410c; --c-db: #b91c1c; --quiet: #94a3b8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --lane: #161b22; --lane2: #11161d; --border: #30363d;
+      --node: #1c2128; --active: #60a5fa; --active-bg: #172a46; --code-bg: #161b22;
+      --c-agent: #a78bfa; --c-shell: #2dd4bf; --c-chrome: #fb923c; --c-db: #f87171; --quiet: #64748b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 1340px; margin: 0 auto; padding: 20px 24px 40px; }
+  h1 { font-size: 20px; margin: 0 0 10px; }
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .tabs button { border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background: none; padding: 7px 16px; font-weight: 600; color: var(--muted); margin-bottom: -1px; }
+  .tabs button.on { border-color: var(--border); background: var(--bg); color: var(--fg); }
+  .tab { display: none; } .tab.on { display: block; }
+  .sub { color: var(--muted); margin: 0 0 14px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  button { font: inherit; padding: 5px 12px; border: 1px solid var(--border); background: var(--node); color: var(--fg); border-radius: 6px; cursor: pointer; }
+  button:hover { border-color: var(--active); }
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .steps button { padding: 4px 10px; font-size: 13px; }
+  .steps button.on { background: var(--active); color: #fff; border-color: var(--active); }
+  svg { width: 100%; height: auto; display: block; }
+  .lane-bg { fill: var(--lane); } .lane-bg.alt { fill: var(--lane2); }
+  .lane-label { font-size: 13px; font-weight: 600; }
+  .lane-file { font-size: 11px; fill: var(--muted); }
+  .node rect { fill: var(--node); stroke: var(--border); stroke-width: 1.2; rx: 8; transition: all .35s; }
+  .node text { font-size: 12px; fill: var(--fg); transition: opacity .35s; }
+  .node text.f { font-size: 10.5px; fill: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .node.on rect { stroke: var(--active); stroke-width: 2.4; fill: var(--active-bg); }
+  .node.off { opacity: var(--dim); }
+  .edge { fill: none; stroke: var(--border); stroke-width: 1.6; transition: all .35s; }
+  .edge.on { stroke: var(--active); stroke-width: 2.4; }
+  .edge.off { opacity: var(--dim); }
+  .edge.loop { stroke-dasharray: 5 4; }
+  .elabel { font-size: 11px; fill: var(--muted); transition: opacity .35s; }
+  .elabel.on { fill: var(--active); font-weight: 600; }
+  .elabel.off { opacity: var(--dim); }
+  .dot { fill: var(--active); }
+  .panel { display: grid; grid-template-columns: 1fr 1.25fr; gap: 18px; margin-top: 14px; }
+  .card { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card h2 { font-size: 16px; margin: 0 0 6px; }
+  .card ul { margin: 6px 0 0 18px; padding: 0; } .card li { margin: 3px 0; }
+  .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .files code { font-size: 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+  .snip { margin: 0 0 10px; }
+  .snip .hdr { font: 600 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--active); margin-bottom: 2px; }
+  pre { margin: 0; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; overflow-x: auto; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+  .tl-title { font-weight: 600; margin: 18px 0 4px; }
+  .tl text { font-size: 11.5px; fill: var(--fg); }
+  .tl .m { fill: var(--muted); }
+  .tl .seg { transition: opacity .35s; }
+  .tl .off { opacity: var(--dim); }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+  @media (max-width: 900px) { .panel { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>How the benchmark was measured</h1>
+  <div class="tabs" id="tabs"></div>
+  <div id="tabroot"></div>
+</main>
+
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const mk = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const NW = 160, NH = 64, LANE_H = 112;
+const LANE_Y = [20, 140, 260, 380];
+
+// =====================================================================================================
+// Scenario 1: browser benchmark
+// =====================================================================================================
+const BROWSER = {
+  id: "browser", tab: "Browser benchmark",
+  intro: `One measurement = one dashboard × one round. 11 dashboards × 10 rounds = 110 lines in <code>results/browser_runs.jsonl</code>.
+    The Claude Code agent drives everything: shell commands via Bash and the browser via the Chrome DevTools MCP.`,
+  tlTitle: `Timing inside <code>measure.js</code> (one evaluate_script call, example run: l0_baseline round 1; each row has its own t = 0)`,
+  note: `Any browser automation that can run an init script and evaluate JavaScript in the page works the same way; the
+    numbers in RESULTS.md were taken with the Chrome DevTools MCP. Copying the returned values into <code>step.sh</code> is a
+    manual step, so check <code>results/browser_runs.jsonl</code> against the tool output when you reproduce it.`,
+  lanes: [
+    { id: "agent", label: "Agent (Claude Code)", file: "Bash + DevTools MCP", color: "--c-agent" },
+    { id: "shell", label: "Local shell / Python", file: "step.sh, record.sh, *.py", color: "--c-shell" },
+    { id: "chrome", label: "Chrome page", file: "published dashboard", color: "--c-chrome" },
+    { id: "db", label: "Databricks", file: "warehouses + dashboard service", color: "--c-db" },
+  ],
+  nodes: {
+    ag_step:    { lane: "agent",  x: 260,  t: ["Bash: ./step.sh <next>", "[prev values]"], f: "step.sh" },
+    sh_step:    { lane: "shell",  x: 260,  t: ["step.sh", "→ invalidate.sh"], f: "step.sh:6-7" },
+    sh_run:     { lane: "shell",  x: 445,  t: ["run_sql.py", "statement execution API"], f: "run_sql.py:25-27" },
+    db_starter: { lane: "db",     x: 445,  t: ["Setup warehouse", "8× ALTER + MV FULL"], f: "90_invalidate_caches.sql" },
+    ag_nav:     { lane: "agent",  x: 630,  t: ["navigate_page(initScript)", "+ evaluate_script"], f: "measure.js" },
+    ch_load:    { lane: "chrome", x: 630,  t: ["page load", "settle(0)"], f: "measure.js:20" },
+    db_cache:   { lane: "db",     x: 630,  t: ["Dashboard cache", "(cached results)"], f: "subsequent load" },
+    ch_refresh: { lane: "chrome", x: 830,  t: ["btn.click() Refresh", "settle(tClick)"], f: "measure.js:21-25" },
+    db_bench:   { lane: "db",     x: 830,  t: ["Bench WH (PRO / RT)", "cold execution"], f: "first load" },
+    ag_ret:     { lane: "agent",  x: 1020, t: ["JSON tool result", "agent reads numbers"], f: "measure.js:26-29" },
+    sh_rec:     { lane: "shell",  x: 1020, t: ["record.sh", "→ browser_runs.jsonl"], f: "record.sh:4" },
+    sh_rep:     { lane: "shell",  x: 1210, t: ["report.py", "server_side.py"], f: "after 110 runs" },
+    db_qh:      { lane: "db",     x: 1210, t: ["system.query", ".history"], f: "server_side.py:35-51" },
+  },
+  edges: [
+    { id: "e1", a: "ag_step", b: "sh_step", label: "Bash", lx: 267, ly: 132 },
+    { id: "e2", a: "sh_step", b: "sh_run" },
+    { id: "e3", a: "sh_run", b: "db_starter", label: "SQL", lx: 452, ly: 260 },
+    { id: "e4", a: "ag_nav", b: "ch_load", label: "initScript: buffer 10000", lx: 637, ly: 200 },
+    { id: "e5", a: "ch_load", b: "db_cache", label: "/lakeview-query/*", lx: 637, ly: 375 },
+    { id: "e6", a: "ch_load", b: "ch_refresh", label: "tClick", lx: 713, ly: 304 },
+    { id: "e7", a: "ch_refresh", b: "db_bench", label: "/lakeview-query/*", lx: 837, ly: 375 },
+    { id: "e8", a: "ch_refresh", b: "ag_ret", label: "return {…}", lx: 837, ly: 200 },
+    { id: "e9", a: "ag_ret", b: "sh_rec", label: "args typed by agent", lx: 1027, ly: 132 },
+    { id: "e10", a: "ag_ret", b: "ag_step", loopY: 10, label: "next dashboard: step.sh records this run + invalidates for the next one (round-robin, 11 × 10)", lx: 340, ly: 7 },
+    { id: "e11", a: "sh_rec", b: "sh_rep" },
+    { id: "e12", a: "sh_rep", b: "db_qh", label: "SDK", lx: 1217, ly: 375 },
+  ],
+  timeline: browserTimeline,
+  steps: [
+    {
+      name: "1 Invalidate",
+      cap: ["step.sh → invalidate.sh → run_sql.py runs sql/90_invalidate_caches.sql on the setup warehouse: SET TBLPROPERTIES on all 8 tables (new Delta versions, same data)", "+ REFRESH MATERIALIZED VIEW … FULL, so neither the SQL result cache nor the dashboard cache can serve the next Refresh. Done before every single measurement (step.sh:5-7)."],
+      nodes: ["ag_step", "sh_step", "sh_run", "db_starter"], edges: ["e1", "e2", "e3"], tl: [],
+      title: "1 · Invalidate the caches (before every single measurement)",
+      files: ["step.sh", "invalidate.sh", "run_sql.py", "sql/90_invalidate_caches.sql", "sql/91_invalidate_caches_nolc.sql"],
+      bullets: [
+        "The agent runs <code>./step.sh &lt;next_variant&gt; …</code>. It records the previous run (step 6) and then invalidates the schema the <em>next</em> dashboard reads.",
+        "run_sql.py fills in <code>${catalog}</code> / <code>${schema_lc}</code> and <code>${nonce}</code> (current Unix time) and runs the file on <b>BENCH_WAREHOUSE_SETUP</b>, ideally a separate warehouse so the bench warehouses stay untouched.",
+        "<code>SET TBLPROPERTIES</code> creates a new Delta version on all 8 tables without changing the data, so cached SQL / dashboard results no longer match. The materialized view is refreshed FULL.",
+        "Variant <code>r_nolc</code> reads the unclustered schema and uses <code>invalidate.sh nolc</code> (sql/91_invalidate_caches_nolc.sql) instead (step.sh:7).",
+      ],
+      code: [
+        ["step.sh:5-7", "next=$1; shift\n[ -n \"$1\" ] && ./record.sh \"$@\"\nif [ \"$next\" = \"r_nolc\" ]; then ./invalidate.sh nolc | tail -1; else ./invalidate.sh | tail -1; fi"],
+        ["invalidate.sh:6-7 + run_sql.py:46", "if [ \"$1\" = \"nolc\" ]; then f=sql/91_invalidate_caches_nolc.sql; else f=sql/90_invalidate_caches.sql; fi\n\"${PYTHON:-python}\" run_sql.py \"$f\" --warehouse setup\n# run_sql.py:46\ntext = config.substitute(open(a.file).read(), nonce=int(time.time()))"],
+        ["sql/90_invalidate_caches.sql:4, 12 (lines 4-11 = 8 tables)", "ALTER TABLE ${catalog}.${schema_lc}.fact_sales SET TBLPROPERTIES ('bench.nonce' = '${nonce}');\n…\nREFRESH MATERIALIZED VIEW ${catalog}.${schema_lc}.agg_product_country_week FULL;"],
+      ],
+    },
+    {
+      name: "2 Navigate",
+      cap: ["navigate_page with initScript performance.setResourceTimingBufferSize(10000): runs before any page script, so no request timing is dropped (default buffer: 250 entries).", "Then evaluate_script runs measure.js in the page. It first waits until this page load has settled; the load is reported as the subsequent load (step 4)."],
+      nodes: ["ag_nav", "ch_load"], edges: ["e4"], tl: ["t0"],
+      title: "2 · Open the published dashboard with a bigger timing buffer",
+      files: ["Chrome DevTools MCP: navigate_page", "measure.js:1-2"],
+      bullets: [
+        "The <code>initScript</code> runs in the new document <b>before any page script</b>. By default the browser keeps only 250 resource-timing entries and silently drops the rest. A dashboard load makes more requests than that, so the last query responses would be lost.",
+        "Right after navigation the agent calls <code>evaluate_script</code> with the whole <code>measure.js</code> function. It runs in the page and returns a Promise that the MCP waits for.",
+        "The script first lets this page load settle (<code>settle(0)</code>). The page is served from the dashboard cache, so this load becomes the <b>subsequent load</b> (step 4). t = 0 is the navigation start (<code>performance.timeOrigin</code>).",
+      ],
+      code: [
+        ["MCP call (agent → Chrome)", String.raw`navigate_page({ type: "url",
+  url: "https://<workspace>/dashboardsv3/<id>/published",
+  initScript: "performance.setResourceTimingBufferSize(10000);" })
+evaluate_script({ function: <contents of measure.js> })`],
+        ["measure.js:1-2", "// Run via chrome-devtools evaluate_script right after navigating to a published dashboard\n// (after ./step.sh <variant>; navigate with initScript: performance.setResourceTimingBufferSize(10000);)"],
+      ],
+    },
+    {
+      name: "3 First load (cold)",
+      cap: ["Page settled → click Refresh, tClick = performance.now() (measure.js:21-24). settle(tClick) polls /lakeview-query/ entries started after the click until none is new for 10 s (8-19).", "first_load_s = last responseEnd − tClick (measure.js:25, 28). Cold: the queries execute on the bench warehouse, 0 result-cache hits."],
+      nodes: ["ch_load", "ch_refresh", "db_bench"], edges: ["e6", "e7"], tl: ["ref", "q2"], cursor: [0, 9.54],
+      title: "3 · First load (cold) = Refresh click → last dashboard-query response",
+      files: ["measure.js:8-19, 21-25, 28"],
+      bullets: [
+        "Once the page from step 2 has settled, the script finds the button whose <code>aria-label</code> starts with 'Refresh', notes <code>tClick = performance.now()</code> and clicks it.",
+        "Only resource entries whose URL contains <code>/lakeview-query/</code> and that <b>started after the click</b> are counted. These are the dashboard's query submit and poll calls; JS, CSS, telemetry and the page-load requests are ignored.",
+        "A resource entry only appears once its response has <b>finished</b>. <code>settle()</code> polls every 500 ms and stops when the count has not changed for 10 s (the long-poll requests take ~5 s). There is a 240 s safety cap. The result is the <b>latest <code>responseEnd</code></b>; the 10 s quiet window is not counted.",
+        "Because of step 1 the queries can't come from any cache and run on the bench warehouse (BENCH_WAREHOUSE_PRO or BENCH_WAREHOUSE_RT). <code>server_side.py</code> confirmed 0 result-cache hits. No new document is created, so the 10000-entry buffer is still in place.",
+      ],
+      code: [
+        ["measure.js:8-19", "  const isQ = e => e.name.includes('/lakeview-query/');\n  const settle = async (since) => {\n    const qs = () => performance.getEntriesByType('resource').filter(e => isQ(e) && e.startTime >= since);\n    let last = -1, stable = 0; const t0 = Date.now();\n    while (Date.now() - t0 < 240000) {\n      const n = qs().length;\n      if (n === last && n > 0) { stable += 500; if (stable >= 10000) break; } else { stable = 0; last = n; }\n      await new Promise(r => setTimeout(r, 500));\n    }\n    const es = qs();\n    return { n: es.length, end: Math.max(...es.map(e => e.responseEnd)) };\n  };"],
+        ["measure.js:21-25", "  const btn = [...document.querySelectorAll('button')].find(b => /^Refresh/.test(b.getAttribute('aria-label') || ''));\n  if (!btn) return { error: 'Refresh button not found', subsequent_load_s: +(nav.end / 1000).toFixed(2) };\n  const tClick = performance.now();\n  btn.click();\n  const ref = await settle(tClick);"],
+        ["measure.js:28", "    first_load_s: +((ref.end - tClick) / 1000).toFixed(2), n_requests_refresh: ref.n,"],
+      ],
+    },
+    {
+      name: "4 Subsequent load (cached)",
+      cap: ["The page load from step 2: settle(0) with the same rule as step 3, counted from t = 0 = navigation start (measure.js:20). subsequent_load_s = latest responseEnd (measure.js:27).", "Served by the dashboard cache. In the script this load is timed before the Refresh: publishing pre-warms the dashboard cache, so no page navigation is ever cold."],
+      nodes: ["ch_load", "db_cache"], edges: ["e5"], tl: ["t0", "nav", "q1", "quiet1"], cursor: [0, 2.84],
+      title: "4 · Subsequent load (cached) = navigation start → last dashboard-query response",
+      files: ["measure.js:20, 27"],
+      bullets: [
+        "This is the page load from step 2. <code>settle(0)</code> uses the same rule as in step 3 but counts every dashboard-query request since t = 0 (the navigation start).",
+        "The load is served from the <b>dashboard cache</b>, which ignores the property commits of step 1. That's why it's the 'subsequent' (cached) number.",
+        "<b>Order in the script:</b> this number is measured <em>before</em> the Refresh of step 3, because the page has to be loaded before Refresh can be clicked. Publishing pre-warms the dashboard cache, so a navigation is never cold; the cold load can only be forced with Refresh. 'First' / 'subsequent' describe what a user experiences, and this chart lists them in that order.",
+      ],
+      code: [
+        ["measure.js:20", "const nav = await settle(0);"],
+        ["measure.js:27", "    subsequent_load_s: +(nav.end / 1000).toFixed(2), n_requests_nav: nav.n,"],
+      ],
+    },
+    {
+      name: "5 Return",
+      cap: ["The function returns {subsequent_load_s, first_load_s, n_requests_*}. The MCP hands it back to the agent as the tool result (measure.js:26-29).", "The browser writes nothing to disk."],
+      nodes: ["ch_refresh", "ag_ret"], edges: ["e8"], tl: ["quiet2"], cursor: [9.54, 19.54],
+      title: "5 · Values come back as the evaluate_script tool result",
+      files: ["measure.js:26-29"],
+      bullets: [
+        "The browser writes <b>nothing to disk</b>. The resolved object is serialized to JSON by the MCP and comes back to the agent as the tool result.",
+        "The request counts (<code>n_requests_*</code>) were only seen in this tool result. They are not stored in <code>browser_runs.jsonl</code>.",
+      ],
+      code: [
+        ["measure.js:26-29", "  return {\n    subsequent_load_s: +(nav.end / 1000).toFixed(2), n_requests_nav: nav.n,\n    first_load_s: +((ref.end - tClick) / 1000).toFixed(2), n_requests_refresh: ref.n,\n  };"],
+        ["example tool result", String.raw`{"subsequent_load_s": 2.84, "n_requests_nav": …, "first_load_s": 9.54, "n_requests_refresh": …}`],
+      ],
+    },
+    {
+      name: "6 Record + loop",
+      cap: ["The agent passes the two numbers as arguments to the next ./step.sh call → record.sh:4 appends one line to results/browser_runs.jsonl, then the caches are invalidated for the next dashboard.", "11 dashboards round-robin × 10 rounds = 110 measurements. One unrecorded warm-up load per dashboard before round 1."],
+      nodes: ["ag_ret", "sh_rec", "ag_step"], edges: ["e9", "e10"], tl: [],
+      title: "6 · Record the run (agent copies the numbers) and move to the next dashboard",
+      files: ["step.sh:6", "record.sh:4", "results/browser_runs.jsonl"],
+      bullets: [
+        "The agent <b>types the two numbers as arguments</b> into the next <code>./step.sh</code> call. This is the only link between browser and file, and it was done by hand.",
+        "record.sh appends one JSON line with the local timestamp. In the same call step.sh invalidates the caches for the next dashboard (back to step 1).",
+        "Order: 10 rounds, all 11 dashboards round-robin in a fixed order. Each dashboard got one warm-up load before round 1 that wasn't recorded (RESULTS.md:58-60).",
+      ],
+      code: [
+        ["agent's Bash call", String.raw`./step.sh li1_prejoined l0_baseline 1 9.54 2.84`],
+        ["record.sh:4", "echo \"{\\\"variant\\\":\\\"$1\\\",\\\"run\\\":$2,\\\"first_load_s\\\":$3,\\\"subsequent_load_s\\\":$( [ \"$4\" = \"-\" ] && echo null || echo $4 ),\\\"ts\\\":\\\"$(date +%H:%M:%S)\\\"}\" >> results/browser_runs.jsonl"],
+        ["results/browser_runs.jsonl:1", "{\"variant\":\"l0_baseline\",\"run\":1,\"first_load_s\":9.54,\"subsequent_load_s\":2.84,\"ts\":\"13:31:17\"}"],
+      ],
+    },
+    {
+      name: "7 Aggregate + cross-check",
+      cap: ["report.py: mean ± sd per variant and deltas with Welch t (report.py:22-34) → results/browser_<variant>.json, summary.md.", "server_side.py: per Refresh, first query start → last query end from system.query.history as an independent warehouse-side check (PRO only)."],
+      nodes: ["sh_rec", "sh_rep", "db_qh"], edges: ["e11", "e12"], tl: [],
+      title: "7 · Aggregate (mean ± sd, Welch t) and cross-check against the warehouse",
+      files: ["report.py:22-45", "server_side.py:35-51", "results/browser_<variant>.json", "results/summary.md", "results/server_side.json"],
+      bullets: [
+        "report.py reads all 110 lines and groups them by variant. It writes <code>browser_&lt;variant&gt;.json</code> and computes deltas with Welch t-statistics for summary.md and RESULTS.md.",
+        "server_side.py is an independent check. For each Refresh it groups the dashboard's queries in <code>system.query.history</code> (starts within 60 s of each other). page_s = last end − first start on the warehouse, along with the result-cache hit count, disk cache and pruned files.",
+        "This only works on the PRO warehouse: RT queries are not logged (server_side.py:1).",
+      ],
+      code: [
+        ["report.py:22-34", "def welch(a, b):\n    return (st.mean(a) - st.mean(b)) / math.sqrt(st.variance(a) / len(a) + st.variance(b) / len(b))\n\n\ndef delta(a, b):\n    return f\"{(st.mean(a) / st.mean(b) - 1) * 100:+.0f}% ({welch(a, b):+.1f})\"\n\n\nbrowser = collections.defaultdict(lambda: {\"first\": [], \"sub\": []})\nfor line in open(os.path.join(R, \"browser_runs.jsonl\")):\n    r = json.loads(line)\n    browser[r[\"variant\"]][\"first\"].append(r[\"first_load_s\"])\n    browser[r[\"variant\"]][\"sub\"].append(r[\"subsequent_load_s\"])"],
+        ["server_side.py:43-48", "  SELECT *, SUM(new_grp) OVER (PARTITION BY d ORDER BY start_time) AS grp FROM (\n    SELECT *, CASE WHEN unix_timestamp(start_time) - unix_timestamp(LAG(start_time) OVER (PARTITION BY d ORDER BY start_time)) < 60\n                   THEN 0 ELSE 1 END AS new_grp FROM q))\nSELECT d, grp, COUNT(*) AS n, MIN(start_time) AS t0,\n  (unix_millis(MAX(end_time)) - unix_millis(MIN(start_time))) / 1000.0 AS page_s,\n  SUM(CAST(from_result_cache AS INT)) AS n_cached, AVG(read_io_cache_percent) AS disk_cache_pct,"],
+      ],
+    },
+  ],
+};
+
+// =====================================================================================================
+// Scenario 2: SQL replay benchmark
+// =====================================================================================================
+// per-query times of l0_baseline, first-load run 1 (results/replay_l0_baseline_pro.json, per_widget_s[*][0]); page = 9.17 s
+const REPLAY_RUN1 = [
+  ["flt_p_split", 0.47], ["flt_p_time", 0.36], ["flt_p_weeks", 0.36], ["flt_p_scale", 0.38], ["flt_p_metric", 0.36],
+  ["flt_f_brand", 2.29], ["flt_f_country_group", 3.42], ["flt_f_country", 1.62], ["flt_f_year", 2.43], ["flt_f_quarter", 2.42],
+  ["flt_f_month", 4.05], ["flt_f_week", 2.44], ["flt_f_product_type", 4.02], ["flt_f_new_repeat", 1.66], ["flt_f_pack_size", 6.79],
+  ["flt_f_loyalty", 6.94], ["w_main", 8.57], ["w_units_sold", 7.68], ["w_avg_pr", 6.11], ["w_avg_pr_wo", 4.93],
+  ["w_delta_pp", 3.63], ["w_delta_py", 8.95], ["w_delta_total", 6.24], ["w_hit_rate", 3.53], ["w_n_products", 7.67],
+  ["w_share_1s", 3.29], ["w_share_2s", 3.18], ["w_response_rate", 8.01],
+];
+const REPLAY = {
+  id: "replay", tab: "SQL replay benchmark",
+  intro: `One run = all 28 landing-page queries of a variant (12 chart + 16 filter-dropdown queries for the baseline), fired in parallel
+    straight at the SQL warehouse with <code>databricks-sql-connector</code>, without the dashboard service or a browser in between.
+    10 runs without result cache + 10 with it, per variant. Output: <code>results/replay_&lt;variant&gt;_&lt;warehouse&gt;.json</code>.`,
+  tlTitle: `Timing inside <code>bench.run_page()</code> (example run: l0_baseline on PRO, first-load run 1 – real per-query times)`,
+  note: `<code>python bench.py l0_baseline --check</code> runs only the main chart and prints its rows (correctness check).
+    Note: the replay does not invalidate tables; "first load" means result cache off on a warm warehouse (disk cache stays warm).`,
+  lanes: [
+    { id: "shell", label: "Local shell", file: "one call per variant", color: "--c-agent" },
+    { id: "py", label: "Python runner", file: "bench.py", color: "--c-shell" },
+    { id: "conn", label: "SQL sessions", file: "databricks-sql-connector", color: "--c-chrome" },
+    { id: "wh", label: "Databricks", file: "bench warehouse", color: "--c-db" },
+  ],
+  nodes: {
+    sh_cmd:   { lane: "shell", x: 260,  t: ["python bench.py <variant>", "--runs 10 [--warehouse]"], f: "bench.py:12, 104-107" },
+    py_build: { lane: "py",    x: 260,  t: ["page1_queries(v)", "dashboard JSON → SQL"], f: "bench.py:46-62" },
+    py_lit:   { lane: "py",    x: 445,  t: ["literal_sql()", "default params inlined"], f: "bench.py:31-43" },
+    py_warm:  { lane: "py",    x: 630,  t: ["warm-up (not measured)", "SELECT 1 + 1 page"], f: "bench.py:116-118" },
+    cn_open:  { lane: "conn",  x: 630,  t: ["connect() × 28", "use_cached_result=…"], f: "bench.py:65-71, 83-85" },
+    py_time:  { lane: "py",    x: 830,  t: ["t0 = perf_counter()", "28 threads in parallel"], f: "bench.py:87-90" },
+    cn_exec:  { lane: "conn",  x: 830,  t: ["run_one():", "execute + fetchall"], f: "bench.py:74-79" },
+    wh:       { lane: "wh",    x: 830,  t: ["Bench WH (PRO / RT)", "28 queries at once"], f: "BENCH_WAREHOUSE_PRO / _RT" },
+    py_loop:  { lane: "py",    x: 1020, t: ["10× cache off", "prime + 10× cache on"], f: "bench.py:120-130" },
+    sh_json:  { lane: "shell", x: 1020, t: ["replay_<key>_<wh>.json", "+ console log"], f: "bench.py:132-150" },
+    sh_rep:   { lane: "shell", x: 1210, t: ["report.py", "summary.md / RESULTS.md"], f: "report.py:38" },
+  },
+  edges: [
+    { id: "r1", a: "sh_cmd", b: "py_build", label: "python", lx: 267, ly: 132 },
+    { id: "r2", a: "py_build", b: "py_lit" },
+    { id: "r3", a: "py_lit", b: "py_warm" },
+    { id: "r4", a: "py_warm", b: "cn_open", label: "connect() per query", lx: 637, ly: 252 },
+    { id: "r5", a: "cn_open", b: "wh", label: "warm-up page", lx: 560, ly: 440 },
+    { id: "r7", a: "cn_open", b: "cn_exec" },
+    { id: "r8", a: "cn_exec", b: "wh", label: "28 × SQL", lx: 837, ly: 375 },
+    { id: "r9", a: "py_time", b: "py_loop" },
+    { id: "r10", a: "py_loop", b: "py_time", loopY: 146, label: "run_page() × 21 (10 off, 1 prime, 10 on)", lx: 860, ly: 157 },
+    { id: "r11", a: "py_loop", b: "sh_json", label: "json.dump", lx: 1027, ly: 132 },
+    { id: "r12", a: "sh_json", b: "sh_rep" },
+  ],
+  timeline: replayTimeline,
+  steps: [
+    {
+      name: "1 Build queries",
+      cap: ["page1_queries() rebuilds the dashboard JSON with the same builder and turns every page-1 widget query into SELECT <fields> FROM (<dataset>) t GROUP BY <fields> (bench.py:46-62),", "including the 16 filter-dropdown queries. Dashboard parameters are inlined with their default values (literal_sql, bench.py:31-43). Baseline: 28 queries."],
+      nodes: ["sh_cmd", "py_build", "py_lit"], edges: ["r1", "r2"], tl: [],
+      title: "1 · Rebuild exactly the SQL the dashboard runs on page 1",
+      files: ["bench.py:104-107", "bench.py:31-62", "build.py (VARIANTS, dashboard builder)"],
+      bullets: [
+        "The runner doesn't read the deployed dashboard. It calls the <b>same builder</b> that generated it (<code>build.build_dashboard(variant)</code>), so the dataset SQL and widget fields are identical.",
+        "For every widget on the first page it takes each widget query and wraps the dataset like Lakeview does: <code>SELECT &lt;fields&gt; FROM (&lt;dataset&gt;) t GROUP BY &lt;fields&gt;</code> (no GROUP BY for disaggregated widgets). This includes the filter widgets, so the dropdown value queries (<code>flt_*</code>) are part of the page.",
+        "Parameter-binding queries without fields are skipped. Dashboard parameters (<code>:p_*</code>, <code>:f_*</code>) are replaced by their <b>default values as literals</b>; multi-selects become <code>CAST(array(...) AS ARRAY&lt;STRING&gt;)</code>.",
+        "Baseline: 28 queries = 12 chart + 16 filter queries (<code>n_queries</code> / <code>n_chart_queries</code> in the result JSON).",
+      ],
+      code: [
+        ["bench.py:46-62", "def page1_queries(variant: dict, overrides=None) -> list[tuple[str, str]]:\n    dash, _ = build.build_dashboard(variant)\n    ds = {d[\"name\"]: \"\".join(d[\"queryLines\"]) for d in dash[\"datasets\"]}\n    out = []\n    for item in dash[\"pages\"][0][\"layout\"]:\n        w = item[\"widget\"]\n        for q in w.get(\"queries\", []):\n            qq = q[\"query\"]\n            if \"fields\" not in qq:  # parameter-binding query - no SQL of its own\n                continue\n            body = literal_sql(ds[qq[\"datasetName\"]], overrides)\n            cols = \", \".join(f[\"expression\"] for f in qq[\"fields\"])\n            if qq.get(\"disaggregated\"):\n                out.append((w[\"name\"], f\"SELECT {cols} FROM ({body}) t\"))\n            else:\n                out.append((w[\"name\"], f\"SELECT {cols} FROM ({body}) t GROUP BY {cols}\"))\n    return out"],
+        ["bench.py:37-43 (inside literal_sql)", "    def rep(m):\n        v = vals[m.group(1)]\n        if isinstance(v, list):\n            return \"CAST(array(\" + \", \".join(f\"'{x}'\" for x in v) + \") AS ARRAY<STRING>)\"\n        return f\"'{v}'\"\n\n    return re.sub(r\":(p_\\w+|f_\\w+)\\b\", rep, sql)"],
+      ],
+    },
+    {
+      name: "2 Warm-up",
+      cap: ["SELECT 1 to make sure the warehouse is running, then one full page load without result cache that is not recorded (bench.py:116-118).", "So 'first load' = warm warehouse and disk cache, no result cache. The replay does not invalidate tables."],
+      nodes: ["py_lit", "py_warm", "cn_open", "wh"], edges: ["r3", "r4", "r5"], tl: [],
+      title: "2 · Warm the warehouse before anything is timed",
+      files: ["bench.py:116-118"],
+      bullets: [
+        "First a <code>SELECT 1</code> to make sure the warehouse is running (startup time is not measured).",
+        "Then one <b>full page load without result cache</b> that isn't recorded. <code>SELECT 1</code> alone doesn't warm the disk cache, so without this the first measured run would be an outlier.",
+        "So 'first load' in the replay means: <b>warm warehouse, warm disk cache, no result cache</b>. Unlike the browser runs, the tables are not invalidated here.",
+      ],
+      code: [
+        ["bench.py:116-118", "    # warm the warehouse (not measured) with one real page load - SELECT 1 does not warm the disk cache\n    run_page(wh, [(\"warmup\", \"SELECT 1\")], cache=False, schema=schema)\n    run_page(wh, queries, cache=False, schema=schema)"],
+      ],
+    },
+    {
+      name: "3 Open sessions",
+      cap: ["run_page() opens one databricks-sql-connector session per query, in parallel, before the timer starts (bench.py:82-85),", "with use_cached_result=false (first load) or true (subsequent load) as session configuration (bench.py:65-71)."],
+      nodes: ["py_warm", "py_time", "cn_open"], edges: ["r4"], tl: ["conn"], cursor: [-1.6, 0],
+      title: "3 · One session per query, opened before the clock starts",
+      files: ["bench.py:65-71", "bench.py:82-85"],
+      bullets: [
+        "<code>run_page()</code> opens <b>one connection per query</b> (28) in parallel. This is <b>not timed</b>, because the dashboard backend also keeps warm sessions.",
+        "The result cache is switched per session: <code>use_cached_result=false</code> for first loads, <code>true</code> for subsequent loads.",
+        "Auth via <code>config.PROFILE</code> (<code>DATABRICKS_CONFIG_PROFILE</code>, otherwise the SDK's default auth chain).",
+        "Lesson learned: the first replay attempt opened a session per query <em>inside</em> the timing, which inflated the times. It was discarded and re-run.",
+      ],
+      code: [
+        ["bench.py:65-71", "def connect(warehouse_id: str, cache: bool, schema: str):\n    cfg = Config(profile=config.PROFILE)\n    return dbsql.connect(server_hostname=cfg.host.replace(\"https://\", \"\"),\n                         http_path=f\"/sql/1.0/warehouses/{warehouse_id}\",\n                         access_token=cfg.authenticate()[\"Authorization\"].split(\" \", 1)[1],\n                         catalog=config.CATALOG, schema=schema,\n                         session_configuration={\"use_cached_result\": \"true\" if cache else \"false\"})"],
+        ["bench.py:82-85", "def run_page(warehouse_id, queries, cache, schema):\n    # sessions are opened up front (not timed) - the dashboard backend keeps warm sessions as well\n    with ThreadPoolExecutor(max_workers=len(queries)) as ex:\n        conns = list(ex.map(lambda _: connect(warehouse_id, cache, schema), queries))"],
+      ],
+    },
+    {
+      name: "4 Timed page",
+      cap: ["t0 = perf_counter(), then 28 threads fire all queries at once. Each thread times its own execute() + fetchall() (bench.py:74-79).", "Page time = until the thread pool is done, i.e. the slowest query has returned all rows (bench.py:86-90). Example: slowest query 8.95 s → page 9.17 s."],
+      nodes: ["py_time", "cn_open", "cn_exec", "wh"], edges: ["r7", "r8"], tl: ["t0", "bars", "page"], cursor: [0, 9.17],
+      title: "4 · Page time = t0 → the last of the 28 parallel queries has returned all rows",
+      files: ["bench.py:74-79", "bench.py:86-93"],
+      bullets: [
+        "<code>t0 = time.perf_counter()</code>, then all 28 queries are submitted at once, <b>one thread per query</b>, like the dashboard firing all widgets in parallel.",
+        "Each thread times its own query: <code>execute()</code> + <code>fetchall()</code>, so the time includes queueing on the warehouse and transferring the result rows. That is the per-query time (<code>per_widget_s</code>).",
+        "The page time is measured when the thread pool is done, i.e. when the <b>slowest query</b> is finished (here w_delta_py at 8.95 s → page 9.17 s, the rest is client overhead).",
+        "Sessions are closed afterwards, outside the timing (<code>finally</code>).",
+      ],
+      code: [
+        ["bench.py:74-79", "def run_one(conn, name, q):\n    with conn.cursor() as cur:\n        t0 = time.perf_counter()\n        cur.execute(q)\n        rows = cur.fetchall()\n        return name, time.perf_counter() - t0, len(rows), rows"],
+        ["bench.py:86-93", "    try:\n        t0 = time.perf_counter()\n        with ThreadPoolExecutor(max_workers=len(queries)) as ex:\n            res = list(ex.map(lambda cq: run_one(cq[0], *cq[1]), zip(conns, queries)))\n        return time.perf_counter() - t0, res\n    finally:\n        for c in conns:\n            c.close()"],
+      ],
+    },
+    {
+      name: "5 First vs subsequent",
+      cap: ["10 × run_page(cache=False) = first loads, 1 priming run with cache on (not recorded), 10 × run_page(cache=True) = subsequent loads (bench.py:119-130).", "Per-query times are kept for the first-load runs. The slowest query per run is printed to the log."],
+      nodes: ["py_time", "py_loop", "wh"], edges: ["r9", "r10"], tl: ["page", "sub"], cursor: [0, 9.17],
+      title: "5 · 10 runs without result cache, one priming run, 10 runs with result cache",
+      files: ["bench.py:119-130"],
+      bullets: [
+        "<b>First load:</b> 10 × <code>run_page(..., cache=False)</code>. Every query computes on the warehouse. The slowest query per run is printed to the log.",
+        "Then <b>one priming run</b> with cache on (not recorded), so the result cache holds every query.",
+        "<b>Subsequent load:</b> 10 × <code>run_page(..., cache=True)</code>. Results come from the SQL result cache (baseline run 1: 2.42 s). Per-query times are only stored for the first-load runs.",
+        "The PRO variants ran one after another, so they never compete for the warehouse. The RT variants can run in parallel to them (README §4).",
+      ],
+      code: [
+        ["bench.py:119-130", "    first, subsequent, per_widget = [], [], {}\n    for i in range(a.runs):\n        t, res = run_page(wh, queries, cache=False, schema=schema)\n        first.append(t)\n        for name, dt, _, _ in res:\n            per_widget.setdefault(name, []).append(dt)\n        print(f\"run {i+1}: first load {t:.2f}s  (slowest: {max(res, key=lambda r: r[1])[0]})\", flush=True)\n    run_page(wh, queries, cache=True, schema=schema)  # prime result cache\n    for i in range(a.runs):\n        t, _ = run_page(wh, queries, cache=True, schema=schema)\n        subsequent.append(t)\n        print(f\"run {i+1}: subsequent load {t:.2f}s\", flush=True)"],
+        ["console output (bench.py:125)", "run 1: first load 9.17s  (slowest: w_delta_py)"],
+      ],
+    },
+    {
+      name: "6 Save + report",
+      cap: ["The runner writes results/replay_<variant>_<warehouse>.json itself: raw run times, mean / median / stdev and per-query times (bench.py:132-150).", "report.py:38 loads it next to the browser runs for the result tables."],
+      nodes: ["py_loop", "sh_json", "sh_rep"], edges: ["r11", "r12"], tl: [],
+      title: "6 · Write the result file and combine it with the browser numbers",
+      files: ["bench.py:132-150", "report.py:36-46"],
+      bullets: [
+        "The runner writes the result file itself, so nothing is copied by hand: all raw run times, mean / median / stdev and the per-query times. <code>--append</code> adds runs to an existing file.",
+        "report.py loads <code>replay_&lt;key&gt;_&lt;warehouse&gt;.json</code> next to the browser runs and puts both into the same tables (replay first / subsequent, browser first / subsequent).",
+        "<code>--check</code> (bench.py:109-114) runs only the main chart and prints its rows. This was used to check that all variants return identical results.",
+      ],
+      code: [
+        ["bench.py:138-150", "    result = {\n        \"variant\": v[\"key\"], \"label\": v[\"label\"], \"warehouse\": a.warehouse or v[\"warehouse\"], \"schema\": v[\"schema\"],\n        \"n_queries\": len(queries),\n        \"n_chart_queries\": sum(1 for q in queries if not q[0].startswith((\"flt_\", \"p2_flt_\"))),\n        \"first_load_s\": first, \"subsequent_load_s\": subsequent,\n        \"first_load_median_s\": statistics.median(first), \"subsequent_load_median_s\": statistics.median(subsequent),\n        \"first_load_mean_s\": statistics.mean(first), \"subsequent_load_mean_s\": statistics.mean(subsequent),\n        \"first_load_stdev_s\": statistics.stdev(first), \"subsequent_load_stdev_s\": statistics.stdev(subsequent),\n        \"per_widget_median_s\": {k: statistics.median(x) for k, x in per_widget.items()},\n        \"per_widget_s\": per_widget,\n    }\n    os.makedirs(os.path.join(HERE, \"results\"), exist_ok=True)\n    json.dump(result, open(path, \"w\"), indent=1)"],
+        ["report.py:38", "    rep = json.load(open(os.path.join(R, f\"replay_{k}_{v['warehouse']}.json\")))"],
+      ],
+    },
+  ],
+};
+
+// =====================================================================================================
+// timelines
+// =====================================================================================================
+function browserTimeline(tl) {
+  // example numbers: l0_baseline run 1 (first 9.54 s, subsequent 2.84 s); quiet windows are 10 s each.
+  // Each row has its own t = 0. In the script row ② (page navigation) runs before row ① (Refresh), see step 4.
+  tl.setAttribute("viewBox", "0 0 1300 190");
+  const X0 = 230, SCALE = 51, tx = (s) => X0 + s * SCALE;
+  const FIRST = 9.54, SUB = 2.84, YA = 44, YB = 114;
+  axis(tl, tx, 0, 20, 2, 166);
+  const label = (y, a, b) => {
+    const t = mk("text", { x: 14, y: y + 9, "font-weight": 600 }, tl); t.textContent = a;
+    const u = mk("text", { x: 14, y: y + 25, class: "m" }, tl); u.textContent = b;
+  };
+  label(YA, "① First load (cold)", "t = 0: Refresh click (tClick)");
+  label(YB, "② Subsequent load (cached)", "t = 0: navigation start");
+  const els = {
+    ref: seg(tl, tx(0), tx(FIRST), YA, 22, "var(--c-db)", "first_load_s = ref.end − tClick = 9.54 s"),
+    q2: ticks(tl, tx, 0.4, FIRST, YA + 26),
+    quiet2: seg(tl, tx(FIRST), tx(FIRST + 10), YA, 22, "var(--quiet)", "10 s quiet → return {…}", { opacity: 0.45, inside: true }),
+    t0: seg(tl, tx(0) - 1, tx(0) + 2, YB - 6, 46, "var(--c-agent)", ""),
+    nav: seg(tl, tx(0), tx(SUB), YB, 22, "var(--c-chrome)", "subsequent_load_s = nav.end = 2.84 s"),
+    q1: ticks(tl, tx, 0.3, SUB, YB + 26),
+    quiet1: seg(tl, tx(SUB), tx(SUB + 10), YB, 22, "var(--quiet)", "10 s quiet → settled, then the script clicks Refresh (row ①)", { opacity: 0.45, inside: true }),
+  };
+  mk("line", { x1: tx(0), y1: YA - 6, x2: tx(0), y2: YA + 40, stroke: "var(--c-agent)", "stroke-width": 3 }, els.ref);
+  return { els, tx };
+}
+
+function replayTimeline(tl) {
+  const ROW = 6.2, Y0 = 34, H = Y0 + REPLAY_RUN1.length * ROW;
+  tl.setAttribute("viewBox", `0 0 1300 ${H + 92}`);
+  const X0 = 250, SCALE = 100, tx = (s) => X0 + s * SCALE;
+  axis(tl, tx, 0, 10, 1, H + 52);
+  const els = {};
+  els.conn = seg(tl, tx(-1.9), tx(-0.1), Y0, H - Y0, "var(--quiet)", "connect() × 28 – not timed", { opacity: 0.45 });
+  els.t0 = seg(tl, tx(0) - 1, tx(0) + 2, Y0 - 16, H - Y0 + 22, "var(--c-agent)", "t0 = perf_counter()");
+  const bars = mk("g", { class: "seg" }, tl);
+  REPLAY_RUN1.forEach(([name, s], i) => {
+    const flt = name.startsWith("flt_");
+    mk("rect", { x: tx(0), y: Y0 + i * ROW, width: s * SCALE, height: ROW - 1.4, rx: 1.5,
+      fill: flt ? "var(--c-shell)" : "var(--c-chrome)", opacity: 0.85 }, bars);
+  });
+  const lg = (x, color, txt) => { mk("rect", { x, y: H + 8, width: 10, height: 10, rx: 2, fill: color }, bars);
+    const t = mk("text", { x: x + 14, y: H + 17 }, bars); t.textContent = txt; };
+  lg(tx(0), "var(--c-shell)", "16 filter-dropdown queries (flt_*)");
+  lg(tx(2.6), "var(--c-chrome)", "12 chart queries (w_*) – each bar = execute + fetchall in its own thread");
+  els.bars = bars;
+  els.page = seg(tl, tx(9.17) - 1, tx(9.17) + 2, Y0 - 16, H - Y0 + 22, "var(--c-db)", "");
+  { const t = mk("text", { x: tx(9.17) - 4, y: Y0 - 20, "text-anchor": "end" }, els.page); t.textContent = "pool done → first_load = 9.17 s (slowest: w_delta_py 8.95 s)"; }
+  els.sub = seg(tl, tx(0), tx(2.42), H + 26, 10, "var(--c-agent)", "");
+  { const t = mk("text", { x: tx(2.42) + 6, y: H + 35 }, els.sub); t.textContent = "subsequent run 1 (result cache on): 2.42 s"; }
+  return { els, tx };
+}
+
+function axis(tl, tx, from, to, step, y) {
+  mk("line", { x1: tx(from), y1: y, x2: tx(to) + 10, y2: y, stroke: "var(--border)" }, tl);
+  for (let s = from; s <= to; s += step) {
+    mk("line", { x1: tx(s), y1: y, x2: tx(s), y2: y + 5, stroke: "var(--border)" }, tl);
+    const t = mk("text", { x: tx(s), y: y + 18, "text-anchor": "middle", class: "m" }, tl); t.textContent = s + " s";
+  }
+}
+function seg(tl, x1, x2, y, h, fill, label, extra = {}) {
+  const g = mk("g", { class: "seg" }, tl);
+  mk("rect", { x: x1, y, width: Math.max(2, x2 - x1), height: h, rx: 4, fill, opacity: extra.opacity ?? 1 }, g);
+  if (label && extra.inside) { const t = mk("text", { x: x1 + 6, y: y + 15 }, g); t.textContent = label; }
+  else if (label) { const t = mk("text", { x: x1 + 4, y: y - 5 }, g); t.textContent = label; }
+  return g;
+}
+function ticks(tl, tx, from, to, y) { // request completions, denser at the start
+  const g = mk("g", { class: "seg" }, tl);
+  for (let i = 0; i < 18; i++) { const s = from + (to - from) * Math.pow(i / 17, 0.8);
+    mk("line", { x1: tx(s), y1: y, x2: tx(s), y2: y + 10, stroke: "var(--fg)", "stroke-width": 1, opacity: 0.6 }, g); }
+  return g;
+}
+
+// =====================================================================================================
+// shared drawing of lanes, nodes and edges (interactive page + static SVG export)
+// =====================================================================================================
+function drawFlow(S, flow) {
+  const laneY = Object.fromEntries(S.lanes.map((l, i) => [l.id, LANE_Y[i]]));
+  const laneMid = (l) => laneY[l] + LANE_H / 2;
+  const cx = (n) => S.nodes[n].x, cy = (n) => laneMid(S.nodes[n].lane);
+
+  function edgePath(e) {
+    const ax = cx(e.a), ay = cy(e.a), bx = cx(e.b), by = cy(e.b);
+    if (e.loopY !== undefined) return `M ${ax} ${ay - NH / 2} V ${e.loopY} H ${bx} V ${by - NH / 2}`;
+    if (ay === by) { const s = Math.sign(bx - ax); return `M ${ax + s * NW / 2} ${ay} H ${bx - s * NW / 2}`; }
+    const s = Math.sign(by - ay);
+    if (ax === bx) return `M ${ax} ${ay + s * NH / 2} V ${by - s * NH / 2}`;
+    return `M ${ax} ${ay + s * NH / 2} V ${by} H ${bx - Math.sign(bx - ax) * NW / 2}`;
+  }
+
+  S.lanes.forEach((l, i) => {
+    mk("rect", { x: 0, y: laneY[l.id], width: 1300, height: LANE_H, class: "lane-bg" + (i % 2 ? " alt" : ""), rx: 6 }, flow);
+    mk("rect", { x: 0, y: laneY[l.id], width: 5, height: LANE_H, fill: `var(${l.color})`, rx: 2 }, flow);
+    const t = mk("text", { x: 16, y: laneMid(l.id) - 4, class: "lane-label", fill: `var(${l.color})` }, flow); t.textContent = l.label;
+    const f = mk("text", { x: 16, y: laneMid(l.id) + 13, class: "lane-file" }, flow); f.textContent = l.file;
+  });
+  const defs = mk("defs", {}, flow);
+  const marker = mk("marker", { id: `arr-${S.id}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, defs);
+  mk("path", { d: "M0,0 L10,5 L0,10 z", fill: "var(--muted)" }, marker);
+  const edgeEls = {}, labelEls = {}, nodeEls = {};
+  S.edges.forEach((e) => {
+    edgeEls[e.id] = mk("path", { d: edgePath(e), class: "edge" + (e.loopY !== undefined ? " loop" : ""), "marker-end": `url(#arr-${S.id})` }, flow);
+    if (e.label) { const t = mk("text", { x: e.lx, y: e.ly, class: "elabel" }, flow); t.textContent = e.label; labelEls[e.id] = t; }
+  });
+  for (const [id, n] of Object.entries(S.nodes)) {
+    const g = mk("g", { class: "node" }, flow);
+    const x = n.x - NW / 2, y = laneMid(n.lane) - NH / 2;
+    mk("rect", { x, y, width: NW, height: NH, rx: 8 }, g);
+    n.t.forEach((line, i) => { const t = mk("text", { x: n.x, y: y + 20 + i * 15, "text-anchor": "middle" }, g); t.textContent = line; });
+    const f = mk("text", { x: n.x, y: y + NH - 9, "text-anchor": "middle", class: "f" }, g); f.textContent = n.f;
+    nodeEls[id] = g;
+  }
+  const dot = mk("circle", { r: 6, class: "dot", opacity: 0 }, flow);
+  return { nodeEls, edgeEls, labelEls, dot, edgePath };
+
+}
+
+// =====================================================================================================
+// generic flow engine (one instance per tab)
+// =====================================================================================================
+function Flow(S, root) {
+  root.innerHTML = `<p class="sub">${S.intro}</p>
+    <div class="controls"><button class="play">❚❚ Pause</button><button class="prev">◀ Prev</button><button class="next">Next ▶</button><div class="steps"></div></div>
+    <svg class="flow" viewBox="0 0 1300 520" role="img"></svg>
+    <div class="tl-title">${S.tlTitle}</div><svg class="tl" role="img"></svg>
+    <div class="panel"><div class="card what"></div><div class="card code"></div></div>
+    <p class="note">${S.note}</p>`;
+  const q = (c) => root.querySelector(c);
+  const flow = q(".flow"), stepBar = q(".steps");
+  const { nodeEls, edgeEls, labelEls, dot } = drawFlow(S, flow);
+
+  const tl = q(".tl"), T = S.timeline(tl);
+  const cursor = mk("line", { y1: 14, y2: tl.viewBox.baseVal.height - 30, stroke: "var(--active)", "stroke-width": 2, opacity: 0 }, tl);
+
+  let cur = 0, playing = true, timer = null, raf = null, active = false;
+  S.steps.forEach((s, i) => { const b = document.createElement("button"); b.textContent = s.name; b.onclick = () => go(i, true); stepBar.appendChild(b); });
+
+  function render(i) {
+    const s = S.steps[i];
+    [...stepBar.children].forEach((b, j) => b.classList.toggle("on", j === i));
+    for (const [id, g] of Object.entries(nodeEls)) { g.classList.toggle("on", s.nodes.includes(id)); g.classList.toggle("off", !s.nodes.includes(id)); }
+    for (const [id, p] of Object.entries(edgeEls)) {
+      const on = s.edges.includes(id); p.classList.toggle("on", on); p.classList.toggle("off", !on);
+      if (labelEls[id]) { labelEls[id].classList.toggle("on", on); labelEls[id].classList.toggle("off", !on); }
+    }
+    for (const [k, g] of Object.entries(T.els)) g.classList.toggle("off", s.tl.length > 0 && !s.tl.includes(k));
+    q(".what").innerHTML = `<h2>${s.title}</h2><div class="files">${s.files.map(f => `<code>${f}</code>`).join("")}</div>` +
+      `<ul>${s.bullets.map(b => `<li>${b}</li>`).join("")}</ul>`;
+    const code = q(".code"); code.innerHTML = "";
+    s.code.forEach(([hdr, src]) => {
+      const d = document.createElement("div"); d.className = "snip";
+      const h = document.createElement("div"); h.className = "hdr"; h.textContent = hdr;
+      const p = document.createElement("pre"); p.textContent = src;
+      d.append(h, p); code.appendChild(d);
+    });
+    animate(s);
+  }
+
+  function animate(s) {
+    cancelAnimationFrame(raf);
+    if (!active) return;
+    const paths = s.edges.map(id => edgeEls[id]), PER = 1300, t0 = performance.now();
+    cursor.setAttribute("opacity", s.cursor ? 1 : 0);
+    const frame = (now) => {
+      const el = now - t0, k = Math.floor(el / PER) % Math.max(1, paths.length), f = (el % PER) / PER;
+      if (paths.length) {
+        const p = paths[k], pt = p.getPointAtLength(p.getTotalLength() * f);
+        dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); dot.setAttribute("opacity", 1);
+      } else dot.setAttribute("opacity", 0);
+      if (s.cursor) {
+        const total = PER * Math.max(1, paths.length), g = (el % total) / total;
+        const x = T.tx(s.cursor[0] + (s.cursor[1] - s.cursor[0]) * g);
+        cursor.setAttribute("x1", x); cursor.setAttribute("x2", x);
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+  }
+
+  function go(i, manual) {
+    cur = (i + S.steps.length) % S.steps.length;
+    render(cur);
+    if (manual) setPlaying(false); else schedule();
+  }
+  function schedule() { clearTimeout(timer); if (playing && active) timer = setTimeout(() => go(cur + 1), 7000); }
+  function setPlaying(p) { playing = p; q(".play").textContent = p ? "❚❚ Pause" : "▶ Play"; schedule(); }
+  q(".play").onclick = () => setPlaying(!playing);
+  q(".prev").onclick = () => go(cur - 1, true);
+  q(".next").onclick = () => go(cur + 1, true);
+
+  return {
+    show(on) { active = on; root.classList.toggle("on", on); if (on) go(cur); else { clearTimeout(timer); cancelAnimationFrame(raf); } },
+    key(e) {
+      if (e.key === "ArrowRight") go(cur + 1, true);
+      if (e.key === "ArrowLeft") go(cur - 1, true);
+      if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
+    },
+  };
+}
+
+// =====================================================================================================
+// static export: one self-animating SVG per scenario (SMIL, no JS - renders in a GitHub README <img>)
+// open the page with #export-browser / #export-replay; the SVG source is put into <script id="svg-out">
+// =====================================================================================================
+const STATIC_CSS = `
+  .bg { fill: #ffffff; } .fg { fill: #1f2328; } .mut { fill: #656d76; }
+  svg { --fg: #1f2328; --muted: #656d76; --lane: #f6f8fa; --lane2: #eef1f4; --border: #d0d7de; --node: #ffffff;
+        --active: #2563eb; --active-bg: #e8f0fe; --quiet: #94a3b8;
+        --c-agent: #7c3aed; --c-shell: #0f766e; --c-chrome: #c2410c; --c-db: #b91c1c; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; } .fg { fill: #e6edf3; } .mut { fill: #8d96a0; }
+    svg { --fg: #e6edf3; --muted: #8d96a0; --lane: #161b22; --lane2: #11161d; --border: #30363d; --node: #1c2128;
+          --active: #60a5fa; --active-bg: #172a46; --quiet: #64748b;
+          --c-agent: #a78bfa; --c-shell: #2dd4bf; --c-chrome: #fb923c; --c-db: #f87171; }
+  }
+  svg { fill: var(--fg); }
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .mono, .node text.f { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .lane-bg { fill: var(--lane); } .lane-bg.alt { fill: var(--lane2); }
+  .lane-label { font-size: 13px; font-weight: 600; } .lane-file { font-size: 11px; fill: var(--muted); }
+  .node rect { fill: var(--node); stroke: var(--border); stroke-width: 1.2; }
+  .node rect.hl { fill: var(--active-bg); stroke: var(--active); stroke-width: 2.4; }
+  .node text { font-size: 12px; } .node text.f { font-size: 10.5px; fill: var(--muted); }
+  .edge { fill: none; stroke: var(--border); stroke-width: 1.6; } .edge.loop { stroke-dasharray: 5 4; }
+  .edge.hl { stroke: var(--active); stroke-width: 2.4; }
+  .elabel { font-size: 11px; fill: var(--muted); }
+  .dot { fill: var(--active); }
+  .chip rect { fill: var(--node); stroke: var(--border); } .chip rect.hl { fill: var(--active); stroke: var(--active); }
+  .chip text { font-size: 12.5px; } .chip text.hl { fill: #ffffff; }
+  .cap-title { font-size: 15px; font-weight: 600; } .cap { font-size: 12.5px; }
+  .tl text { font-size: 11.5px; } .tl .m { fill: var(--muted); }`;
+
+function staticSVG(S, D = 6) {
+  const K = S.steps.length, DUR = `${K * D}s`, DIM = 0.25, W = 1300;
+  const keyTimes = S.steps.map((_, i) => (i / K).toFixed(4)).join(";");
+  const anim = (el, onAt, on = 1, off = DIM) =>
+    mk("animate", { attributeName: "opacity", values: S.steps.map((s, i) => (onAt(s, i) ? on : off)).join(";"),
+      keyTimes, calcMode: "discrete", dur: DUR, repeatCount: "indefinite" }, el);
+
+  const svg = mk("svg", { xmlns: NS, width: W });
+  mk("style", {}, svg).textContent = STATIC_CSS;
+  const bg = mk("rect", { x: 0, y: 0, width: W, class: "bg", rx: 10 }, svg);
+
+  // step chips
+  let cx0 = 12;
+  S.steps.forEach((s, i) => {
+    const w = 18 + s.name.length * 7.1, g = mk("g", { class: "chip" }, svg);
+    mk("rect", { x: cx0, y: 10, width: w, height: 26, rx: 6 }, g);
+    anim(mk("rect", { x: cx0, y: 10, width: w, height: 26, rx: 6, class: "hl" }, g), (_, j) => j === i, 1, 0);
+    const t = mk("text", { x: cx0 + w / 2, y: 27.5, "text-anchor": "middle" }, g); t.textContent = s.name;
+    const th = mk("text", { x: cx0 + w / 2, y: 27.5, "text-anchor": "middle", class: "hl" }, g); th.textContent = s.name;
+    anim(th, (_, j) => j === i, 1, 0);
+    cx0 += w + 6;
+  });
+
+  // flow
+  const flow = mk("g", { transform: "translate(0 44)" }, svg); // plain groups: nested <svg> elements would get their own SMIL clock
+  const F = drawFlow(S, flow);
+  for (const [id, g] of Object.entries(F.nodeEls)) {
+    const base = g.querySelector("rect"), hl = base.cloneNode(); hl.setAttribute("class", "hl");
+    base.after(hl);
+    anim(hl, (s) => s.nodes.includes(id), 1, 0);
+    anim(g, (s) => s.nodes.includes(id));
+  }
+  for (const [id, p] of Object.entries(F.edgeEls)) {
+    const hl = p.cloneNode(); hl.setAttribute("class", p.getAttribute("class") + " hl"); p.after(hl);
+    anim(hl, (s) => s.edges.includes(id), 1, 0);
+    anim(p, (s) => s.edges.includes(id));
+    if (F.labelEls[id]) anim(F.labelEls[id], (s) => s.edges.includes(id));
+  }
+  F.dot.remove();
+  S.steps.forEach((s, i) => {
+    if (!s.edges.length) return;
+    const d = s.edges.map((id) => F.edgeEls[id].getAttribute("d")).join(" ");
+    const c = mk("circle", { r: 6, class: "dot" }, flow);
+    anim(c, (_, j) => j === i, 1, 0);
+    mk("animateMotion", { path: d, dur: `${D}s`, repeatCount: "indefinite" }, c);
+  });
+
+  // caption per step
+  const CY = 44 + 520 + 14;
+  S.steps.forEach((s, i) => {
+    const g = mk("g", {}, svg);
+    anim(g, (_, j) => j === i, 1, 0);
+    const t = mk("text", { x: 14, y: CY + 16, class: "cap-title" }, g); t.textContent = s.title;
+    const f = mk("text", { x: 14, y: CY + 36, class: "cap mono mut" }, g); f.textContent = s.files.join("  ·  ");
+    (s.cap || []).forEach((line, k) => { const c = mk("text", { x: 14, y: CY + 58 + k * 18, class: "cap" }, g); c.textContent = line; });
+  });
+
+  // timeline
+  const TY = CY + 110;
+  const tt = mk("text", { x: 14, y: TY + 12, class: "cap-title" }, svg);
+  tt.textContent = S.tlTitle.replace(/<[^>]+>/g, "");
+  const tl = mk("g", { transform: `translate(0 ${TY + 22})`, class: "tl" }, svg);
+  const T = S.timeline(tl), vb = { height: +tl.getAttribute("viewBox").split(" ")[3] };
+  tl.removeAttribute("viewBox");
+  for (const [k, g] of Object.entries(T.els)) anim(g, (s) => !s.tl.length || s.tl.includes(k));
+  S.steps.forEach((s, i) => {
+    if (!s.cursor) return;
+    const ln = mk("line", { y1: 14, y2: vb.height - 30, stroke: "var(--active)", "stroke-width": 2 }, tl);
+    anim(ln, (_, j) => j === i, 1, 0);
+    for (const a of ["x1", "x2"]) mk("animate", { attributeName: a, from: T.tx(s.cursor[0]), to: T.tx(s.cursor[1]), dur: `${D}s`, repeatCount: "indefinite" }, ln);
+  });
+
+  const H = Math.ceil(TY + 22 + vb.height + 8);
+  svg.setAttribute("height", H); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); bg.setAttribute("height", H);
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(svg) + "\n";
+}
+
+// =====================================================================================================
+// tabs
+// =====================================================================================================
+const flows = [BROWSER, REPLAY].map((S) => {
+  const root = document.createElement("div"); root.className = "tab"; root.id = `tab-${S.id}`;
+  document.getElementById("tabroot").appendChild(root);
+  const b = document.createElement("button"); b.textContent = S.tab; document.getElementById("tabs").appendChild(b);
+  return { S, root, b, f: Flow(S, root) };
+});
+let activeFlow = null;
+function showTab(id) {
+  flows.forEach((x) => { const on = x.S.id === id; x.b.classList.toggle("on", on); x.f.show(on); if (on) activeFlow = x.f; });
+  history.replaceState(null, "", `#${id}`);
+}
+flows.forEach((x) => (x.b.onclick = () => showTab(x.S.id)));
+document.addEventListener("keydown", (e) => activeFlow && activeFlow.key(e));
+const exp = location.hash.match(/^#export-(\w+)$/);
+if (exp) {
+  const S = [BROWSER, REPLAY].find((x) => x.id === exp[1]);
+  const scratch = document.createElementNS(NS, "svg"); document.body.appendChild(scratch); // getTotalLength etc. need a live DOM
+  const src = staticSVG(S);
+  const out = document.createElement("script"); out.type = "text/plain"; out.id = "svg-out"; out.textContent = src;
+  document.body.appendChild(out);
+} else {
+  showTab(location.hash === "#replay" ? "replay" : "browser");
+}
+</script>
+</body>
+</html>
