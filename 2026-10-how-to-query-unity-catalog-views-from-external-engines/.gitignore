@@ -1,0 +1,9 @@
+.env
+.demo_state.*
+.venv/
+__pycache__/
+*.pyc
+metastore_db/
+derby.log
+spark-warehouse/
+.DS_Store
