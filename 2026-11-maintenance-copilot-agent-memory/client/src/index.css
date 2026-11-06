@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  ::selection { background: #FFE0D9; }
+  :focus-visible { outline: 2px solid #FF3621; outline-offset: 2px; }
+}
+
+@layer components {
+  .skeleton { @apply relative overflow-hidden rounded bg-oat-300/70; }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/60 to-transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
