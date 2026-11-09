@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # APT (SPARK-58131) 3-language run at 6 partitions / parallelism 6, 7 cores / 14 GB each —
-# the SAME envelope as 04b_run_p6.sh, but on the 4.3.0-SNAPSHOT PR image with async progress
+# the SAME envelope as 04b_run_p6.sh, but on the Spark 4.3.0 APT image with async progress
 # tracking ON. 1-min checkpoint trigger, 10-min steady window, 100k/s input via 8 producers.
 # Usage: eks/04d_run_p6_pr.sh <spark-rtm-scala|spark-rtm-java|pyspark-rtm>   [APT=true]
 set -euo pipefail
@@ -21,7 +21,7 @@ RUNID="${RUNID:-$(date +%s)}"; CKPT_SUFFIX="-p6apt-${RUNID}"
 mkdir -p results/eks
 echo "==> $ENGINE p6 APT=$APT: parallelism 6, 7 cores/14GB, 60s ckpt, win=${RUN_SECONDS}s, rate=$((PRODPODS*RATE))/s"
 
-# render the SPARK job (PR image tag + APT flag)
+# render the SPARK job (APT image tag + APT flag)
 render_job() { sed -e "s#__REGISTRY__#$REGISTRY#g" -e "s#__TAG__#$PR_TAG#g" \
   -e "s#__APT__#$APT#g" -e "s#__ACCOUNT__#$ACCOUNT#g" "$1"; }
 # render the LOAD job (producer/consumer, load image tag)

@@ -58,9 +58,11 @@ Raw summaries: [`sample-results/`](sample-results/) (`eks-apt-on-10min/` + `eks-
 
 ## Requirements
 
-- **Spark 4.3.0+** — APT (SPARK-58131) ships in **4.3.0**, so this is a clean run: use the
-  official `apache/spark:4.3.0` image / `pip install pyspark==4.3.0`. **No source build, no
-  jar-swap.** APT is turned on by a single config flag. (RTM base shipped in 4.1; APT needs 4.3+.)
+- **Spark 4.3.0+** — APT (SPARK-58131) ships in **4.3.0** (released 2026‑11‑04), so this is a
+  clean run: use the official `apache/spark:4.3.0` image / `pip install pyspark==4.3.0`. **No
+  source build, no jar-swap.** APT is turned on by a single config flag. (RTM base shipped in 4.1;
+  APT needs 4.3+.) The image's connector pins (kafka-clients 3.9.2, commons-pool2 2.13.1,
+  hadoop-aws 3.5.0, aws-sdk 2.35.4) are the exact versions in the Spark 4.3.0 release POMs.
 - **Output mode:** `update` (RTM requirement); **no Photon**; fixed cluster size (no autoscale).
 - A Kafka cluster (self-managed/Strimzi, Confluent, or Redpanda) and durable object-store
   checkpoints (S3/ADLS/GCS or a UC Volume).

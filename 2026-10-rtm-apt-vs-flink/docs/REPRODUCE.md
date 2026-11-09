@@ -6,9 +6,10 @@ with a single config flag. This guide uses the upstream
 [`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink)
 harness plus the small **APT overlay** in this folder.
 
-> **Requires Spark 4.3.0+.** RTM base shipped in 4.1, but APT lands in **4.3.0**. On 4.1/4.2 the
-> RTM commit path is synchronous (the slow tail) — you need 4.3+ to turn APT on. Latest GA as of
-> writing is 4.2.0; once 4.3.0 is released this runs as-is.
+> **Requires Spark 4.3.0+.** RTM base shipped in 4.1, but APT lands in **4.3.0** (released
+> 2026‑11‑04). On 4.1/4.2 the RTM commit path is synchronous (the slow tail) — you need 4.3+ to
+> turn APT on. The `apache/spark:4.3.0` image, the `*-kafka-0-10_2.13:4.3.0` connectors, and
+> `pyspark==4.3.0` are all on Docker Hub / Maven Central / PyPI, so this runs as‑is.
 
 The APT switch is one Spark conf (already templated in the overlay's job manifests):
 

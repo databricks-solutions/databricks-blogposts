@@ -22,9 +22,9 @@ COPY spark/java-rtm/target/java-rtm.jar /opt/spark/jars/java-rtm.jar
 COPY spark/pyspark-bridge/rtm_pyspark_measured.py /opt/spark/work-dir/rtm_pyspark_measured.py
 
 # Kafka structured-streaming connector + transitive deps, plus hadoop-aws + AWS SDK bundle for
-# S3A durable checkpoints. Pinned to the versions Spark 4.3.0 ships with.
-# NOTE: at 4.3.0 GA, confirm these match the release (kafka.version / commons-pool2.version in
-# Spark's pom, and the Hadoop version the 4.3.0 image bundles) and adjust if needed.
+# S3A durable checkpoints. These are the exact versions Spark 4.3.0 ships with, verified against
+# the 4.3.0 release POMs: kafka.version=3.9.2, commons-pool2.version=2.13.1, hadoop.version=3.5.0,
+# aws.java.sdk.v2.version=2.35.4 (spark-parent_2.13:4.3.0 / spark-sql-kafka-0-10_2.13:4.3.0).
 RUN cd /opt/spark/jars && \
     for url in \
       "https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_${SCALA_BIN}/${SPARK_VER}/spark-sql-kafka-0-10_${SCALA_BIN}-${SPARK_VER}.jar" \

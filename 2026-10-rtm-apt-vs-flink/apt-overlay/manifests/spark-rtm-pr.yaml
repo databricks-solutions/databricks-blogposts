@@ -1,5 +1,5 @@
-# PR (SPARK-58131) Spark RTM SparkApplication — p6 (7 cores / 14 GB), on the 4.3.0-SNAPSHOT PR
-# image with async-progress-tracking (__APT__). Scala/Java via __MAINCLASS__/__JAR__/__TYPE__.
+# Spark RTM SparkApplication — p6 (7 cores / 14 GB), on the Spark 4.3.0 APT image
+# with async-progress-tracking (SPARK-58131, __APT__). Scala/Java via __MAINCLASS__/__JAR__/__TYPE__.
 # Resources are IDENTICAL to the stock p6/spark-rtm.yaml so this is apples-to-apples with Flink.
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
@@ -13,7 +13,7 @@ spec:
   imagePullPolicy: Always
   mainClass: __MAINCLASS__
   mainApplicationFile: "__JAR__"
-  sparkVersion: "4.3.0-SNAPSHOT"
+  sparkVersion: "4.3.0"
   arguments:
     - "rtm"
     - "bench-kafka-bootstrap.kafka.svc:9092"

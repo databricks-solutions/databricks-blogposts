@@ -1,5 +1,5 @@
-# PR (SPARK-58131) PySpark RTM SparkApplication — p6 (7 cores / 14 GB), on the 4.3.0-SNAPSHOT PR
-# image with async-progress-tracking (__APT__). Resources IDENTICAL to the stock p6/pyspark-rtm.yaml.
+# PySpark RTM SparkApplication — p6 (7 cores / 14 GB), on the Spark 4.3.0 APT image
+# with async-progress-tracking (SPARK-58131, __APT__). Resources IDENTICAL to the stock p6/pyspark-rtm.yaml.
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
@@ -12,7 +12,7 @@ spec:
   image: "__REGISTRY__/rtm-bench/spark-pr:__TAG__"
   imagePullPolicy: Always
   mainApplicationFile: "local:///opt/spark/work-dir/rtm_pyspark_measured.py"
-  sparkVersion: "4.3.0-SNAPSHOT"
+  sparkVersion: "4.3.0"
   sparkConf:
     spark.sql.adaptive.enabled: "false"
     spark.sql.shuffle.partitions: "6"
