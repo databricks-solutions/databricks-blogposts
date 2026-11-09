@@ -3,7 +3,7 @@
 MEASURED PySpark RTM job (the Python-Spark corner of the 2x2).
 
 Same stateless pipeline as the Scala job, driven from Python, using the py4j bridge to
-attach Trigger.RealTime on stable Spark 4.1.2 (native realTime= kwarg is 4.2.0.dev5-only).
+attach Trigger.RealTime (works across Spark 4.1–4.3; verified on 4.3.0 GA).
 
 out_ts correctness: Spark's current_timestamp() is FROZEN at task/epoch launch under RTM
 (long-running tasks) -> wrong latency. The Spark image has no Python on executors, so a
@@ -81,7 +81,7 @@ def main():
               .option("checkpointLocation", ckpt)
               .outputMode("update"))
 
-    # py4j bridge: attach the JVM RealTime trigger (no native kwarg on 4.1.2).
+    # py4j bridge: attach the JVM RealTime trigger.
     jvm = spark._sc._jvm
     rt = jvm.org.apache.spark.sql.streaming.Trigger.RealTime(TRIGGER)
     writer._jwrite.trigger(rt)
