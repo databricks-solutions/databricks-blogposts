@@ -59,8 +59,9 @@ Raw summaries: [`sample-results/`](sample-results/) (`eks-apt-on-10min/` + `eks-
 ## Requirements
 
 - **Spark 4.3.0+** — APT ([SPARK-58131](https://issues.apache.org/jira/browse/SPARK-58131))
-  ships in 4.3.0, so there is **no source build and no jar-swap**: run the official
-  `apache/spark:4.3.0` image (or `pip install pyspark==4.3.0`) and turn APT on with one config flag.
+  ships in 4.3.0, so there is **no source build, no jar-swap, and no Docker image to build**: run
+  the stock `apache/spark:4.3.0` image (or `pip install pyspark==4.3.0`) and turn APT on with one
+  config flag.
 - **Output mode `update`** (an RTM requirement) and a **fixed cluster size** (no autoscale).
 - A **Kafka** cluster (Strimzi, Confluent, or Redpanda) and **durable object-store checkpoints**
   (S3/ADLS/GCS or a UC Volume).
@@ -71,11 +72,10 @@ Raw summaries: [`sample-results/`](sample-results/) (`eks-apt-on-10min/` + `eks-
 |---|---|
 | `docs/REPRODUCE.md` | Step-by-step reproduce guide |
 | `apt-overlay/apply_overlay.sh` | drops this overlay onto a cloned upstream harness |
-| `apt-overlay/run/04d_run_p6_pr.sh` | APT A/B run driver (toggles the flag, 60-s trigger, 100k/s load) |
-| `apt-overlay/run/03b_build_push_spark_pr.sh` | compile pipeline jars + build/push the APT image |
-| `apt-overlay/image/spark-pr.Dockerfile` | APT app image, `FROM apache/spark:4.3.0` |
-| `apt-overlay/manifests/spark-rtm-pr.yaml` | Scala/Java RTM SparkApplication (APT flag templated) |
-| `apt-overlay/manifests/pyspark-rtm-pr.yaml` | PySpark RTM SparkApplication (APT flag templated) |
+| `apt-overlay/run/run_direct.sh` | APT A/B run driver — stock `apache/spark:4.3.0` + `--packages`, toggles the flag, 100k/s load |
+| `apt-overlay/manifests/spark-rtm-direct.yaml` | Scala/Java RTM SparkApplication (stock image, APT flag templated) |
+| `apt-overlay/manifests/pyspark-rtm-direct.yaml` | PySpark RTM SparkApplication (stock image, APT flag templated) |
+| `apt-overlay/manifests/load-direct.yaml` | load generator + latency consumer (stock `python:3.12-slim`) |
 | `apt-overlay/pipeline/RtmPipeline.scala` | Scala/Java RTM pipeline |
 | `apt-overlay/pipeline/rtm_pyspark_measured.py` | measured PySpark RTM job |
 | `apt-overlay/pipeline/latency_consumer.py` | latency sampler |
@@ -91,8 +91,10 @@ This folder is an **overlay**: `apply_overlay.sh` drops these files onto a clone
 Using this repo to reproduce the benchmark, in order. Full command detail for each step is in
 [`docs/REPRODUCE.md`](docs/REPRODUCE.md).
 
-**Prerequisites:** AWS account + CLI, `eksctl`, `kubectl`, `helm`, Docker (with `buildx`),
-`sbt` + Maven + JDK 17, and the Spark **4.3.0** runtime (official image / `pip install pyspark==4.3.0`).
+**Prerequisites:** AWS account + CLI, `eksctl`, `kubectl`, `helm`. **No Docker** — the EKS nodes
+pull the stock `apache/spark:4.3.0` and `python:3.12-slim` images directly, and the Kafka/S3A
+connectors are fetched via `--packages`. You only need **JDK 17 + Maven/sbt** to compile the tiny
+Scala/Java jars (PySpark needs no build at all).
 
 You need **two checkouts**: this blog repo (which holds the APT overlay), and the upstream harness.
 
@@ -115,42 +117,40 @@ cd spark-rtm-vs-flink
 bash ../databricks-blogposts/2026-10-rtm-apt-vs-flink/apt-overlay/apply_overlay.sh .
 ```
 
-**Step 2 — (optional) quick local check, no cluster, no image.** `pip install pyspark==4.3.0`
-and run the upstream local docker-compose stack to see the median tie + APT effect on a laptop.
-
-**Step 3 — bring up the EKS cluster + Kafka + operators** (upstream scripts):
+**Step 2 — bring up the EKS cluster + Kafka + operators** (upstream scripts):
 ```bash
 bash eks/01_create_cluster.sh      # EKS cluster (6 nodes)
-bash eks/02_install.sh             # Strimzi Kafka (6 partitions) + Spark/Flink operators
+bash eks/02_install.sh             # Strimzi Kafka (6 partitions) + Spark operator
 bash eks/02b_irsa_s3.sh            # IRSA + S3 checkpoint bucket
 ```
 
-**Step 4 — build + push the images:**
+**Step 3 — compile the Scala/Java jars** (no Docker; **skip entirely if you only run `pyspark-rtm`**):
 ```bash
-TAG=apt1 bash eks/03b_build_push_spark_pr.sh   # APT app image, FROM apache/spark:4.3.0
-bash eks/03_build_push_images.sh               # load generator (+ Flink) images (upstream)
+# build per the upstream harness — produces
+#   spark/scala-rtm/target/scala-2.13/scala-rtm_*.jar   and   spark/java-rtm/target/java-rtm.jar
 ```
 
-**Step 5 — run the APT off → on A/B** (same image, only the flag flips) **and the Flink reference:**
+**Step 4 — run the APT off → on A/B** (stock image, only the flag flips):
 ```bash
-# APT ON (use a 10-min window for a clean p99):
-APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/04d_run_p6_pr.sh spark-rtm-scala
-APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/04d_run_p6_pr.sh spark-rtm-java
-APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/04d_run_p6_pr.sh pyspark-rtm
+# APT ON (10-min window for a clean p99):
+APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh spark-rtm-scala
+APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh spark-rtm-java
+APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh pyspark-rtm
 # APT OFF (baseline):
-APT=false RUN_SECONDS=300 WARMUP=60 bash eks/04d_run_p6_pr.sh spark-rtm-scala
-APT=false RUN_SECONDS=300 WARMUP=60 bash eks/04d_run_p6_pr.sh spark-rtm-java
-APT=false RUN_SECONDS=300 WARMUP=60 bash eks/04d_run_p6_pr.sh pyspark-rtm
-# Flink reference:
-RUN_SECONDS=600 WARMUP=60 bash eks/04b_run_p6.sh flink
+APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh spark-rtm-scala
+APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh spark-rtm-java
+APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh pyspark-rtm
 ```
+`run_direct.sh` mounts the app code from ConfigMaps, pulls the connectors with `--packages`, and
+runs the load generator from stock `python:3.12-slim` — **no image build anywhere**. (Flink
+reference: see [`sample-results/`](sample-results/), or run the upstream Flink job per its README.)
 
-**Step 6 — read results.** Each run writes `results/eks/<engine>-...-apt{true,false}_summary.json`
+**Step 5 — read results.** Each run writes `results/eks/<engine>-...-apt{true,false}_summary.json`
 (pipeline/e2e p50…p99, throughput). Compare against [`sample-results/`](sample-results/).
 
-**Step 7 — tear down** (avoids ongoing AWS cost):
+**Step 6 — tear down** (avoids ongoing AWS cost):
 ```bash
-bash eks/99_teardown.sh            # cluster + ECR repos + S3 bucket + KMS alias
+bash eks/99_teardown.sh            # cluster + S3 bucket + KMS alias
 ```
 
 ## Credits

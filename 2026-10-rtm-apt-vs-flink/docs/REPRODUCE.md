@@ -1,9 +1,10 @@
 # Reproduce: Spark RTM + APT vs Flink (Spark 4.3.0 GA)
 
 Async Progress Tracking (SPARK-58131) ships **inside Spark 4.3.0**, so this is a clean run —
-**no source build, no jar‑swap**. You start from the official 4.3.0 runtime and turn APT on
-with a single config flag. This guide uses the upstream
-[`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink)
+**no source build, no jar-swap, and no Docker image to build**. The EKS nodes pull the stock
+`apache/spark:4.3.0` and `python:3.12-slim` images directly, the Kafka/S3A connectors come in via
+`--packages`, and the app code is mounted from ConfigMaps. APT is one config flag. This guide uses
+the upstream [`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink)
 harness plus the small **APT overlay** in this folder.
 
 > **Requires Spark 4.3.0+.** RTM base shipped in 4.1, but APT lands in **4.3.0** (released
@@ -20,7 +21,7 @@ spark.sql.streaming.realTimeMode.asyncProgressTrackingByDefault.enabled = true  
 
 ---
 
-## 1. Fork the harness and apply the overlay
+## 1. Clone the harness and apply the overlay
 
 ```bash
 # this blog folder only (sparse checkout) + the upstream harness
@@ -36,69 +37,64 @@ cd spark-rtm-vs-flink
 bash ../databricks-blogposts/2026-10-rtm-apt-vs-flink/apt-overlay/apply_overlay.sh .
 ```
 
-`apply_overlay.sh` copies our APT additions: the A/B run driver (`eks/04d_run_p6_pr.sh`), the
-APT image build (`eks/03b_build_push_spark_pr.sh` + `eks/images/spark-pr.Dockerfile`), the APT
-job manifests (`eks/jobs/p6/*-pr.yaml`), the modified pipeline sources, and the Kafka 4.2.0 pin.
+`apply_overlay.sh` copies the APT additions: the A/B run driver (`eks/run_direct.sh`), the
+stock-image job manifests (`eks/jobs/p6/*-direct.yaml` + `eks/jobs/load-direct.yaml`), the
+pipeline sources, and the Kafka 4.2.0 pin.
 
 > **AWS profile note.** Upstream's `eks/*.sh` bringup scripts hardcode `AWS_PROFILE=default` /
 > `AWS_REGION=us-east-1`. If you use a named profile, make it your default or edit those lines.
-> Our run driver `eks/04d_run_p6_pr.sh` already honors `AWS_PROFILE` / `AWS_REGION` from the env.
+> Our run driver `eks/run_direct.sh` already honors `AWS_PROFILE` / `AWS_REGION` from the env.
 
-## 2. Quick local check (optional, no cluster, no image)
+## 2. Quick local check (optional, no cluster)
 
 ```bash
 pip install "pyspark==4.3.0"
-# then run the local docker-compose stack per the upstream README (Kafka + a local Spark run)
+# then run the local stack per the upstream README (Kafka + a local Spark run)
 ```
 
-This reproduces the median tie and the APT effect at low rate on a laptop — zero image work.
+Reproduces the median tie and the APT effect at low rate on a laptop.
 
 ## 3. EKS run (the published numbers)
 
 ### 3a. Bring up the cluster + Kafka + operators
 
-Follow the upstream README (`eks/01_create_cluster.sh`, `eks/02_install.sh`,
-`eks/02b_irsa_s3.sh`). This creates the EKS cluster (6× nodes), Strimzi Kafka (6 partitions),
-the Spark/Flink operators, and S3 checkpoint access.
-
-### 3b. Build + push the APT app image (FROM apache/spark:4.3.0)
-
 ```bash
-TAG=apt1 bash eks/03b_build_push_spark_pr.sh
+bash eks/01_create_cluster.sh   # EKS cluster (6 nodes)
+bash eks/02_install.sh          # Strimzi Kafka (6 partitions) + Spark operator
+bash eks/02b_irsa_s3.sh         # IRSA + S3 checkpoint bucket
 ```
 
-This compiles the RTM pipeline jars and bakes them + the Kafka/S3A connectors onto the official
-`apache/spark:4.3.0` base — no source build. (Also build the load image per the upstream README.)
+### 3b. Compile the Scala/Java jars (no Docker)
+
+Build per the upstream harness — produces
+`spark/scala-rtm/target/scala-2.13/scala-rtm_*.jar` and `spark/java-rtm/target/java-rtm.jar`.
+**Skip this entirely if you only run `pyspark-rtm`** (PySpark needs no build).
 
 ### 3c. Run the APT off / on A/B
 
-Same image, same resources — only the `APT` flag flips.
+Stock `apache/spark:4.3.0` image, same resources — only the `APT` flag flips. `run_direct.sh`
+mounts the app code from ConfigMaps and pulls the connectors with `--packages`.
 
 ```bash
 # APT ON:
-APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/04d_run_p6_pr.sh spark-rtm-scala
-APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/04d_run_p6_pr.sh spark-rtm-java
-APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/04d_run_p6_pr.sh pyspark-rtm
+APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh spark-rtm-scala
+APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh spark-rtm-java
+APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh pyspark-rtm
 
 # APT OFF (baseline — the synchronous-commit stall):
-APT=false RUN_SECONDS=300 WARMUP=60 bash eks/04d_run_p6_pr.sh spark-rtm-scala
-APT=false RUN_SECONDS=300 WARMUP=60 bash eks/04d_run_p6_pr.sh spark-rtm-java
-APT=false RUN_SECONDS=300 WARMUP=60 bash eks/04d_run_p6_pr.sh pyspark-rtm
+APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh spark-rtm-scala
+APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh spark-rtm-java
+APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh pyspark-rtm
 ```
 
-Flink reference (same cluster, upstream script):
-
-```bash
-RUN_SECONDS=600 WARMUP=60 bash eks/04b_run_p6.sh flink
-```
-
-Each run writes `results/eks/<engine>-...-apt{true,false}_summary.json`.
+Flink reference: see [`../sample-results/`](../sample-results/), or run the upstream Flink job per
+its README. Each run writes `results/eks/<engine>-...-apt{true,false}_summary.json`.
 
 ## 4. What you should see
 
 Our runs — APT‑on from a 10‑min steady window
 ([`../sample-results/eks-apt-on-10min/`](../sample-results/eks-apt-on-10min/)); APT‑off from a
-5‑min A/B on the same image with the flag off
+5‑min A/B with the flag off
 ([`../sample-results/eks-apt-off-5min/`](../sample-results/eks-apt-off-5min/)):
 
 | | APT off | APT on |
@@ -115,13 +111,13 @@ per‑checkpoint stall and reproduces to within ~±10% across runs.
 ## 5. Key knobs
 
 - `APT` → `spark.sql.streaming.realTimeMode.asyncProgressTrackingByDefault.enabled`.
-  Confirm it's active in the driver log:
-  `AsyncProgressTrackingMicroBatchExecution ... Disabling AQE ... for Real-time Mode`.
+  Confirm it's active in the driver log — APT on logs
+  `AsyncProgressTrackingMicroBatchExecution` (APT off uses the plain `MicroBatchExecution`).
 - Trigger duration (`"60 seconds"`) is the **checkpoint cadence**, not a latency target.
 - `WARMUP` seconds are dropped so batch 0 / cold start is excluded.
 - Resources per engine matched across engines (7 cores / ~14 GB).
 
 ## 6. Tear down
 
-Use the upstream harness teardown (`eks/99_teardown.sh`) to remove the cluster, registry repos,
-object‑store checkpoints, and keys. The EKS path creates **billable** cloud resources.
+Use the upstream harness teardown (`eks/99_teardown.sh`) to remove the cluster, object‑store
+checkpoints, and keys. The EKS path creates **billable** cloud resources.
