@@ -51,48 +51,40 @@ The one knob that changes everything:
 
 ```
 spark.sql.streaming.realTimeMode.asyncProgressTrackingByDefault.enabled = true   # APT on
-                                                                        = false  # APT off (pre-fix path)
+                                                                        = false  # APT off (baseline)
 ```
 
 Raw summaries: [`sample-results/`](sample-results/) (`eks-apt-on-10min/` + `eks-apt-off-5min/`).
 
 ## Requirements
 
-- **Spark 4.3.0+** — APT (SPARK-58131) ships in **4.3.0** (released 2026‑11‑04), so this is a
-  clean run: use the official `apache/spark:4.3.0` image / `pip install pyspark==4.3.0`. **No
-  source build, no jar-swap.** APT is turned on by a single config flag. (RTM base shipped in 4.1;
-  APT needs 4.3+.) The image's connector pins (kafka-clients 3.9.2, commons-pool2 2.13.1,
-  hadoop-aws 3.5.0, aws-sdk 2.35.4) are the exact versions in the Spark 4.3.0 release POMs.
-- **Output mode:** `update` (RTM requirement); **no Photon**; fixed cluster size (no autoscale).
-- A Kafka cluster (self-managed/Strimzi, Confluent, or Redpanda) and durable object-store
-  checkpoints (S3/ADLS/GCS or a UC Volume).
-- The upstream harness: the original
-  [`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink)
-  repo (pipeline + load generator + EKS scripts), onto which you drop this folder's
-  **APT overlay**.
+- **Spark 4.3.0+** — APT ([SPARK-58131](https://issues.apache.org/jira/browse/SPARK-58131))
+  ships in 4.3.0, so there is **no source build and no jar-swap**: run the official
+  `apache/spark:4.3.0` image (or `pip install pyspark==4.3.0`) and turn APT on with one config flag.
+- **Output mode `update`** (an RTM requirement) and a **fixed cluster size** (no autoscale).
+- A **Kafka** cluster (Strimzi, Confluent, or Redpanda) and **durable object-store checkpoints**
+  (S3/ADLS/GCS or a UC Volume).
 
 ## Files
 
 | Path | Description |
 |---|---|
-| `docs/REPRODUCE.md` | Step-by-step reproduce guide (clean Spark 4.3.0 GA path) |
-| `apt-overlay/run/04d_run_p6_pr.sh` | **net-new** — APT A/B run driver (toggles the flag, 60-s trigger, 100k/s load) |
-| `apt-overlay/run/03b_build_push_spark_pr.sh` | **net-new** — compile pipeline jars + build/push the APT app image |
-| `apt-overlay/manifests/spark-rtm-pr.yaml` | **net-new** — Scala/Java RTM SparkApplication (APT flag templated) |
-| `apt-overlay/manifests/pyspark-rtm-pr.yaml` | **net-new** — PySpark RTM SparkApplication (APT flag templated) |
-| `apt-overlay/image/spark-pr.Dockerfile` | **net-new** — APT app image, `FROM apache/spark:4.3.0` (bakes pipeline jars + connectors) |
-| `apt-overlay/pipeline/RtmPipeline.scala` | *modified-from-upstream* — adds the APT conf toggle |
-| `apt-overlay/pipeline/rtm_pyspark_measured.py` | *modified-from-upstream* — measured PySpark RTM job + APT toggle |
-| `apt-overlay/pipeline/latency_consumer.py` | *modified-from-upstream* — latency sampler used for these numbers |
-| `apt-overlay/harness/p6_kafka_strimzi.yaml` | *compat* — pins Kafka to **4.2.0** (upstream ships 4.1.0) |
-| `apt-overlay/apply_overlay.sh` | copies the overlay onto a cloned upstream repo |
-| `sample-results/` | our APT-on (10-min) and APT-off (5-min) summary JSONs |
+| `docs/REPRODUCE.md` | Step-by-step reproduce guide |
+| `apt-overlay/apply_overlay.sh` | drops this overlay onto a cloned upstream harness |
+| `apt-overlay/run/04d_run_p6_pr.sh` | APT A/B run driver (toggles the flag, 60-s trigger, 100k/s load) |
+| `apt-overlay/run/03b_build_push_spark_pr.sh` | compile pipeline jars + build/push the APT image |
+| `apt-overlay/image/spark-pr.Dockerfile` | APT app image, `FROM apache/spark:4.3.0` |
+| `apt-overlay/manifests/spark-rtm-pr.yaml` | Scala/Java RTM SparkApplication (APT flag templated) |
+| `apt-overlay/manifests/pyspark-rtm-pr.yaml` | PySpark RTM SparkApplication (APT flag templated) |
+| `apt-overlay/pipeline/RtmPipeline.scala` | Scala/Java RTM pipeline |
+| `apt-overlay/pipeline/rtm_pyspark_measured.py` | measured PySpark RTM job |
+| `apt-overlay/pipeline/latency_consumer.py` | latency sampler |
+| `apt-overlay/harness/p6_kafka_strimzi.yaml` | Kafka cluster + topics (6 partitions) |
+| `sample-results/` | APT-on (10-min) and APT-off (5-min) summary JSONs |
 
-> **What's here vs what you fork.** This folder contains **only our APT additions**: files
-> marked **net-new** are ours; files marked *modified-from-upstream* are our edits to upstream
-> files (drop-in replacements applied by `apply_overlay.sh`). The base pipeline, load
-> generator, and cluster scripts come from the upstream repo you clone — we do not re-host
-> them here.
+This folder is an **overlay**: `apply_overlay.sh` drops these files onto a clone of the upstream
+[`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink) harness
+(base pipeline, load generator, EKS scripts), which we don't re-host here.
 
 ## How to run the benchmark (end-to-end)
 
@@ -119,8 +111,7 @@ cd ..
 git clone https://github.com/fmorillo7694/spark-rtm-vs-flink.git
 cd spark-rtm-vs-flink
 
-# (c) apply the overlay (point it at the blog folder you cloned in (a))
-cd ..
+# (c) apply the overlay onto this upstream checkout
 bash ../databricks-blogposts/2026-10-rtm-apt-vs-flink/apt-overlay/apply_overlay.sh .
 ```
 

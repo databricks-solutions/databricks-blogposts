@@ -4,8 +4,8 @@
 #
 # Usage:  bash apply_overlay.sh /path/to/spark-rtm-vs-flink
 #
-# Copies our APT-specific additions (net-new) and our modified pipeline sources
-# (drop-in replacements) into the right locations in the upstream tree.
+# Copies the APT run scripts, manifests, image, and pipeline sources into the right
+# locations in the upstream tree.
 set -euo pipefail
 
 DEST="${1:-}"
@@ -17,14 +17,14 @@ echo "==> applying APT overlay from $HERE  ->  $DEST"
 mkdir -p "$DEST/eks/jobs/p6" "$DEST/eks/images" \
          "$DEST/spark/scala-rtm/src/main/scala" "$DEST/spark/pyspark-bridge" "$DEST/common"
 
-# --- net-new files ---
+# --- run scripts, manifests, image ---
 cp "$HERE/run/04d_run_p6_pr.sh"           "$DEST/eks/04d_run_p6_pr.sh"
 cp "$HERE/run/03b_build_push_spark_pr.sh" "$DEST/eks/03b_build_push_spark_pr.sh"
 cp "$HERE/manifests/spark-rtm-pr.yaml"    "$DEST/eks/jobs/p6/spark-rtm-pr.yaml"
 cp "$HERE/manifests/pyspark-rtm-pr.yaml"  "$DEST/eks/jobs/p6/pyspark-rtm-pr.yaml"
 cp "$HERE/image/spark-pr.Dockerfile"      "$DEST/eks/images/spark-pr.Dockerfile"  # APT app image, FROM apache/spark:4.3.0
 
-# --- modified-from-upstream (drop-in replacements) ---
+# --- pipeline sources (drop-in) ---
 cp "$HERE/pipeline/RtmPipeline.scala"        "$DEST/spark/scala-rtm/src/main/scala/RtmPipeline.scala"
 cp "$HERE/pipeline/rtm_pyspark_measured.py"  "$DEST/spark/pyspark-bridge/rtm_pyspark_measured.py"
 cp "$HERE/pipeline/latency_consumer.py"      "$DEST/common/latency_consumer.py"
