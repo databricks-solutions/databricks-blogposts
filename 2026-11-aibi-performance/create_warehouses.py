@@ -22,10 +22,15 @@ def main():
     w = WorkspaceClient(profile=config.PROFILE)
     pro = w.api_client.do("POST", "/api/2.0/sql/warehouses", body={
         "name": f"{a.prefix}-pro", "warehouse_type": "PRO", **COMMON})
-    # Lakehouse//RT (Beta) is warehouse_type REYDEN in the API; other spellings silently create a PRO warehouse
-    rt = w.api_client.do("POST", "/api/2.0/sql/warehouses", body={
-        "name": f"{a.prefix}-rt", "warehouse_type": "REYDEN", **COMMON})
     print(f"export BENCH_WAREHOUSE_PRO={pro['id']}")
+    # Lakehouse//RT (Beta); unknown warehouse types silently create a PRO warehouse, so check the type afterwards
+    rt = w.api_client.do("POST", "/api/2.0/sql/warehouses", body={
+        "name": f"{a.prefix}-rt", "warehouse_type": "REALTIME", **COMMON})
+    rt_type = w.api_client.do("GET", f"/api/2.0/sql/warehouses/{rt['id']}").get("warehouse_type")
+    if rt_type != "REALTIME":
+        w.api_client.do("DELETE", f"/api/2.0/sql/warehouses/{rt['id']}")
+        raise SystemExit(f"Lakehouse//RT warehouse not created (got warehouse_type {rt_type}); "
+                         f"create it in the UI and set BENCH_WAREHOUSE_RT by hand")
     print(f"export BENCH_WAREHOUSE_RT={rt['id']}")
 
 
