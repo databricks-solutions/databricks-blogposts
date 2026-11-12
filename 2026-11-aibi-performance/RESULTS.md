@@ -32,7 +32,9 @@ the same moment (reproduced in a second session). Shown: the other 9 runs (0.28�
 | Without (`r_nolc`) | 9.68 ± 1.85 | 7.79 ± 0.43 |
 | With (baseline) | 10.31 ± 1.45 (+7%, n.s.) | 8.35 ± 0.54 (+7%, t=+2.6) |
 
-Subsequent (cached) loads: 2.2–2.7 s for every variant.
+Subsequent (cached) loads: 2.2–2.7 s for every variant. They are timed from the navigation start and include loading
+the page itself, while first loads start at the Refresh click, so the two columns are not directly comparable (see
+Method).
 
 **Server side** (`server_side.py`, from `system.query.history`, PRO only): no result-cache hit in any measured Refresh.
 No file was pruned on the star schema (with or without clustering), because the filters are on dimension columns. On
@@ -45,8 +47,7 @@ table is one 77 MB file (unclustered: two 60 MB files), which is the most likely
    the filters hit the cluster keys directly (denormalized tables). Expect it to matter with many files per table.
 2. **Ranking of the single levers** (browser): Lakehouse//RT −66% > pre-join −55% > dropdowns from small tables −23%
    ≈ materialized grain −22% ≈ fewer widgets −20%.
-3. **Stacked: 10.3 s → 0.96 s (−91%)**, in line with the first run on the unclustered star schema (−90%,
-   branch [`archive/first-run`](https://github.com/dbxorbey/aibibenchmark/tree/archive/first-run)).
+3. **Stacked: 10.3 s → 0.96 s (−91%)**, in line with an earlier run on the unclustered star schema (−90%).
 4. **The materialized grain after the pre-join gives no browser gain** (+3%, n.s.; replay −16%): the 16 dropdown
    queries on the wide table dominate the page until they are fed from small tables.
 5. **Dropdowns from small tables gain much more in the browser (−23% / −33%) than in the replay (−7%)**: the
@@ -58,7 +59,8 @@ table is one 77 MB file (unclustered: two 60 MB files), which is the most likely
 * Browser (`measure.js`, e.g. via Chrome DevTools MCP `evaluate_script`): 10 rounds, all 11 dashboards interleaved
   round-robin; `step.sh` (cache invalidation of the schema the next variant reads) before every measurement; one
   unrecorded warm-up load per dashboard before round 1. *First load* = click Refresh → last `lakeview-query` response; *subsequent load* =
-  the page navigation right before it (dashboard cache).
+  the page navigation right before it (dashboard cache), timed from the navigation start. The subsequent load therefore
+  includes loading the page itself and the first load does not, which is why step 5 shows 0.96 s cold vs 2.2 s cached.
 * Navigate with the init script `performance.setResourceTimingBufferSize(10000)`; with the default 250-entry buffer
   the `lakeview-query` requests may never be recorded.
 * Browser noise: the baseline was 11.5–12.7 s in 3 of 10 rounds (otherwise 8.6–10.1 s) while the warehouse-side page

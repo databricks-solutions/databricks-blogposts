@@ -189,7 +189,7 @@ evaluate_script({ function: <contents of measure.js> })`],
     },
     {
       name: "4 Subsequent load (cached)",
-      cap: ["The page load from step 2: settle(0) with the same rule as step 3, counted from t = 0 = navigation start (measure.js:20). subsequent_load_s = latest responseEnd (measure.js:27).", "Served by the dashboard cache. In the script this load is timed before the Refresh: publishing pre-warms the dashboard cache, so no page navigation is ever cold."],
+      cap: ["The page load from step 2: settle(0) with the same rule as step 3, counted from t = 0 = navigation start (measure.js:20). subsequent_load_s = latest responseEnd (measure.js:27).", "Served by the dashboard cache. Includes loading the page itself, while the first load starts at the Refresh click on the loaded page → not directly comparable."],
       nodes: ["ch_load", "db_cache"], edges: ["e5"], tl: ["t0", "nav", "q1", "quiet1"], cursor: [0, 2.84],
       title: "4 · Subsequent load (cached) = navigation start → last dashboard-query response",
       files: ["measure.js:20, 27"],
@@ -197,6 +197,7 @@ evaluate_script({ function: <contents of measure.js> })`],
         "This is the page load from step 2. <code>settle(0)</code> uses the same rule as in step 3 but counts every dashboard-query request since t = 0 (the navigation start).",
         "The load is served from the <b>dashboard cache</b>, which ignores the property commits of step 1. That's why it's the 'subsequent' (cached) number.",
         "<b>Order in the script:</b> this number is measured <em>before</em> the Refresh of step 3, because the page has to be loaded before Refresh can be clicked. Publishing pre-warms the dashboard cache, so a navigation is never cold; the cold load can only be forced with Refresh. 'First' / 'subsequent' describe what a user experiences, and this chart lists them in that order.",
+        "<b>Not directly comparable to the first load:</b> this number includes loading the page itself, while the first load (step 3) starts at the Refresh click on the already loaded page. A fast variant can therefore show a shorter first load than subsequent load (stacked step 5: 0.96 s cold vs 2.2 s cached).",
       ],
       code: [
         ["measure.js:20", "const nav = await settle(0);"],
@@ -415,7 +416,8 @@ const REPLAY = {
 // =====================================================================================================
 function browserTimeline(tl) {
   // example numbers: l0_baseline run 1 (first 9.54 s, subsequent 2.84 s); quiet windows are 10 s each.
-  // Each row has its own t = 0. In the script row ② (page navigation) runs before row ① (Refresh), see step 4.
+  // Each row has its own t = 0, so the two rows are not directly comparable: ② includes loading the page itself.
+  // In the script row ② (page navigation) runs before row ① (Refresh), see step 4.
   tl.setAttribute("viewBox", "0 0 1300 190");
   const X0 = 230, SCALE = 51, tx = (s) => X0 + s * SCALE;
   const FIRST = 9.54, SUB = 2.84, YA = 44, YB = 114;

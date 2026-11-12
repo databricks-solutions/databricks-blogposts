@@ -1,7 +1,7 @@
 // Run via chrome-devtools evaluate_script right after navigating to a published dashboard
 // (after ./step.sh <variant>; navigate with initScript: performance.setResourceTimingBufferSize(10000);)
-// 1. subsequent load: navigation start -> last dashboard-query response (served from the dashboard cache, which
-//    ignores the table-property commits of invalidate.sh)
+// 1. subsequent load: navigation start -> last dashboard-query response (dashboard cache). Includes loading the page
+//    itself, unlike 2., which starts at the Refresh click on the loaded page -> the two are not directly comparable
 // 2. first load: clicks Refresh -> last dashboard-query response (cold: new table versions, no result cache)
 // "Settled" = no new dashboard-query requests for 10s (long-poll requests take ~5s).
 async () => {

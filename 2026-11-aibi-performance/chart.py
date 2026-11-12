@@ -1,6 +1,6 @@
 """Bar charts of the browser first load: isolated (each measure alone) and stacked (cumulative), % always vs the baseline.
 
-Usage: python chart.py  -> writes blog/{isolated,stacked}_chart.html (interactive) and .svg (static, for the blog post)
+Usage: python chart.py  -> writes out/{isolated,stacked}_chart.html (interactive) and .svg (static)
 """
 import html
 import json
@@ -148,15 +148,15 @@ def write_svg(html_path, out):
 
 def write(name, bars, title, aria):
     steps = [{"l1": l1, "l2": l2, "runs": runs(k)} for k, l1, l2 in bars]
-    out = os.path.join(HERE, "blog", f"{name}_chart.html")
+    out = os.path.join(HERE, "out", f"{name}_chart.html")
     open(out, "w").write(PAGE.replace("__TITLE__", title).replace("__ARIA__", aria)
                          .replace("__DATA__", json.dumps({"steps": steps})))
     print(out)
-    write_svg(out, os.path.join(HERE, "blog", f"{name}_chart.svg"))
+    write_svg(out, os.path.join(HERE, "out", f"{name}_chart.svg"))
 
 
 def main():
-    os.makedirs(os.path.join(HERE, "blog"), exist_ok=True)
+    os.makedirs(os.path.join(HERE, "out"), exist_ok=True)
     first, last = (sum(runs(k)) / len(runs(k)) for k in (STACKED[0][0], STACKED[-1][0]))
     write("isolated", ISOLATED, "Cold landing-page load, each measure on its own",
           "Browser first load of the baseline and of each measure applied alone to the baseline")
