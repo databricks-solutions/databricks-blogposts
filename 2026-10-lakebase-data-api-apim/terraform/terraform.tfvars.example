@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+
+tenant_id             = "<entra-tenant-id>"
+subscription_id       = "<azure-subscription-id>"
+databricks_account_id = "<databricks-account-id>" # accounts.azuredatabricks.net, user menu
+apim_publisher_email  = "<you>@example.com"
+
+# The existing workspace and Lakebase project (see README, "Before you start").
+workspace_id      = "<workspace-id>"                                       # the number in adb-<workspace-id>.<n>.azuredatabricks.net
+workspace_url     = "https://adb-<workspace-id>.<n>.azuredatabricks.net"
+data_api_url      = "<data-api-url>" # copy from the Lakebase project's Data API page, no trailing slash
+lakebase_endpoint = "projects/<project>/branches/<branch>/endpoints/<endpoint>"
+lakebase_database = "projects/<project>/branches/<branch>/databases/<database>"
+
+location = "eastus2"
+prefix   = "lbapim"
+
+# Turn off the designs you don't need.
+# enable_mi_api             = true # /lakebase:   one managed identity, subscription key
+# enable_app_role_rls         = true # /lakebase-rls: one managed identity per app role, row-level security
+# enable_secret_alternative = true # /lakebase-s: Databricks OAuth secret instead of the token exchange

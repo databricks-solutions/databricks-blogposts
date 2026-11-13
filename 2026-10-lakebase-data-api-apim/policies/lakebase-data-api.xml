@@ -1,0 +1,95 @@
+<!--
+    API-scope policy: front the Lakebase Data API (PostgREST) with Azure API Management.
+
+    On each request APIM looks up a cached Databricks OAuth token for the service principal. On a cache miss
+    it mints one via the workspace OAuth M2M endpoint (client_credentials, scope=all-apis), caches it for
+    (expires_in - 300s), and injects it as the bearer token on the backend call. A token error from the backend
+    (400/401 mentioning the token) evicts the cached token so the next request re-mints.
+
+    Named values (see README.md):
+      lakebase-workspace-url      https://adb-<workspace-id>.<n>.azuredatabricks.net  (no trailing slash)
+      lakebase-sp-client-id       service principal application (client) ID
+      lakebase-sp-client-secret   service principal OAuth secret (secret / Key Vault-backed)
+      lakebase-data-api-url       REST endpoint from the Lakebase project's Data API page (no trailing slash)
+-->
+<policies>
+    <inbound>
+        <base />
+        <!-- Callers authenticate to APIM (subscription key and/or validate-jwt); never forward their credentials. -->
+        <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
+        <set-variable name="token-source" value="cache" />
+        <cache-lookup-value key="lakebase-data-api-token" variable-name="dbx-token" />
+        <choose>
+            <when condition="@(!context.Variables.ContainsKey("dbx-token"))">
+                <set-variable name="token-source" value="mint" />
+                <send-request mode="new" response-variable-name="token-response" timeout="20" ignore-error="false">
+                    <set-url>{{lakebase-workspace-url}}/oidc/v1/token</set-url>
+                    <set-method>POST</set-method>
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/x-www-form-urlencoded</value>
+                    </set-header>
+                    <set-header name="Authorization" exists-action="override">
+                        <value>@("Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("{{lakebase-sp-client-id}}:{{lakebase-sp-client-secret}}")))</value>
+                    </set-header>
+                    <set-body>grant_type=client_credentials&amp;scope=all-apis</set-body>
+                </send-request>
+                <choose>
+                    <when condition="@(((IResponse)context.Variables["token-response"]).StatusCode != 200)">
+                        <return-response>
+                            <set-status code="502" reason="Bad Gateway" />
+                            <set-header name="Content-Type" exists-action="override">
+                                <value>application/json</value>
+                            </set-header>
+                            <set-body>{"message":"Failed to obtain a Databricks OAuth token for the Lakebase Data API."}</set-body>
+                        </return-response>
+                    </when>
+                </choose>
+                <set-variable name="token-json" value="@(((IResponse)context.Variables["token-response"]).Body.As<JObject>())" />
+                <choose>
+                    <when condition="@(string.IsNullOrEmpty(((JObject)context.Variables["token-json"]).Value<string>("access_token")))">
+                        <return-response>
+                            <set-status code="502" reason="Bad Gateway" />
+                            <set-header name="Content-Type" exists-action="override">
+                                <value>application/json</value>
+                            </set-header>
+                            <set-body>{"message":"Databricks OAuth token response did not contain an access_token."}</set-body>
+                        </return-response>
+                    </when>
+                </choose>
+                <set-variable name="dbx-token" value="@(((JObject)context.Variables["token-json"]).Value<string>("access_token"))" />
+                <!-- Expire the cache entry 5 minutes before the token itself expires (tokens are valid for 1 hour). -->
+                <cache-store-value key="lakebase-data-api-token" value="@((string)context.Variables["dbx-token"])" duration="@(Math.Max(60, (((JObject)context.Variables["token-json"]).Value<int?>("expires_in") ?? 3600) - 300))" />
+            </when>
+        </choose>
+        <set-header name="Authorization" exists-action="override">
+            <value>@("Bearer " + (string)context.Variables["dbx-token"])</value>
+        </set-header>
+        <set-backend-service base-url="{{lakebase-data-api-url}}" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+        <set-header name="X-Lakebase-Token-Source" exists-action="override">
+            <value>@((string)context.Variables.GetValueOrDefault("token-source", "none"))</value>
+        </set-header>
+        <!-- Token revoked or secret rotated: drop the cached token so the next request mints a fresh one.
+             The Data API reports token problems as 400/401 with a message about the token, not as PostgREST
+             errors; grant errors (403, code 42501) and query errors pass through unchanged. -->
+        <choose>
+            <when condition="@{
+                var s = context.Response.StatusCode;
+                if (s == 401) { return true; }
+                if (s != 400) { return false; }
+                var m = context.Response.Body.As<string>(preserveContent: true).ToLowerInvariant();
+                return m.Contains("jwk") || m.Contains("jwt") || m.Contains("token");
+            }">
+                <cache-remove-value key="lakebase-data-api-token" />
+            </when>
+        </choose>
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

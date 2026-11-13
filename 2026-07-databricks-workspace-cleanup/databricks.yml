@@ -1,0 +1,142 @@
+bundle:
+  name: workspace-cleanup
+
+workspace:
+  host: https://<your-workspace>.azuredatabricks.net
+
+variables:
+  environment:
+    default: dev
+  warehouse_id:
+    # Required: the SQL warehouse that backs the audit dashboard. No default, so
+    # `bundle deploy` fails fast if it is unset rather than deploying a dashboard
+    # that cannot run. Pass it with --var warehouse_id=<id> (see README), or add
+    # it under a target's `variables:` block.
+    description: SQL warehouse that backs the audit dashboard
+
+resources:
+  dashboards:
+    cleanup_audit:
+      display_name: "Workspace Cleanup - Audit"
+      file_path: ./dashboards/cleanup_audit.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+
+  jobs:
+    # Phase 1 - Discover. Scheduled; never deletes. Flags candidates to the audit
+    # table and refreshes job_activity. Reviewers then record approvals (Phase 2).
+    cleanup_discover:
+      name: "[Maintenance] Workspace Cleanup - Discover"
+      # Protected (config.yaml protected.tags), so the cleanup never flags itself.
+      tags:
+        retain: ""
+      schedule:
+        quartz_cron_expression: "0 0 2 ? * SUN"
+        timezone_id: "UTC"
+      parameters:
+        - name: environment
+          default: ${var.environment}
+      tasks:
+        - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/04_system_table_analysis.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: discover
+
+        - task_key: job_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/01_job_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: discover
+
+        - task_key: dashboard_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/02_dashboard_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: discover
+              # Lets 02 skip the audit dashboard this bundle deploys.
+              audit_dashboard_id: ${resources.dashboards.cleanup_audit.id}
+
+        - task_key: ai_search_index_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/03_ai_search_index_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: discover
+
+    # Phase 3 - Verify + execute. No schedule: run it on purpose after approvals
+    # are recorded. Re-checks current state and deletes only approved candidates,
+    # up to max_deletions_per_run. Exits without deleting unless the environment
+    # sets allow_execute: true in config.yaml.
+    cleanup_execute:
+      name: "[Maintenance] Workspace Cleanup - Execute"
+      # Protected (config.yaml protected.tags), so the cleanup never flags itself.
+      tags:
+        retain: ""
+      parameters:
+        - name: environment
+          default: ${var.environment}
+      tasks:
+        - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/04_system_table_analysis.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: execute
+
+        - task_key: job_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/01_job_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: execute
+
+        - task_key: dashboard_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/02_dashboard_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: execute
+              # Lets 02 skip the audit dashboard this bundle deploys.
+              audit_dashboard_id: ${resources.dashboards.cleanup_audit.id}
+
+        - task_key: ai_search_index_cleanup
+          depends_on:
+            - task_key: system_table_analysis
+          notebook_task:
+            notebook_path: ./notebooks/03_ai_search_index_cleanup.py
+            base_parameters:
+              environment: ${var.environment}
+              config_path: ${workspace.file_path}/config
+              mode: execute
+
+targets:
+  dev:
+    default: true
+    variables:
+      environment: dev
+  stage:
+    variables:
+      environment: stage
+  prod:
+    variables:
+      environment: prod

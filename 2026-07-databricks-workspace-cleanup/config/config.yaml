@@ -1,0 +1,55 @@
+# Per-environment cleanup toggles. Whether a run deletes is decided by the JOB,
+# not this file: cleanup_discover never deletes; cleanup_execute verifies and
+# deletes approved candidates.
+#   allow_execute  -> true lets cleanup_execute delete in this environment
+#                     (false = cleanup_execute exits without touching anything)
+#   *_cleanup      -> enable/disable each cleanup type (false = notebook exits)
+#   audit_table    -> where every action is logged; point the Lakeview dashboard
+#                     at this same three-level (catalog.schema.table) name.
+
+# Applied to every environment unless that environment overrides the key. Keeps
+# allow_execute: false as the safe baseline - an env must opt in to deletion.
+defaults:
+  allow_execute: false
+
+# Hard cap on live deletions per run, per resource type (jobs, dashboards, AI Search
+# indexes - each is deleted by exactly one task) - limits blast radius if a rule
+# is misconfigured. cleanup_discover flags all candidates regardless.
+max_deletions_per_run: 25
+
+# Approval gate: when true, cleanup_execute only deletes resources
+# that have a recorded approval in <audit catalog.schema>.cleanup_approvals.
+# Reviewing the dashboard is not authorization - reviewers must INSERT an approval
+# row. cleanup_discover always flags every candidate regardless of this setting.
+require_approval: true
+
+# Protected resources are never deleted, regardless of thresholds (shared by all
+# environments). Tags match a job's tag keys or values; exclude_ids are explicit
+# "<type>:<id>" (or bare id) entries, e.g. ["job:123", "dashboard:abc"].
+protected:
+  exclude_pipeline_jobs: true
+  tags:
+    - retain
+    - production-critical
+  exclude_ids: []
+
+dev:
+  job_cleanup: true
+  dashboard_cleanup: true
+  ai_search_index_cleanup: true
+  # no allow_execute here -> inherits false: dev can discover but never delete
+  audit_table: maintenance.cleanup.cleanup_log
+
+stage:
+  job_cleanup: true
+  dashboard_cleanup: true
+  ai_search_index_cleanup: true
+  allow_execute: true
+  audit_table: maintenance.cleanup.cleanup_log
+
+prod:
+  job_cleanup: true
+  dashboard_cleanup: true
+  ai_search_index_cleanup: true
+  allow_execute: true
+  audit_table: maintenance.cleanup.cleanup_log
