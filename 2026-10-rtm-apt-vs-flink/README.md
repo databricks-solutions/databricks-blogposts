@@ -40,18 +40,26 @@ per engine, 60-s trigger, durable S3 checkpoints.
 | Spark RTM — Java | 921.5 ms | **64.3 ms** | **14.3×** |
 | Spark RTM — Scala | 849.2 ms | **61.3 ms** | **13.8×** |
 
-- **With APT on, Spark RTM and Flink are a statistical tie.** At matched versions (Spark 4.3 /
-  Flink 2.3, upstream stateless run, equal resources) the pipeline-latency p99 is **Spark Scala
-  27.7 ms vs Flink DataStream 27.4 ms** — within 0.3 ms, and Flink's 23–33 ms spread covers Spark's
-  27–28 ms; medians are 6.3 ms vs 6.1 ms. **Flink SQL** — the closest like-for-like to Spark's
-  DataFrame/Catalyst path — is marginally fastest at **26.1 ms** p99. Our own Scala run (29.3 ms
-  pipeline p99) is consistent with that tie. *(Source: upstream
-  [`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink),
-  `post/piece1-4.3.md`. These are separate runs from ours, so we don't merge them into one column.)*
+- **With APT on, Spark RTM and Flink are a statistical tie** at matched versions (Spark 4.3 /
+  Flink 2.3, equal resources) — see the table below.
 - APT fixes the **tail only** — the median is ~6 ms in both cases. It removes the periodic
   checkpoint stall; it does not change steady-state compute.
 - Scala / Java / PySpark are equivalent — the measured PySpark job runs **zero Python on
   executors** (`out_ts` via `reflect()`), so all three share one JVM plan.
+
+**APT-on Spark vs Flink — matched Spark 4.3 / Flink 2.3 (upstream stateless run, equal resources):**
+
+| Engine | pipeline p99 (ms) | median (ms) |
+|---|--:|--:|
+| Flink SQL *(closest like-for-like to Spark's DataFrame/Catalyst)* | **26.1** | — |
+| Flink DataStream | **27.4** (23–33) | 6.1 |
+| Spark RTM — Scala *(upstream run)* | **27.7** (27–28) | 6.3 |
+| Spark RTM — Scala *(our run)* | 29.3 | 6.1 |
+
+Spark and Flink land **within 0.3 ms** on p99 — a statistical tie (Flink's 23–33 ms spread covers
+Spark's 27–28 ms). Our own Scala run (29.3 ms) is consistent with that. *(Source: upstream
+[`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink),
+`post/piece1-4.3.md`; separate runs from ours, not merged into one column.)*
 
 The one knob that changes everything:
 
