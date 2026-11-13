@@ -5,13 +5,20 @@
 # from the stock python:3.12-slim image. APT is flipped by one config flag.
 #
 # Prereq: the Scala/Java jars are built (mvn/sbt in the upstream spark/ projects). PySpark needs
-# no build. Usage: eks/run_direct.sh <spark-rtm-scala|spark-rtm-java|pyspark-rtm> <true|false>
+# no build.
+#
+# Usage:  APT=<true|false> RUN_SECONDS=<n> WARMUP=<n> eks/run_direct.sh <spark-rtm-scala|spark-rtm-java|pyspark-rtm>
+#   APT          true  = Async Progress Tracking ON (async commit);
+#                false = baseline (synchronous commit).            default: true
+#   RUN_SECONDS  measurement window in seconds (longer = cleaner p99).  default: 600
+#   WARMUP       warm-up seconds dropped from stats (excludes cold start / batch 0). default: 60
+# (APT is also accepted as the 2nd positional arg for backward compatibility.)
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE/.."     # upstream repo root
 if [ -n "${AWS_PROFILE:-}" ]; then export AWS_PROFILE; fi
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export KUBECONFIG="${KUBECONFIG:-$HERE/kubeconfig}"
-ENGINE="$1"; APT="${2:-true}"; LABEL="${ENGINE}-p6-apt${APT}"
+ENGINE="$1"; APT="${APT:-${2:-true}}"; LABEL="${ENGINE}-p6-apt${APT}"
 PRODPODS="${PRODPODS:-8}"; RATE="${RATE:-12500}"           # 8 x 12500 = 100k/s
 RUN_SECONDS="${RUN_SECONDS:-600}"; WARMUP="${WARMUP:-60}"
 CONSUMER_SECONDS=$((WARMUP+RUN_SECONDS)); PRODUCER_SECONDS=$((CONSUMER_SECONDS+20))
