@@ -12,7 +12,8 @@ on the *identical* stateless Kafka → transform → Kafka pipeline at ~100k eve
 An earlier community study ([`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink),
 reproducing the Neuw84 Spark RTM Medium post) found that Spark RTM **tied Flink at the
 median** but **trailed badly on the tail**: with durable S3 checkpoints at scale, RTM's e2e
-p99 sat at **~0.8–0.9 s vs Flink's ~63 ms (≈14×)**. The root cause was that RTM's
+p99 sat at **~0.8–0.9 s vs Flink's ~63 ms (≈14×)** — measured on **Spark 4.1 / Flink 2.2**. The
+root cause was that RTM's
 offset/commit-log write was **synchronous** — it stalled the data path at every checkpoint.
 
 **APT makes that commit asynchronous.** This benchmark measures the before/after on the same
@@ -23,14 +24,13 @@ pipeline, same cluster, same resources — flipping a single config flag.
 100k events/s in (~33.3k/s out after a ~33% filter), 6 Kafka partitions, 7 cores / 14 GB
 per engine, 60-s trigger, durable S3 checkpoints.
 
-**APT on — at parity with Flink (e2e p99):**
+**APT on — RTM tail latency (our 10-min runs on this cluster):**
 
-| Engine | pipeline p99 (ms) | e2e p99 (ms) | vs Flink |
-|---|--:|--:|--:|
-| **Flink** (Java DataStream, reference) | 33 | **63** | 1.00× |
-| **Spark RTM — Scala** | 29.3 | **61.3** | **0.97×** |
-| **Spark RTM — Java** | 33.5 | **64.3** | **1.02×** |
-| **PySpark RTM** | 32.4 | **66.8** | **1.06×** |
+| Engine | pipeline p99 (ms) | e2e p99 (ms) |
+|---|--:|--:|
+| **Spark RTM — Scala** | 29.3 | **61.3** |
+| **Spark RTM — Java** | 33.5 | **64.3** |
+| **PySpark RTM** | 32.4 | **66.8** |
 
 **The APT effect — same image, flip the flag off → on:**
 
@@ -40,8 +40,14 @@ per engine, 60-s trigger, durable S3 checkpoints.
 | Spark RTM — Java | 921.5 ms | **64.3 ms** | **14.3×** |
 | Spark RTM — Scala | 849.2 ms | **61.3 ms** | **13.8×** |
 
-- **With APT on, Spark RTM is effectively at parity with Flink** on tail latency (0.97–1.06×);
-  medians are tied (~6 ms pipeline / ~16 ms e2e).
+- **With APT on, Spark RTM and Flink are a statistical tie.** At matched versions (Spark 4.3 /
+  Flink 2.3, upstream stateless run, equal resources) the pipeline-latency p99 is **Spark Scala
+  27.7 ms vs Flink DataStream 27.4 ms** — within 0.3 ms, and Flink's 23–33 ms spread covers Spark's
+  27–28 ms; medians are 6.3 ms vs 6.1 ms. **Flink SQL** — the closest like-for-like to Spark's
+  DataFrame/Catalyst path — is marginally fastest at **26.1 ms** p99. Our own Scala run (29.3 ms
+  pipeline p99) is consistent with that tie. *(Source: upstream
+  [`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink),
+  `post/piece1-4.3.md`. These are separate runs from ours, so we don't merge them into one column.)*
 - APT fixes the **tail only** — the median is ~6 ms in both cases. It removes the periodic
   checkpoint stall; it does not change steady-state compute.
 - Scala / Java / PySpark are equivalent — the measured PySpark job runs **zero Python on
