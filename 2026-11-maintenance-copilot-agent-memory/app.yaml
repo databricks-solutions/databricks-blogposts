@@ -1,0 +1,28 @@
+command: ["uv", "run", "start-server"]
+# Databricks Apps listen on port 8000. `agentbricks deploy` wires in the Runtime Store, the memory and
+# session stores declared in agent.toml, and tracing, and writes those values into this file. The
+# settings below are MaintBot's own; replace the <placeholders> with your values.
+env:
+  # Plain user/assistant transcripts for the two memory pipelines: under the person, and under
+  # their plant. A pipeline writes memory under the actor of each transcript it reads.
+  - name: AGENT_TRANSCRIPT_STORE
+    value: "maintbot-transcripts"
+  - name: AGENT_TEAM_TRANSCRIPT_STORE
+    value: "maintbot-team-transcripts"
+  # Pipeline IDs from `agentbricks memory pipeline create` (shown as "last distilled" in the app).
+  - name: MAINTBOT_PIPELINE_ID
+    value: "<personal-pipeline-id>"
+  - name: MAINTBOT_TEAM_PIPELINE_ID
+    value: "<team-pipeline-id>"
+  # Where the plant CMMS tables live, and the SQL warehouse the agent queries them with.
+  - name: CMMS_SCHEMA
+    value: "<catalog>.maintbot_cmms"
+  - name: CMMS_WAREHOUSE_ID
+    value: "<warehouse-id>"
+  # Which plant's team memory each user shares. Map users to plants in MAINTBOT_USER_PLANTS
+  # (JSON, e.g. {"someone@company.com": "P2"}); everyone else uses the default.
+  - name: MAINTBOT_DEFAULT_PLANT
+    value: "P1"
+  # Let one signed-in user switch between demo technician personas (namespaced under that user).
+  - name: MAINTBOT_DEMO_PERSONAS
+    value: "true"
