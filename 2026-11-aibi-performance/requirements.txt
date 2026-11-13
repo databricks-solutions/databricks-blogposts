@@ -1,0 +1,2 @@
+databricks-sdk>=0.40
+databricks-sql-connector[kernel]>=4.0  # kernel extra is needed for Lakehouse//RT
