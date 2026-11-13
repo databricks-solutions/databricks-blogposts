@@ -40,26 +40,26 @@ per engine, 60-s trigger, durable S3 checkpoints.
 | Spark RTM — Java | 921.5 ms | **64.3 ms** | **14.3×** |
 | Spark RTM — Scala | 849.2 ms | **61.3 ms** | **13.8×** |
 
-- **With APT on, Spark RTM and Flink are a statistical tie** at matched versions (Spark 4.3 /
-  Flink 2.3, equal resources) — see the table below.
+- **With APT on, Spark RTM and Flink are a statistical tie** at matched versions — see the
+  third-party 4.3 / 2.3 head-to-head below (we did not run Flink ourselves).
 - APT fixes the **tail only** — the median is ~6 ms in both cases. It removes the periodic
   checkpoint stall; it does not change steady-state compute.
 - Scala / Java / PySpark are equivalent — the measured PySpark job runs **zero Python on
   executors** (`out_ts` via `reflect()`), so all three share one JVM plan.
 
-**APT-on Spark vs Flink — matched Spark 4.3 / Flink 2.3 (upstream stateless run, equal resources):**
+**Spark RTM vs Flink at matched versions — third-party result** (Spark 4.3.0 / Flink 2.3.0, equal
+resources; source: [`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink),
+`post/piece1-4.3.md`). *These are the third party's own runs — we did not run Flink ourselves:*
 
-| Engine | pipeline p99 (ms) | median (ms) |
+| Engine *(third-party stateless run)* | pipeline p99 (ms) | median (ms) |
 |---|--:|--:|
-| Flink SQL *(closest like-for-like to Spark's DataFrame/Catalyst)* | **26.1** | — |
+| Flink SQL *(closest like-for-like to Spark's DataFrame/Catalyst)* | **26.1** (26–27) | 6.2 |
 | Flink DataStream | **27.4** (23–33) | 6.1 |
-| Spark RTM — Scala *(upstream run)* | **27.7** (27–28) | 6.3 |
-| Spark RTM — Scala *(our run)* | 29.3 | 6.1 |
+| Spark RTM — Scala | **27.7** (27–28) | 6.3 |
 
-Spark and Flink land **within 0.3 ms** on p99 — a statistical tie (Flink's 23–33 ms spread covers
-Spark's 27–28 ms). Our own Scala run (29.3 ms) is consistent with that. *(Source: upstream
-[`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink),
-`post/piece1-4.3.md`; separate runs from ours, not merged into one column.)*
+In that head-to-head, Spark RTM and Flink land **within 0.3 ms** on p99 — a statistical tie (Flink's
+23–33 ms spread covers Spark's 27–28 ms). Our own APT-on Scala result (29.3 ms pipeline p99, above)
+is consistent with the third party's Spark figure.
 
 The one knob that changes everything:
 

@@ -103,15 +103,15 @@ Our runs — APT‑on from a 10‑min steady window
 | e2e p99 tail collapse | — | **~12–14×** |
 | median (pipeline / e2e) | ~6 ms / ~16 ms | ~6 ms / ~16 ms (unchanged) |
 
-**vs Flink (matched Spark 4.3 / Flink 2.3, upstream stateless run, equal resources):** APT‑on Spark
-and Flink are a **statistical tie** on pipeline‑latency p99 — Spark Scala 27.7 ms vs Flink
-DataStream 27.4 ms (Flink's 23–33 ms spread covers Spark's 27–28 ms), medians 6.3 vs 6.1 ms; Flink
-SQL — the closest like‑for‑like to Spark's DataFrame/Catalyst path — is marginally fastest at
-26.1 ms. *(Source: upstream
+**vs Flink — third-party result (matched Spark 4.3.0 / Flink 2.3.0, equal resources).** We did not
+run Flink ourselves; the third party's own stateless head-to-head shows a **statistical tie** on
+pipeline-latency p99 — Spark Scala 27.7 ms vs Flink DataStream 27.4 ms (Flink's 23–33 ms spread
+covers Spark's 27–28 ms), medians 6.3 vs 6.1 ms; Flink SQL — the closest like-for-like to Spark's
+DataFrame/Catalyst path — is marginally fastest at 26.1 ms. Our own APT-on Scala result (29.3 ms
+pipeline p99) is consistent with their Spark figure. *(Source: upstream
 [`fmorillo7694/spark-rtm-vs-flink`](https://github.com/fmorillo7694/spark-rtm-vs-flink),
-`post/piece1-4.3.md` — these are separate runs from ours.)* Use a **≥10‑min window** for a clean
-p99 (5‑min is noisier). The APT‑off tail is a structural per‑checkpoint stall and reproduces to
-within ~±10% across runs.
+`post/piece1-4.3.md`.)* Use a **≥10‑min window** for a clean p99 (5‑min is noisier). The APT‑off
+tail is a structural per‑checkpoint stall and reproduces to within ~±10% across runs.
 
 ## 5. Key knobs
 
