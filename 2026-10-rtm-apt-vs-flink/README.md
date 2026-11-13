@@ -146,11 +146,18 @@ bash eks/02b_irsa_s3.sh            # IRSA + S3 checkpoint bucket
 
 **Step 4 — run the APT off → on A/B** (stock image, only the flag flips):
 ```bash
+# Named parameters (why each is passed — shown with the published-run values):
+#   APT=true|false  the whole experiment: true = Async Progress Tracking ON (async commit, the fix);
+#                   false = baseline (synchronous commit — the slow tail we're measuring against).
+#   RUN_SECONDS     measurement window in seconds — longer gives a cleaner p99 (we use 600s on, 300s off).
+#   WARMUP          warm-up seconds dropped from the stats, so cold start / batch 0 don't skew results.
+# The engine (spark-rtm-scala | spark-rtm-java | pyspark-rtm) is the only positional argument.
+
 # APT ON (10-min window for a clean p99):
 APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh spark-rtm-scala
 APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh spark-rtm-java
 APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh pyspark-rtm
-# APT OFF (baseline):
+# APT OFF (baseline — 5-min window):
 APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh spark-rtm-scala
 APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh spark-rtm-java
 APT=false RUN_SECONDS=300 WARMUP=60 bash eks/run_direct.sh pyspark-rtm

@@ -76,6 +76,12 @@ Stock `apache/spark:4.3.0` image, same resources — only the `APT` flag flips. 
 mounts the app code from ConfigMaps and pulls the connectors with `--packages`.
 
 ```bash
+# Named parameters (why each is passed):
+#   APT=true|false  true = Async Progress Tracking ON (async commit); false = baseline (sync commit)
+#   RUN_SECONDS     measurement window in seconds (longer = cleaner p99; 600s on, 300s off)
+#   WARMUP          warm-up seconds dropped from stats (excludes cold start / batch 0)
+# Engine (spark-rtm-scala | spark-rtm-java | pyspark-rtm) is the only positional argument.
+
 # APT ON:
 APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh spark-rtm-scala
 APT=true  RUN_SECONDS=600 WARMUP=60 bash eks/run_direct.sh spark-rtm-java
