@@ -1,0 +1,53 @@
+# DIRECT stock-image PySpark RTM SparkApplication (no custom build).
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: rtm-bench
+  namespace: spark
+spec:
+  type: Python
+  pythonVersion: "3"
+  mode: cluster
+  image: "apache/spark:4.3.0-scala2.13-java17-python3-ubuntu"
+  imagePullPolicy: IfNotPresent
+  mainApplicationFile: "local:///mnt/app/rtm_pyspark_measured.py"
+  sparkVersion: "4.3.0"
+  deps:
+    packages:
+      - org.apache.spark:spark-sql-kafka-0-10_2.13:4.3.0
+      - org.apache.hadoop:hadoop-aws:3.5.0
+      - software.amazon.awssdk:bundle:2.35.4
+  sparkConf:
+    spark.sql.adaptive.enabled: "false"
+    spark.sql.shuffle.partitions: "6"
+    spark.jars.ivy: "/tmp/.ivy2"
+    spark.hadoop.fs.s3a.aws.credentials.provider: "software.amazon.awssdk.auth.credentials.WebIdentityTokenFileCredentialsProvider"
+    spark.sql.streaming.realTimeMode.asyncProgressTrackingByDefault.enabled: "__APT__"
+  restartPolicy:
+    type: Never
+  volumes:
+    - name: app
+      configMap:
+        name: rtm-pyjob
+  driver:
+    cores: 1
+    memory: "1536m"
+    memoryOverhead: "512m"
+    serviceAccount: spark-operator-spark
+    volumeMounts:
+      - name: app
+        mountPath: /mnt/app
+    env:
+      - { name: KAFKA_BOOTSTRAP_INTERNAL, value: "bench-kafka-bootstrap.kafka.svc:9092" }
+      - { name: INPUT_TOPIC, value: "input-events" }
+      - { name: OUTPUT_TOPIC, value: "output-events" }
+      - { name: RTM_TRIGGER, value: "60 seconds" }
+      - { name: CHECKPOINT_LOCATION, value: "s3a://rtm-flink-bench-ckpt-__ACCOUNT__/__CKPTNAME__" }
+  executor:
+    instances: 2
+    cores: 3
+    memory: "5120m"
+    memoryOverhead: "1024m"
+    volumeMounts:
+      - name: app
+        mountPath: /mnt/app

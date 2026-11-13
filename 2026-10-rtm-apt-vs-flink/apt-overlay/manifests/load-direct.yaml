@@ -1,0 +1,68 @@
+# DIRECT stock-image load generator (no custom build).
+# python:3.12-slim pulled anonymously; confluent-kafka wheel installed in-pod from
+# files.pythonhosted.org (reachable); producer.py/latency_consumer.py mounted from a ConfigMap.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: latency-consumer
+  namespace: kafka
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { app: latency-consumer }
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: scripts
+          configMap: { name: loadgen-scripts }
+      containers:
+        - name: consumer
+          image: python:3.12-slim
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pip install --no-cache-dir --no-deps --trusted-host files.pythonhosted.org \
+                "https://files.pythonhosted.org/packages/1d/4a/210f0e1f8e77956ed1296c8b9bac2093413c1669ea0e923f590f2827aa1a/confluent_kafka-2.13.0-cp312-cp312-manylinux_2_28_x86_64.whl" && \
+              python /app/latency_consumer.py --engine __ENGINE__ --bootstrap bench-kafka-bootstrap.kafka.svc:9092 \
+                --topic output-events --warmup __WARMUP__ --seconds __CONSUMER_SECONDS__ --outdir /tmp
+          volumeMounts:
+            - { name: scripts, mountPath: /app }
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits:   { cpu: "2", memory: 2Gi }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: producer
+  namespace: kafka
+spec:
+  completions: __PRODPODS__
+  parallelism: __PRODPODS__
+  completionMode: Indexed
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { app: producer }
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: scripts
+          configMap: { name: loadgen-scripts }
+      containers:
+        - name: producer
+          image: python:3.12-slim
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pip install --no-cache-dir --no-deps --trusted-host files.pythonhosted.org \
+                "https://files.pythonhosted.org/packages/1d/4a/210f0e1f8e77956ed1296c8b9bac2093413c1669ea0e923f590f2827aa1a/confluent_kafka-2.13.0-cp312-cp312-manylinux_2_28_x86_64.whl" && \
+              python /app/producer.py --rate __RATE__ --seconds __PRODUCER_SECONDS__ --payload-bytes 0 \
+                --bootstrap bench-kafka-bootstrap.kafka.svc:9092 --topic input-events
+          volumeMounts:
+            - { name: scripts, mountPath: /app }
+          resources:
+            requests: { cpu: "1", memory: 512Mi }
+            limits:   { cpu: "2", memory: 1Gi }

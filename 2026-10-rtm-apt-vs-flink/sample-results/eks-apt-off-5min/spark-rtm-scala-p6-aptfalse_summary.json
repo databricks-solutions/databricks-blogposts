@@ -1,0 +1,25 @@
+{
+  "engine": "spark-rtm-scala-p6-aptfalse",
+  "topic": "output-events",
+  "kept_records": 10000988,
+  "seen_records": 11980769,
+  "window_seconds": 300,
+  "warmup_seconds": 60,
+  "throughput_eps": 33336.6,
+  "pipeline_ms": {
+    "count": 10000988,
+    "p50": 7.367,
+    "p95": 12.317,
+    "p99": 641.843,
+    "max": 1256.051,
+    "mean": 20.786
+  },
+  "e2e_ms": {
+    "count": 10000988,
+    "p50": 24.687,
+    "p95": 60.063,
+    "p99": 849.158,
+    "max": 1312.959,
+    "mean": 45.715
+  }
+}

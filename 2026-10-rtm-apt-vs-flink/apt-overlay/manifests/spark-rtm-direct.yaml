@@ -1,0 +1,56 @@
+# DIRECT stock-image Spark RTM SparkApplication (no custom build).
+# Stock apache/spark:4.3.0 image; connectors via deps.packages (Ivy); app jar mounted from a
+# ConfigMap; APT via the single config flag. Scala/Java via __MAINCLASS__/__JARFILE__/__TYPE__.
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: rtm-bench
+  namespace: spark
+spec:
+  type: __TYPE__
+  mode: cluster
+  image: "apache/spark:4.3.0-scala2.13-java17-python3-ubuntu"
+  imagePullPolicy: IfNotPresent
+  mainClass: __MAINCLASS__
+  mainApplicationFile: "local:///mnt/app/__JARFILE__"
+  sparkVersion: "4.3.0"
+  arguments:
+    - "rtm"
+    - "bench-kafka-bootstrap.kafka.svc:9092"
+    - "input-events"
+    - "output-events"
+    - "s3a://rtm-flink-bench-ckpt-__ACCOUNT__/__CKPTNAME__"
+    - "60 seconds"
+  deps:
+    packages:
+      - org.apache.spark:spark-sql-kafka-0-10_2.13:4.3.0
+      - org.apache.hadoop:hadoop-aws:3.5.0
+      - software.amazon.awssdk:bundle:2.35.4
+  sparkConf:
+    spark.sql.adaptive.enabled: "false"
+    spark.sql.shuffle.partitions: "6"
+    spark.jars.ivy: "/tmp/.ivy2"
+    spark.hadoop.fs.s3a.aws.credentials.provider: "software.amazon.awssdk.auth.credentials.WebIdentityTokenFileCredentialsProvider"
+    spark.sql.streaming.realTimeMode.asyncProgressTrackingByDefault.enabled: "__APT__"
+  restartPolicy:
+    type: Never
+  volumes:
+    - name: app
+      configMap:
+        name: rtm-app-jars
+  driver:
+    cores: 1
+    memory: "1536m"
+    memoryOverhead: "512m"
+    serviceAccount: spark-operator-spark
+    volumeMounts:
+      - name: app
+        mountPath: /mnt/app
+  executor:
+    instances: 2
+    cores: 3
+    memory: "5120m"
+    memoryOverhead: "1024m"
+    volumeMounts:
+      - name: app
+        mountPath: /mnt/app

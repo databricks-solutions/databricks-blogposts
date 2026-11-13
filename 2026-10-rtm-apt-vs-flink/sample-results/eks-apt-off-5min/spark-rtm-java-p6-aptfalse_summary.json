@@ -1,0 +1,25 @@
+{
+  "engine": "spark-rtm-java-p6-aptfalse",
+  "topic": "output-events",
+  "kept_records": 10003424,
+  "seen_records": 11986634,
+  "window_seconds": 300,
+  "warmup_seconds": 60,
+  "throughput_eps": 33344.7,
+  "pipeline_ms": {
+    "count": 10003424,
+    "p50": 7.307,
+    "p95": 14.706,
+    "p99": 729.224,
+    "max": 1542.2,
+    "mean": 23.053
+  },
+  "e2e_ms": {
+    "count": 10003424,
+    "p50": 24.731,
+    "p95": 62.879,
+    "p99": 921.48,
+    "max": 1567.723,
+    "mean": 48.532
+  }
+}
