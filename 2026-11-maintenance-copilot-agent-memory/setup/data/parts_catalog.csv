@@ -1,0 +1,9 @@
+part_no,part_desc,asset_class,default_vendor_id,list_lead_days,unit_cost_usd
+P-77410,"Cylinder seal kit, Buna-N, MSD-800",HYD_PRESS,V-01,49,412.0
+P-77412,"Cylinder seal kit, Viton N674-70, MSD-800",HYD_PRESS,V-01,49,655.0
+P-77450,"Cylinder seal kit, Buna-N, MSD-600",HYD_PRESS,V-01,49,380.0
+P-81002,Hydraulic filter element 10um,HYD_PWR,V-01,14,88.0
+P-90210,PowerFlex 525 VFD 5HP,CONVEYOR,V-12,21,1240.0
+P-90233,Encoder cable 10m M23,CONVEYOR,V-12,21,96.0
+P-60011,Conveyor drive belt EZ-190,CONVEYOR,V-20,5,145.0
+P-40500,Spindle bearing set VF-4,CNC,V-20,10,980.0

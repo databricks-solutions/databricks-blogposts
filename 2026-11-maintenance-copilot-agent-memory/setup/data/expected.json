@@ -1,0 +1,163 @@
+{
+  "hp204_q3_real_failures": 5,
+  "hp204_q3_naive_count": 8,
+  "maria_weekly_report": {
+    "window": [
+      "2026-09-27",
+      "2026-10-24"
+    ],
+    "downtime_min_by_line": {
+      "L1": 1839
+    },
+    "top_fail_codes": [
+      [
+        "MECH-BRG",
+        3
+      ],
+      [
+        "HYD-LEAK",
+        2
+      ],
+      [
+        "SEAL",
+        2
+      ]
+    ],
+    "wo_count": 7
+  },
+  "l3_may_2026_downtime_hours_correct": 53.0,
+  "l3_may_2026_downtime_hours_naive": 3177.0,
+  "l3_monthly_downtime_min_correct": {
+    "2026-01": 4276,
+    "2026-02": 3582,
+    "2026-03": 5974,
+    "2026-04": 2752,
+    "2026-05": 3177,
+    "2026-06": 4989,
+    "2026-07": 6828,
+    "2026-08": 4260,
+    "2026-09": 5213,
+    "2026-10": 5048
+  },
+  "l3_apr_vs_jul_2026": {
+    "apr_min": 2752,
+    "jul_min": 6828,
+    "apr_naive_min": 165123
+  },
+  "mtbf_q3_presses_hours": 656.4,
+  "mtbf_q3_presses_inputs": {
+    "calendar_hours": 2208,
+    "active_presses": 22,
+    "qualifying_failures": 74
+  },
+  "pareto_q3_by_plant": {
+    "P2": [
+      [
+        "HYD-LEAK",
+        13
+      ],
+      [
+        "SENSOR",
+        10
+      ],
+      [
+        "MECH-BRG",
+        8
+      ],
+      [
+        "SEAL",
+        7
+      ],
+      [
+        "HYD-PRESS",
+        4
+      ],
+      [
+        "PUMP",
+        2
+      ]
+    ],
+    "P1": [
+      [
+        "ELEC-VFD",
+        21
+      ],
+      [
+        "SENSOR",
+        20
+      ],
+      [
+        "MECH-BRG",
+        16
+      ],
+      [
+        "MECH-BELT",
+        14
+      ],
+      [
+        "HYD-LEAK",
+        8
+      ],
+      [
+        "SEAL",
+        7
+      ],
+      [
+        "HYD-PRESS",
+        6
+      ],
+      [
+        "PUMP",
+        4
+      ],
+      [
+        "SPINDLE",
+        2
+      ],
+      [
+        "ELEC-MOTOR",
+        1
+      ]
+    ],
+    "P4": [
+      [
+        "MECH-BRG",
+        7
+      ],
+      [
+        "HYD-PRESS",
+        4
+      ],
+      [
+        "SENSOR",
+        3
+      ],
+      [
+        "HYD-LEAK",
+        3
+      ],
+      [
+        "SEAL",
+        2
+      ],
+      [
+        "PUMP",
+        1
+      ],
+      [
+        "ELEC-MOTOR",
+        1
+      ]
+    ]
+  },
+  "p2_press_system_wo_sep_2026": 23,
+  "p2_press_only_wo_sep_2026": 17,
+  "p2_q3_press_real_failures": 32,
+  "p4_asset_count": 9,
+  "hp210_oem": "Schuler",
+  "cv305_install_dt": "2020-12-15",
+  "cnc104_oct_alarm_codes": [
+    "A-510"
+  ],
+  "p1_asset_count": 26
+}
