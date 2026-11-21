@@ -1,0 +1,129 @@
+@import "tailwindcss";
+@import "@fontsource/dm-sans/400.css";
+@import "@fontsource/dm-sans/500.css";
+@import "@fontsource/dm-sans/600.css";
+@import "@fontsource/dm-sans/700.css";
+@import "@fontsource/dm-mono/400.css";
+@import "@fontsource/dm-mono/500.css";
+
+/*
+ * Databricks brand palette (deck-design-system: official primaries, neutrals and
+ * the 300-800 ramps), applied to app screens. Light only: Oat Light ground, white
+ * surfaces, Navy ink. Lava is punctuation: the product mark and the active tab.
+ * Every text pair below clears WCAG AA 4.5:1 on the surface it sits on.
+ */
+@theme {
+  --color-background: #f9f7f4; /* Oat Light, the ground */
+  --color-foreground: #0b2026; /* Navy 900, primary ink */
+  --color-card: #ffffff;
+  --color-card-foreground: #0b2026;
+  --color-raised: #f3f1ec; /* one tone step below white, for wells */
+  --color-active: #eeede9; /* Oat Medium, selected nav and rows */
+  --color-primary: #1b3139; /* Navy 800, the one filled button */
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #eeede9;
+  --color-secondary-foreground: #1b3139;
+  --color-muted: #f3f1ec;
+  --color-muted-foreground: #5a6f77; /* Gray - Text, 4.94:1 on Oat, 5.28:1 on white */
+  --color-nav: #303f47; /* Gray - Navigation */
+  --color-accent: #ff3621; /* Lava 600 */
+  --color-accent-ink: #bd2b26; /* Lava 700, Lava at text sizes */
+  --color-accent-foreground: #0b2026; /* ink on a Lava fill (white is 3.62:1) */
+  --color-destructive: #98102a; /* Maroon 600 */
+  --color-border: #e4e2dd; /* hairline on light */
+  --color-rule: #eeece8; /* row rules, one step lighter */
+  --color-input: #8394a0; /* control edges at 3:1 (WCAG 1.4.11); card edges stay hairline */
+  --color-ring: #2272b4; /* Blue 600 focus ring */
+  --color-grid: #eceae5;
+
+  /* pale pairs for pills: tint fill, 800 ink */
+  --color-positive: #00875c;
+  --color-positive-bg: #e0f5ee;
+  --color-positive-ink: #095a35;
+  --color-warning-bg: #fff5e0;
+  --color-warning-ink: #7d5319;
+  --color-negative-bg: #f3e2e5;
+  --color-negative-ink: #730d21;
+  --color-info-bg: #e4eef6;
+  --color-info-ink: #04355d;
+  --color-neutral-bg: #e4eaec;
+  --color-neutral-ink: #143d4a;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+}
+
+html {
+  color-scheme: light;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (pointer: fine) {
+  html {
+    overscroll-behavior: none;
+  }
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/* Figures and IDs: DM Mono, the machine-readable layer of the Databricks type system */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--color-foreground);
+  background-color: #ffffff;
+}
+
+::placeholder {
+  color: #657479;
+  opacity: 1;
+}
+
+::selection {
+  background: #ffe7e4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
