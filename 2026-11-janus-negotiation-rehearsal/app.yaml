@@ -1,0 +1,29 @@
+command:
+  - uvicorn
+  - server.app:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - 8000
+
+# Attach these resources to the app when you create it (see README):
+#   sql-warehouse       SQL warehouse, CAN_USE
+#   serving-endpoint    agent model endpoint, CAN_QUERY
+#   judge-endpoint      judge model endpoint, CAN_QUERY
+#   embedding-endpoint  embedding model endpoint, CAN_QUERY
+# deploy.sh replaces DATABRICKS_CATALOG, DATABRICKS_SCHEMA and VS_ENDPOINT_NAME with the values in .env.local
+env:
+  - name: DATABRICKS_CATALOG
+    value: "main"
+  - name: DATABRICKS_SCHEMA
+    value: "janus"
+  - name: VS_ENDPOINT_NAME
+    value: "janus_vs_endpoint"
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: AGENT_MODEL
+    valueFrom: serving-endpoint
+  - name: JUDGE_MODEL
+    valueFrom: judge-endpoint
+  - name: EMBEDDING_MODEL
+    valueFrom: embedding-endpoint
