@@ -1,0 +1,33 @@
+[project]
+name = "voice-whiteboard"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=2.6.0",
+    "asyncpg>=0.32.0",
+    "databricks-sdk>=0.59.0",
+    "fastapi>=0.116.0",
+    "httpx>=0.28.1",
+    "uvicorn[standard]>=0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.2",
+]
+
+[tool.ruff]
+line-length = 110
+indent-width = 2
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# One-off probe and simulation scripts read small local files directly.
+"scripts/*" = ["ASYNC110", "ASYNC230", "E402"]

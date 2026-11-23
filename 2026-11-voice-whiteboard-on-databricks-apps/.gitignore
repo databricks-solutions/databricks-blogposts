@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.local
+.data/
+node_modules/
+.databricks/
+.DS_Store
+*.log
+client/dist/
+.deploy/
