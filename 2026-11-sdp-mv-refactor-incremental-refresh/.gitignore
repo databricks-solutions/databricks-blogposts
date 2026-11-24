@@ -1,0 +1,22 @@
+# Bundle deploy state (per user/workspace; recreated by `databricks bundle deploy`)
+.databricks/
+
+# Generated input batches (recreated by `python3 gen_batches.py`)
+#data/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets / local env (warehouse IDs, tokens)
+.env
+.env.*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
