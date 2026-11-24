@@ -1,0 +1,31 @@
+# Databricks Apps configuration.
+# One uvicorn worker on purpose: boards, presence and the mic lock live in this
+# process's memory, so a second worker would split people on the same board.
+command:
+  - uvicorn
+  - server.app:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8000"
+
+env:
+  # Each value comes from an app resource (a serving endpoint the app's service
+  # principal is granted CAN_QUERY on). deploy.sh attaches the resources.
+  - name: FAST_MODEL_ENDPOINT
+    valueFrom: fast-model
+  - name: REFINE_MODEL_ENDPOINT
+    valueFrom: refine-model
+  - name: WHISPER_ENDPOINT
+    valueFrom: speech-to-text
+  # Boards are stored in Lakebase. The attached database resource ("postgres") makes
+  # Databricks set PGHOST, PGPORT, PGDATABASE, PGUSER and PGSSLMODE for the app; these
+  # say which schema to use and which endpoint to request credentials for.
+  - name: BOARD_SCHEMA
+    value: whiteboard
+  - name: LAKEBASE_ENDPOINT
+    value: projects/voice-whiteboard/branches/production/endpoints/primary
+  - name: FAST_EFFORT
+    value: low
+  - name: REFINE_EFFORT
+    value: medium

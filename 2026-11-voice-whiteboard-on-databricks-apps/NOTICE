@@ -1,0 +1,19 @@
+Copyright (2026) Databricks, Inc.
+
+This Software includes software developed by third parties, installed as dependencies and not
+redistributed in this folder:
+
+anthropic - Apache-2.0 - https://github.com/anthropics/anthropic-sdk-python
+asyncpg - Apache-2.0 - https://github.com/MagicStack/asyncpg
+databricks-sdk - Apache-2.0 - https://github.com/databricks/databricks-sdk-py
+fastapi - MIT - https://github.com/fastapi/fastapi
+httpx - BSD-3-Clause - https://github.com/encode/httpx
+uvicorn - BSD-3-Clause - https://github.com/encode/uvicorn
+react, react-dom - MIT - https://github.com/facebook/react
+@xyflow/react - MIT - https://github.com/xyflow/xyflow
+@radix-ui/react-* - MIT - https://github.com/radix-ui/primitives
+zustand - MIT - https://github.com/pmndrs/zustand
+clsx - MIT - https://github.com/lukeed/clsx
+lucide-react - ISC - https://github.com/lucide-icons/lucide
+elkjs - EPL-2.0 - https://github.com/kieler/elkjs
+@fontsource-variable/dm-sans, @fontsource/dm-mono - OFL-1.1 - https://github.com/fontsource/font-files
