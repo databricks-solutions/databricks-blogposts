@@ -1,0 +1,1 @@
+{"leg_id": "L5", "shipment_id": "S5", "payer_id": "PAYER-S5", "booking_ref": "BK5", "carrier_ref": "CR-L5", "ship_date": "2026-10-01", "consignee_account": "ACC5-NEW", "consignee_branch": "BR01", "service_level": "STANDARD", "shipper_name": "Shipper S5", "declared_value": "1000.00", "currency": "USD", "is_priority": "N", "updated_at": "2026-10-04T12:00:00.000Z"}

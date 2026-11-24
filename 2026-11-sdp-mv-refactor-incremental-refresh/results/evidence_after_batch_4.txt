@@ -1,0 +1,103 @@
+
+== Q1 history: one row per MV refresh (20 rows)
+  at       | mv                     | status                                   | chosen                             
+  ---------+------------------------+------------------------------------------+------------------------------------
+  19:15:58 | first_enriched         | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:15:58 | shipment_summary_naive | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:15:59 | latest_enriched        | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:16:00 | shipment_summary_flat  | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:16:04 | shipment_summary       | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:18:15 | first_enriched         | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_ROW_BASED         
+  19:18:26 | latest_enriched        | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_ROW_BASED         
+  19:18:34 | shipment_summary_flat  | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:18:35 | shipment_summary_naive | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:18:46 | shipment_summary       | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_ROW_BASED         
+  19:20:16 | shipment_summary_naive | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:20:24 | latest_enriched        | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_APPEND_ONLY       
+  19:20:25 | first_enriched         | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_ROW_BASED         
+  19:20:31 | shipment_summary_flat  | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:20:42 | shipment_summary       | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_ROW_BASED         
+  19:22:04 | first_enriched         | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_ROW_BASED         
+  19:22:12 | latest_enriched        | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_ROW_BASED         
+  19:22:19 | shipment_summary_flat  | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:22:19 | shipment_summary_naive | INCREMENTALIZATION_STATUS_FULL_RECOMPUTE | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE
+  19:22:28 | shipment_summary       | INCREMENTALIZATION_STATUS_INCREMENTAL    | MAINTENANCE_TYPE_ROW_BASED         
+
+== Q3 summary across refreshes (11 rows)
+  mv                     | chosen                              | rejected                                | subtype                      | refreshes
+  -----------------------+-------------------------------------+-----------------------------------------+------------------------------+----------
+  first_enriched         | MAINTENANCE_TYPE_ROW_BASED          |                                         |                              | 3        
+  first_enriched         | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | FIRST_COMPUTATION                       |                              | 1        
+  latest_enriched        | MAINTENANCE_TYPE_ROW_BASED          |                                         |                              | 2        
+  latest_enriched        | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | FIRST_COMPUTATION                       |                              | 1        
+  latest_enriched        | MAINTENANCE_TYPE_APPEND_ONLY        |                                         |                              | 1        
+  shipment_summary       | MAINTENANCE_TYPE_ROW_BASED          |                                         |                              | 3        
+  shipment_summary       | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | FIRST_COMPUTATION                       |                              | 1        
+  shipment_summary_flat  | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | INCREMENTAL_PLAN_REJECTED_BY_COST_MODEL | NUM_JOINS_THRESHOLD_EXCEEDED | 3        
+  shipment_summary_flat  | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | FIRST_COMPUTATION                       |                              | 1        
+  shipment_summary_naive | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | INCREMENTAL_PLAN_REJECTED_BY_COST_MODEL | NUM_JOINS_THRESHOLD_EXCEEDED | 3        
+  shipment_summary_naive | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | FIRST_COMPUTATION                       |                              | 1        
+
+== create_update (4 rows)
+  at       | full_refresh | full_refresh_tables | cause   
+  ---------+--------------+---------------------+---------
+  19:14:09 | false        |                     | API_CALL
+  19:17:05 | false        |                     | API_CALL
+  19:19:14 | false        |                     | API_CALL
+  19:21:09 | false        |                     | API_CALL
+
+== shipments flow: upserted rows per update (4 rows)
+  update_id                            | upserted_rows
+  -------------------------------------+--------------
+  9097536c-4436-4848-a855-d36453e7d03c | 5            
+  f0a2f5bc-82ba-4fb0-8114-24f228a67970 | 3            
+  10b2f112-ef19-49ff-a0c3-9cdc7291143b | 1            
+  3cd91927-e7f3-4683-922e-a02d39b77073 | 1            
+
+== DESCRIBE HISTORY shipment_legs (10 rows)
+  version | operation    | inserted | updated
+  --------+--------------+----------+--------
+  0       | CREATE TABLE |          |        
+  1       | DLT SETUP    |          |        
+  2       | CLUSTER BY   |          |        
+  3       | MERGE        | 5        | 0      
+  4       | DLT SETUP    |          |        
+  5       | MERGE        | 2        | 1      
+  6       | OPTIMIZE     |          |        
+  7       | MERGE        | 1        | 0      
+  8       | MERGE        | 0        | 1      
+  9       | OPTIMIZE     |          |        
+
+== CDF of shipment_legs (from version 1) (12 rows)
+  v | _change_type     | shipment_id | leg_id | consignee_account | updated_at              
+  --+------------------+-------------+--------+-------------------+-------------------------
+  3 | insert           | S1          | L1     | ACC1              | 2026-10-01T12:00:00.000Z
+  3 | insert           | S2          | L2A    | ACC2              | 2026-10-01T12:00:00.000Z
+  3 | insert           | S3          | L3     | ACC3              | 2026-10-01T12:00:00.000Z
+  3 | insert           | S4          | L4     | ACC4-OLD          | 2026-10-01T12:00:00.000Z
+  3 | insert           | S5          | L5     | ACC5              | 2026-10-01T12:00:00.000Z
+  5 | insert           | S2          | L2B    | ACC2              | 2026-10-02T12:00:00.000Z
+  5 | update_postimage | S4          | L4     | ACC4-NEW          | 2026-10-02T12:00:00.000Z
+  5 | update_preimage  | S4          | L4     | ACC4-OLD          | 2026-10-01T12:00:00.000Z
+  5 | insert           | S6          | L6     | ACC6              | 2026-10-02T12:00:00.000Z
+  7 | insert           | S7          | L7     | ACC7              | 2026-10-03T12:00:00.000Z
+  8 | update_postimage | S5          | L5     | ACC5-NEW          | 2026-10-04T12:00:00.000Z
+  8 | update_preimage  | S5          | L5     | ACC5              | 2026-10-01T12:00:00.000Z
+
+== CDF of tracking_events for S3 (5 rows)
+  v | _change_type     | shipment_id | leg_id | event_time               | milestone       
+  --+------------------+-------------+--------+--------------------------+-----------------
+  3 | insert           | S3          | L3     | 2026-10-01T09:00:00.000Z | Picked up       
+  3 | insert           | S3          | L3     | 2026-10-01T09:20:00.000Z | In transit      
+  5 | update_postimage | S3          | L3     | 2026-10-01T09:20:00.000Z | Out for delivery
+  5 | update_preimage  | S3          | L3     | 2026-10-01T09:20:00.000Z | In transit      
+  7 | insert           | S3          | L3     | 2026-10-01T11:00:00.000Z | Delivered       
+
+== S6 presence (event before its leg) (5 rows)
+  t                      | n
+  -----------------------+--
+  shipment_legs          | 1
+  shipments              | 1
+  shipment_latest_event  | 1
+  shipment_summary       | 1
+  shipment_summary_naive | 1

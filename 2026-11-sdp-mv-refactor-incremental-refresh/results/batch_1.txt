@@ -1,0 +1,70 @@
+
+== DIFF shipment_summary vs shipment_summary_naive (empty = identical) (0 rows)
+
+== MV refresh techniques (latest refresh of each MV, one row per candidate) (10 rows)
+  mv                     | at       | technique                           | chosen | rejected_because 
+  -----------------------+----------+-------------------------------------+--------+------------------
+  first_enriched         | 19:15:58 | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | true   |                  
+  first_enriched         | 19:15:58 |                                     | false  | FIRST_COMPUTATION
+  latest_enriched        | 19:15:59 | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | true   |                  
+  latest_enriched        | 19:15:59 |                                     | false  | FIRST_COMPUTATION
+  shipment_summary       | 19:16:04 | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | true   |                  
+  shipment_summary       | 19:16:04 |                                     | false  | FIRST_COMPUTATION
+  shipment_summary_flat  | 19:16:00 | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | true   |                  
+  shipment_summary_flat  | 19:16:00 |                                     | false  | FIRST_COMPUTATION
+  shipment_summary_naive | 19:15:58 | MAINTENANCE_TYPE_COMPLETE_RECOMPUTE | true   |                  
+  shipment_summary_naive | 19:15:58 |                                     | false  | FIRST_COMPUTATION
+
+== Rows processed per flow (latest update) (12 rows)
+  flow                   | output_rows | upserted_rows | dropped
+  -----------------------+-------------+---------------+--------
+  first_enriched         | 5           |               | 0      
+  latest_enriched        | 5           |               | 0      
+  shipment_first_event   |             | 6             | 0      
+  shipment_latest_event  |             | 6             | 0      
+  shipment_legs          |             | 5             | 0      
+  shipment_legs_raw      | 5           |               | 0      
+  shipment_summary       | 5           |               | 0      
+  shipment_summary_flat  | 5           |               | 0      
+  shipment_summary_naive | 5           |               | 0      
+  shipments              |             | 5             | 0      
+  tracking_events        |             | 8             | 0      
+  tracking_events_raw    | 8           |               | 0      
+
+== shipment_summary (5 rows)
+  shipment_id | location | milestone  | booking_ref | ship_date  | consignee_account
+  ------------+----------+------------+-------------+------------+------------------
+  S1          | Hub East | Picked up  | BK1         | 2026-10-01 | ACC1             
+  S2          | Hub A    | In transit | BK2A        | 2026-10-01 | ACC2             
+  S3          | Hub East | In transit | BK3         | 2026-10-01 | ACC3             
+  S4          | Hub East | Picked up  | BK4         | 2026-10-01 | ACC4-OLD         
+  S5          | Hub East | Picked up  | BK5         | 2026-10-01 | ACC5             
+
+== shipment_first_event (6 rows)
+  shipment_id | leg_id | event_time               | milestone | updated_ts              
+  ------------+--------+--------------------------+-----------+-------------------------
+  S1          | L1     | 2026-10-01T09:00:00.000Z | Picked up | 2026-10-01T12:00:00.000Z
+  S2          | L2A    | 2026-10-01T09:00:00.000Z | Picked up | 2026-10-01T12:00:00.000Z
+  S3          | L3     | 2026-10-01T09:00:00.000Z | Picked up | 2026-10-01T12:00:00.000Z
+  S4          | L4     | 2026-10-01T09:00:00.000Z | Picked up | 2026-10-01T12:00:00.000Z
+  S5          | L5     | 2026-10-01T09:00:00.000Z | Picked up | 2026-10-01T12:00:00.000Z
+  S6          | L6     | 2026-10-01T09:00:00.000Z | Picked up | 2026-10-01T12:00:00.000Z
+
+== shipment_latest_event (6 rows)
+  shipment_id | leg_id | event_time               | milestone  | updated_ts              
+  ------------+--------+--------------------------+------------+-------------------------
+  S1          | L1     | 2026-10-01T09:00:00.000Z | Picked up  | 2026-10-01T12:00:00.000Z
+  S2          | L2A    | 2026-10-01T09:10:00.000Z | In transit | 2026-10-01T12:00:00.000Z
+  S3          | L3     | 2026-10-01T09:20:00.000Z | In transit | 2026-10-01T12:00:00.000Z
+  S4          | L4     | 2026-10-01T09:00:00.000Z | Picked up  | 2026-10-01T12:00:00.000Z
+  S5          | L5     | 2026-10-01T09:00:00.000Z | Picked up  | 2026-10-01T12:00:00.000Z
+  S6          | L6     | 2026-10-01T09:00:00.000Z | Picked up  | 2026-10-01T12:00:00.000Z
+
+== shipments (5 rows)
+  shipment_id | updated_at              
+  ------------+-------------------------
+  S1          | 2026-10-01T12:00:00.000Z
+  S2          | 2026-10-01T12:00:00.000Z
+  S3          | 2026-10-01T12:00:00.000Z
+  S4          | 2026-10-01T12:00:00.000Z
+  S5          | 2026-10-01T12:00:00.000Z

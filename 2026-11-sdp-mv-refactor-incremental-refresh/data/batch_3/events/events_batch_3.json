@@ -1,0 +1,3 @@
+{"leg_id": "L1", "event_time": "2026-10-01T08:00:00.000Z", "shipment_id": "S1", "location": "Hub East", "milestone": "Label created", "status_code": "OK", "updated_at": "2026-10-03T12:00:00.000Z"}
+{"leg_id": "L2B", "event_time": "2026-10-01T08:30:00.000Z", "shipment_id": "S2", "location": "Hub B", "milestone": "Label created", "status_code": "OK", "updated_at": "2026-10-03T12:00:00.000Z"}
+{"leg_id": "L7", "event_time": "2026-10-01T09:00:00.000Z", "shipment_id": "S7", "location": "Hub East", "milestone": "Picked up", "status_code": "OK", "updated_at": "2026-10-03T12:00:00.000Z"}

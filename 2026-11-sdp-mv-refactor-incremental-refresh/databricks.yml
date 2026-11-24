@@ -1,0 +1,31 @@
+# MV incremental refresh demo: a window-based MV vs a CDF + AUTO CDC + staged-MV refactor.
+#
+#   raw JSON (volume) ──Auto Loader──► shipment_legs_raw / tracking_events_raw     (append-only)
+#                     ──AUTO CDC SCD1─► shipment_legs / tracking_events            (insert + update)
+#   shipment_legs CDF  ──AUTO CDC SCD1─► shipments
+#   shipment_summary_naive: the anti-pattern (ROW_NUMBER windows + joins in one MV)
+#   tracking_events CDF ──AUTO CDC SCD1─► shipment_first_event / shipment_latest_event
+#                       ──staged MVs───► latest_enriched, first_enriched ──► shipment_summary
+#
+#   ./setup.sh && databricks bundle deploy -p e2-demo-field-eng
+#   ./run_batch.sh 1      # then 2, 3, 4
+
+bundle:
+  name: mv_incremental_refresh
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    default: roger_ding_catalog
+  schema:
+    default: mv_incremental_refresh
+  volume:
+    default: landing
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://e2-demo-field-eng.cloud.databricks.com/

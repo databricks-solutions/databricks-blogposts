@@ -1,0 +1,23 @@
+# The landing volume (${var.volume}) is created by setup.sh; it's referenced, not managed.
+resources:
+  pipelines:
+    shipments_pipeline:
+      name: mv_incremental_refresh
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      continuous: false
+      development: true
+      channel: CURRENT
+      root_path: ../src
+      libraries:
+        - file:
+            path: ../src/bronze.py
+        - file:
+            path: ../src/silver.py
+        - file:
+            path: ../src/shipment_summary_naive.sql
+        - file:
+            path: ../src/shipment_summary.py
+      configuration:
+        pipeline.raw_path: /Volumes/${var.catalog}/${var.schema}/${var.volume}/raw

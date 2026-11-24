@@ -1,0 +1,8 @@
+{"leg_id": "L1", "event_time": "2026-10-01T09:00:00.000Z", "shipment_id": "S1", "location": "Hub East", "milestone": "Picked up", "status_code": "OK", "updated_at": "2026-10-01T12:00:00.000Z"}
+{"leg_id": "L2A", "event_time": "2026-10-01T09:00:00.000Z", "shipment_id": "S2", "location": "Hub A", "milestone": "Picked up", "status_code": "OK", "updated_at": "2026-10-01T12:00:00.000Z"}
+{"leg_id": "L2A", "event_time": "2026-10-01T09:10:00.000Z", "shipment_id": "S2", "location": "Hub A", "milestone": "In transit", "status_code": "OK", "updated_at": "2026-10-01T12:00:00.000Z"}
+{"leg_id": "L3", "event_time": "2026-10-01T09:00:00.000Z", "shipment_id": "S3", "location": "Hub East", "milestone": "Picked up", "status_code": "OK", "updated_at": "2026-10-01T12:00:00.000Z"}
+{"leg_id": "L3", "event_time": "2026-10-01T09:20:00.000Z", "shipment_id": "S3", "location": "Hub East", "milestone": "In transit", "status_code": "OK", "updated_at": "2026-10-01T12:00:00.000Z"}
+{"leg_id": "L4", "event_time": "2026-10-01T09:00:00.000Z", "shipment_id": "S4", "location": "Hub East", "milestone": "Picked up", "status_code": "OK", "updated_at": "2026-10-01T12:00:00.000Z"}
+{"leg_id": "L5", "event_time": "2026-10-01T09:00:00.000Z", "shipment_id": "S5", "location": "Hub East", "milestone": "Picked up", "status_code": "OK", "updated_at": "2026-10-01T12:00:00.000Z"}
+{"leg_id": "L6", "event_time": "2026-10-01T09:00:00.000Z", "shipment_id": "S6", "location": "Hub East", "milestone": "Picked up", "status_code": "OK", "updated_at": "2026-10-01T12:00:00.000Z"}
